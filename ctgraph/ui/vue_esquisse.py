@@ -106,17 +106,24 @@ class Etiquette(QGraphicsItem):
         painter.setBrush(QBrush(self.fond))
         painter.drawRoundedRect(self._rect, 3, 3)
         painter.setFont(self.police)
+        if not self.symbole:
+            painter.drawText(self._rect, Qt.AlignmentFlag.AlignCenter, self.texte)
+            return
+        # La lettre est centrée sur son encre réelle (pas sur la hauteur de police) : le z tombe à mi-hauteur
+        # des tirets, le x à mi-largeur de la barre.
         fm = QFontMetricsF(self.police)
-        painter.drawText(self._rect, Qt.AlignmentFlag.AlignCenter, self.texte)
+        encre = fm.tightBoundingRect(self.texte)
+        origine = QPointF(-(encre.x() + encre.width() / 2), -(encre.y() + encre.height() / 2))
+        painter.drawText(origine, self.texte)
         trait = QPen(self.couleur, 1.6)
         trait.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(trait)
         if self.symbole == "horizontal":
-            demi = fm.horizontalAdvance(self.texte) / 2 + 2
+            demi = encre.width() / 2 + 2.5
             painter.drawLine(QPointF(self._rect.left() + 3, 0), QPointF(-demi, 0))
             painter.drawLine(QPointF(demi, 0), QPointF(self._rect.right() - 3, 0))
-        elif self.symbole == "vertical":
-            demi = fm.capHeight() / 2 + 2
+        else:
+            demi = encre.height() / 2 + 2.5
             painter.drawLine(QPointF(0, self._rect.top() + 3), QPointF(0, -demi))
             painter.drawLine(QPointF(0, demi), QPointF(0, self._rect.bottom() - 3))
 
