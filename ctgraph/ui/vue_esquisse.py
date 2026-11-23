@@ -26,6 +26,7 @@ from ..esquisse.modele import Cote, Esquisse, Relation, TypeCote, TypeRelation
 
 ROLE_GENRE = 0
 ROLE_ID = 1
+ROLE_VARIANTE = 2        # sur une étiquette de cote : "rayon" pour la seconde étiquette d'un diamètre
 
 # Symboles dessinés plutôt qu'écrits : horizontal = « -z- », vertical = « x » coupant une barre verticale.
 SYMBOLES: Dict[TypeRelation, str] = {
@@ -678,15 +679,24 @@ class VueEsquisse(QGraphicsView):
         pen = QPen(couleur, 1, Qt.PenStyle.DashLine if apercu else Qt.PenStyle.SolidLine)
         pen.setCosmetic(True)
         it.setPen(pen)
-        et = Etiquette(texte, couleur, c["fond"], gras=True)
-        et.setPos(*pos)
+        etiquettes = [(Etiquette(texte, couleur, c["fond"], gras=True), pos, None)]
+        if co.type == TypeCote.DIAMETRE:
+            # le rayon accompagne le diamètre : même grandeur lue depuis l'axe, éditable aussi
+            et_r = Etiquette(e.texte_rayon(co), couleur, c["fond"], gras=False)
+            etiquettes.append((et_r, (pos[0], pos[1] - self.px_en_mm(19)), "rayon"))
         if apercu:
             self._ajouter_apercu(it, 3)
-            self._ajouter_apercu(et, 20)
         else:
             it.setZValue(3)
             self._enregistrer(it, "cote", co.id)
-            self._enregistrer(et, "cote", co.id)
+        for et, position, variante in etiquettes:
+            et.setPos(*position)
+            if apercu:
+                self._ajouter_apercu(et, 20)
+            else:
+                self._enregistrer(et, "cote", co.id)
+                if variante:
+                    et.setData(ROLE_VARIANTE, variante)
 
     # -- aperçu pendant le tracé ---------------------------------------------------------
 
@@ -1359,10 +1369,13 @@ class VueEsquisse(QGraphicsView):
     def mouseDoubleClickEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton or self.outil != "selection":
             return
-        el = self.element_sous(event.position().toPoint())
+        pos = event.position().toPoint()
+        el = self.element_sous(pos)
         if el is not None and el[0] == "cote":
             self._glisse_cote = None
-            self.controleur.editer_cote(el[1])
+            variante = next((it.data(ROLE_VARIANTE) for it in self.items(pos)
+                             if isinstance(it, Etiquette) and it.data(ROLE_ID) == el[1] and it.data(ROLE_VARIANTE)), None)
+            self.controleur.editer_cote(el[1], variante or "valeur")
 
     def wheelEvent(self, event) -> None:
         delta = event.angleDelta().y()

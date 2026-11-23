@@ -347,6 +347,38 @@ def test_outil_cote_deduit_le_type(fenetre):
     ecran(win, "outil_cote")
 
 
+def test_diametre_accompagne_de_son_rayon(fenetre):
+    from ctgraph.ui.vue_esquisse import ROLE_ID, ROLE_VARIANTE, Etiquette
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (40.0, True)
+    win.poser_cote(TypeCote.DIAMETRE, (haut.id,), (6.0, 0.0))
+    diam = list(e.cotes.values())[-1]
+    etiquettes = [it for it in vue._items if isinstance(it, Etiquette) and it.data(ROLE_ID) == diam.id]
+    assert sorted(it.texte for it in etiquettes) == ["R 20", "Ø 40"]
+    rayon = next(it for it in etiquettes if it.data(ROLE_VARIANTE) == "rayon")
+    assert rayon.texte == "R 20"
+    # éditer par le rayon : 28 donne un diamètre de 56
+    demandes = []
+
+    def demander(libelle, unite, defaut, mini):
+        demandes.append((libelle, defaut))
+        return (28.0, True)
+
+    win._demander_valeur = demander
+    win.editer_cote(diam.id, "rayon")
+    assert demandes[-1] == ("Rayon", 20.0)
+    assert diam.valeur == pytest.approx(56.0)
+    assert max(p.x for p in e.points.values()) == pytest.approx(28.0, abs=1e-6)
+    # éditer par le diamètre : 50
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (50.0, True)
+    win.editer_cote(diam.id)
+    assert diam.valeur == pytest.approx(50.0)
+    assert e.texte_rayon(diam) == "R 25"
+
+
 def test_contour_ferme_detecte(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("ligne")

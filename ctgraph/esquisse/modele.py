@@ -384,10 +384,13 @@ class Esquisse:
             return d if d <= 180.0 else d - 360.0
         raise ErreurEsquisse(f"type de cote inconnu : {type_}")
 
+    @staticmethod
+    def _formater(valeur: float, decimales: int) -> str:
+        v = f"{valeur:.{decimales}f}".rstrip("0").rstrip(".") if decimales else f"{valeur:.0f}"
+        return "0" if v == "-0" else v
+
     def texte_cote(self, cote: Cote, decimales: int = 2) -> str:
-        v = f"{cote.valeur:.{decimales}f}".rstrip("0").rstrip(".") if decimales else f"{cote.valeur:.0f}"
-        if v == "-0":
-            v = "0"
+        v = self._formater(cote.valeur, decimales)
         if cote.type == TypeCote.DIAMETRE:
             texte = "Ø " + v
         elif cote.type == TypeCote.RAYON:
@@ -397,6 +400,11 @@ class Esquisse:
         else:
             texte = v
         return f"({texte})" if cote.pilotee else texte   # convention du dessin : une cote mesurée entre parenthèses
+
+    def texte_rayon(self, cote: Cote, decimales: int = 2) -> str:
+        """Le rayon qui accompagne une cote de diamètre : la même grandeur, lue depuis l'axe."""
+        texte = "R " + self._formater(cote.valeur / 2.0, decimales + 1)
+        return f"({texte})" if cote.pilotee else texte
 
     # -- sérialisation ---------------------------------------------------------------
 

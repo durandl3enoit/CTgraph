@@ -58,6 +58,22 @@ def test_arc_echantillonne_est_lisse():
         assert s1[3] == pytest.approx(s2[2])
 
 
+def test_icones_toutes_dessinables():
+    """Chaque outil et chaque relation a une icône qui se dessine sans erreur (hors écran)."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QColor, QGuiApplication
+    from PySide6.QtWidgets import QApplication
+    from ctgraph.esquisse.modele import TypeRelation
+    from ctgraph.icons import ICONES_OUTILS, icone_outil, icone_relation
+    app = QApplication.instance() or QGuiApplication([])  # noqa: F841
+    encre, fond = QColor(230, 230, 230), QColor(40, 40, 40)
+    for nom in ICONES_OUTILS:
+        assert not icone_outil(nom, encre, fond).isNull()
+    for t in TypeRelation:
+        assert not icone_relation(t.value, encre, fond).isNull()
+
+
 def test_sans_contour_rien():
     data, nb = maillage_revolution([], segments=8)
     assert nb == 0 and len(data) == 0

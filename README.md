@@ -26,6 +26,8 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   longueur Z entre deux faces verticales, ou écart entre deux lignes parallèles (profondeur de gorge), que l'on
   glisse le long de la première. Deux points : longueur Z. La cote suit le curseur en aperçu, le clic la pose
   et demande sa valeur, proposée à la mesure actuelle. `Ctrl+K` ou le menu du clic droit cotent la sélection.
+  Une cote de diamètre affiche aussi le rayon équivalent sous elle ; double-cliquez l'une ou l'autre valeur pour
+  l'éditer, l'autre suit.
   Une cote qui sur-contraindrait l'esquisse devient aussitôt une **cote pilotée** : grisée, entre parenthèses,
   elle mesure la géométrie et la suit. Le menu du clic droit, ou un double-clic, la rend pilotante quand
   c'est possible, et inversement.

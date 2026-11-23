@@ -19,7 +19,7 @@ from ..build_info import BUILD_TIME
 from ..esquisse import elagage
 from ..esquisse.modele import (LIBELLES_COTE, LIBELLES_RELATION, ErreurEsquisse, Esquisse, TypeCote, TypeRelation)
 from ..esquisse.solveur import AdaptateurSolveur, Resultat
-from ..icons import icone_outil
+from ..icons import icone_outil, icone_relation
 from ..log import get as get_log
 from ..settings import Settings
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
@@ -135,7 +135,9 @@ class FenetrePrincipale(QMainWindow):
         grille.setSpacing(4)
         self.boutons_relations = {}
         for i, t in enumerate(ORDRE_RELATIONS):
-            b = QPushButton(LIBELLES_RELATION[t])
+            b = QPushButton(icone_relation(t.value, encre, fond_icone), LIBELLES_RELATION[t])
+            b.setIconSize(QSize(16, 16))
+            b.setStyleSheet("text-align: left; padding-left: 3px; padding-right: 2px;")
             b.clicked.connect(lambda _=False, tt=t: self.appliquer_relation(tt))
             grille.addWidget(b, i // 2, i % 2)
             self.boutons_relations[t] = b
@@ -335,7 +337,8 @@ class FenetrePrincipale(QMainWindow):
         for c in e.cotes.values():
             cible = ", ".join(f"{e.genre(i)} {i}" for i in c.elements)
             suffixe = " — pilotée" if c.pilotee else ""
-            it = QListWidgetItem(f"{LIBELLES_COTE[c.type]} {e.texte_cote(c)} : {cible}{suffixe}")
+            valeur = e.texte_cote(c) + (f" ({e.texte_rayon(c)})" if c.type == TypeCote.DIAMETRE else "")
+            it = QListWidgetItem(f"{LIBELLES_COTE[c.type]} {valeur} : {cible}{suffixe}")
             it.setData(Qt.ItemDataRole.UserRole, c.id)
             if c.id in conflits:
                 it.setForeground(Qt.GlobalColor.red)
@@ -521,11 +524,15 @@ class FenetrePrincipale(QMainWindow):
         self._marquer_modifie(True)
         self.vue.reconstruire()
 
-    def editer_cote(self, cote_id: int) -> None:
+    def editer_cote(self, cote_id: int, variante: str = "valeur") -> None:
+        """Change la valeur d'une cote. Pour un diamètre, `variante` = "rayon" édite le rayon équivalent."""
         c = self.esquisse.cotes.get(cote_id)
         if c is None:
             return
         libelle = LIBELLES_COTE[c.type]
+        facteur = 1.0
+        if c.type == TypeCote.DIAMETRE and variante == "rayon":
+            libelle, facteur = "Rayon", 2.0
         if c.pilotee:
             rep = QMessageBox.question(self, libelle, f"Cette cote est pilotée : elle mesure {self.esquisse.texte_cote(c)} "
                                        "et suit la géométrie.\nLa rendre pilotante avec cette valeur ?",
@@ -536,7 +543,8 @@ class FenetrePrincipale(QMainWindow):
             return
         unite = "°" if c.type == TypeCote.ANGLE else "mm"
         mini = -360.0 if c.type == TypeCote.ANGLE else 0.0
-        valeur, ok = QInputDialog.getDouble(self, libelle, f"{libelle} ({unite}) :", c.valeur, mini, 1e6, 3)
+        saisie, ok = self._demander_valeur(libelle, unite, c.valeur / facteur, mini)
+        valeur = saisie * facteur
         if not ok or abs(valeur - c.valeur) < 1e-12:
             return
         avant = self.esquisse.to_json()

@@ -53,6 +53,10 @@ vérification par relecture du G-code généré, réception des programmes depui
   l'outil d'avant revient au relâchement.
 - **Symboles des relations** : horizontal = « -z- », vertical = x coupant une barre verticale ; dessinés dans
   `Etiquette`, pas des lettres H et V.
+- **Diamètre et rayon ensemble** : une cote de diamètre porte deux étiquettes, « Ø 50 » et « R 25 » ; le double-clic
+  sur l'une ou l'autre édite la grandeur correspondante (le modèle ne stocke que le diamètre).
+- **Icônes sobres** : un trait, une idée par icône, pas de points ni de pointillés. Les boutons de relations
+  portent une petite icône (`icone_relation`), les mêmes symboles que dans l'esquisse pour horizontal et vertical.
 - **Cote sur-contrainte = cote pilotée** : une cote posée qui entre en conflit, est redondante ou n'est pas atteignable passe
   automatiquement en cote pilotée (`Cote.pilotee`, paramètre libre et `driving=False` pour PlaneGCS), grisée et
   entre parenthèses ; le solveur y écrit la mesure après chaque résolution. Elle redevient pilotante à la demande

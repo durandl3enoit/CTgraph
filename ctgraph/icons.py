@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap,
+                           QPolygonF)
 
 ROUGE = QColor(225, 60, 50)
 BLEU = QColor(60, 140, 230)
@@ -34,80 +35,158 @@ def _fabriquer(dessin: Callable[[QPainter], None]) -> QIcon:
     return icon
 
 
-def _point(p: QPainter, x: float, y: float, encre: QColor, fond: QColor, r: float = 2.0) -> None:
-    p.setPen(_stylo(encre, 1.0))
-    p.setBrush(QBrush(fond))
-    p.drawEllipse(QPointF(x, y), r, r)
+TRAIT = 2.4   # épaisseur commune des icônes d'outils : un seul trait, une seule idée par icône
 
 
 def icone_selection(encre: QColor, fond: QColor) -> QIcon:
-    """Flèche de sélection."""
+    """Flèche pleine."""
     def dessin(p: QPainter):
-        p.setPen(_stylo(encre, 1.3))
-        p.setBrush(QBrush(fond))
-        pts = [(6, 3), (6, 19), (10.2, 15.4), (13, 21.5), (15.8, 20.2), (13.2, 14.4), (18.6, 14)]
+        p.setPen(_stylo(encre, 1.2))
+        p.setBrush(QBrush(encre))
+        pts = [(6, 3), (6, 19.5), (10.3, 15.6), (13.2, 21.5), (16, 20.2), (13.2, 14.6), (18.8, 14.4)]
         p.drawPolygon(QPolygonF([QPointF(*pt) for pt in pts]))
     return _fabriquer(dessin)
 
 
 def icone_ligne(encre: QColor, fond: QColor) -> QIcon:
-    """Demi-profil en lignes brisées avec ses sommets."""
+    """Un profil en escalier, rien d'autre."""
     def dessin(p: QPainter):
-        p.setPen(_stylo(encre, 2.0))
+        p.setPen(_stylo(encre, TRAIT))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        pts = [QPointF(3, 20), QPointF(3, 11), QPointF(12, 11), QPointF(12, 5), QPointF(21, 5)]
-        p.drawPolyline(QPolygonF(pts))
-        for q in pts[1:-1]:
-            _point(p, q.x(), q.y(), encre, fond)
-        _point(p, 21, 5, encre, BLEU, 2.3)
+        p.drawPolyline(QPolygonF([QPointF(3.5, 20), QPointF(3.5, 11), QPointF(13, 11), QPointF(13, 4.5),
+                                  QPointF(20.5, 4.5)]))
     return _fabriquer(dessin)
 
 
 def icone_arc(encre: QColor, fond: QColor) -> QIcon:
-    """Arc avec ses trois points : départ, arrivée, point de passage."""
+    """Un demi-cercle."""
     def dessin(p: QPainter):
-        p.setPen(_stylo(encre, 2.0))
+        p.setPen(_stylo(encre, TRAIT))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawArc(QRectF(4, 4, 16, 16), 0, 180 * 16)
-        p.setPen(_stylo(QColor(encre.red(), encre.green(), encre.blue(), 110), 1.0, [2.0, 2.0]))
-        p.drawLine(QPointF(4, 12), QPointF(20, 12))
-        _point(p, 4, 12, encre, fond)
-        _point(p, 20, 12, encre, fond)
-        _point(p, 12, 4, encre, BLEU, 2.3)
-    return _fabriquer(dessin)
-
-
-def icone_elaguer(encre: QColor, fond: QColor) -> QIcon:
-    """Une ligne traversée par le trait rouge : la partie au-delà disparaît (pointillés)."""
-    def dessin(p: QPainter):
-        p.setPen(_stylo(encre, 2.0))
-        p.drawLine(QPointF(3, 15), QPointF(13, 15))
-        p.setPen(_stylo(QColor(encre.red(), encre.green(), encre.blue(), 90), 1.6, [1.5, 2.5]))
-        p.drawLine(QPointF(13, 15), QPointF(21, 15))
-        p.setPen(_stylo(encre, 2.0))
-        p.drawLine(QPointF(13, 4), QPointF(13, 21))
-        p.setPen(_stylo(ROUGE, 2.2))
-        p.drawPolyline(QPolygonF([QPointF(15, 7), QPointF(18, 11), QPointF(16.5, 15), QPointF(20, 20)]))
+        p.drawArc(QRectF(4, 6, 16, 16), 0, 180 * 16)
     return _fabriquer(dessin)
 
 
 def icone_cote(encre: QColor, fond: QColor) -> QIcon:
-    """Une cote : lignes d'attache, ligne de cote fléchée, valeur en bleu."""
+    """Une ligne de cote fléchée aux deux bouts."""
     def dessin(p: QPainter):
-        p.setPen(_stylo(encre, 1.6))
-        p.drawLine(QPointF(4, 10), QPointF(4, 21))
-        p.drawLine(QPointF(20, 10), QPointF(20, 21))
-        p.setPen(_stylo(BLEU, 1.8))
-        p.drawLine(QPointF(4, 17), QPointF(20, 17))
-        p.drawPolyline(QPolygonF([QPointF(7.5, 14.5), QPointF(4, 17), QPointF(7.5, 19.5)]))
-        p.drawPolyline(QPolygonF([QPointF(16.5, 14.5), QPointF(20, 17), QPointF(16.5, 19.5)]))
-        p.setPen(_stylo(BLEU, 1.0))
-        p.setBrush(QBrush(fond))
-        p.drawRoundedRect(QRectF(7, 3, 10, 8), 2, 2)
-        p.setPen(_stylo(BLEU, 1.4))
-        p.drawEllipse(QRectF(9.5, 4.5, 5, 5))
-        p.drawLine(QPointF(9, 10.2), QPointF(15, 3.8))
+        p.setPen(_stylo(encre, 2.0))
+        p.drawLine(QPointF(3.5, 12), QPointF(20.5, 12))
+        p.drawPolyline(QPolygonF([QPointF(8, 8), QPointF(3.5, 12), QPointF(8, 16)]))
+        p.drawPolyline(QPolygonF([QPointF(16, 8), QPointF(20.5, 12), QPointF(16, 16)]))
     return _fabriquer(dessin)
+
+
+def icone_elaguer(encre: QColor, fond: QColor) -> QIcon:
+    """Une ligne barrée d'un trait rouge."""
+    def dessin(p: QPainter):
+        p.setPen(_stylo(encre, TRAIT))
+        p.drawLine(QPointF(3.5, 13), QPointF(20.5, 13))
+        p.setPen(_stylo(ROUGE, TRAIT))
+        p.drawLine(QPointF(15, 4), QPointF(9, 21))
+    return _fabriquer(dessin)
+
+
+def _police(px: int) -> QFont:
+    f = QFont()
+    f.setPixelSize(px)
+    f.setBold(True)
+    return f
+
+
+def _lettre_centree(p: QPainter, lettre: str, encre: QColor, px: int = 11) -> QRectF:
+    """Écrit une lettre centrée sur son encre au milieu du canevas 24 × 24 ; renvoie l'encre occupée."""
+    p.setFont(_police(px))
+    fm = QFontMetricsF(p.font())
+    encre_r = fm.tightBoundingRect(lettre)
+    origine = QPointF(12 - (encre_r.x() + encre_r.width() / 2), 12 - (encre_r.y() + encre_r.height() / 2))
+    p.setPen(QPen(encre, 1))
+    p.drawText(origine, lettre)
+    return encre_r.translated(origine)
+
+
+def _dessins_relations(encre: QColor, fond: QColor):
+    R = 2.0
+
+    def horizontal(p):
+        r = _lettre_centree(p, "z", encre)
+        p.setPen(_stylo(encre, R))
+        p.drawLine(QPointF(2.5, 12), QPointF(r.left() - 2, 12))
+        p.drawLine(QPointF(r.right() + 2, 12), QPointF(21.5, 12))
+
+    def vertical(p):
+        r = _lettre_centree(p, "x", encre)
+        p.setPen(_stylo(encre, R))
+        p.drawLine(QPointF(12, 2.5), QPointF(12, r.top() - 2))
+        p.drawLine(QPointF(12, r.bottom() + 2), QPointF(12, 21.5))
+
+    def coincident(p):
+        p.setPen(_stylo(encre, 1.8))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QPointF(12, 12), 7, 7)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(encre))
+        p.drawEllipse(QPointF(12, 12), 3, 3)
+
+    def point_sur_ligne(p):
+        p.setPen(_stylo(encre, R))
+        p.drawLine(QPointF(3, 17), QPointF(21, 7))
+        p.setPen(_stylo(encre, 1.2))
+        p.setBrush(QBrush(fond))
+        p.drawEllipse(QPointF(12, 12), 3.2, 3.2)
+
+    def parallele(p):
+        p.setPen(_stylo(encre, R))
+        p.drawLine(QPointF(5, 20), QPointF(13, 4))
+        p.drawLine(QPointF(11, 20), QPointF(19, 4))
+
+    def perpendiculaire(p):
+        p.setPen(_stylo(encre, R))
+        p.drawLine(QPointF(5, 19), QPointF(20, 19))
+        p.drawLine(QPointF(8, 20), QPointF(8, 4))
+        p.setPen(_stylo(encre, 1.2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(QRectF(8, 14, 5, 5))
+
+    def tangent(p):
+        p.setPen(_stylo(encre, R))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QPointF(12, 14), 6, 6)
+        p.drawLine(QPointF(3, 8), QPointF(21, 8))
+
+    def egal(p):
+        p.setPen(_stylo(encre, R))
+        p.drawLine(QPointF(5, 9), QPointF(19, 9))
+        p.drawLine(QPointF(5, 15), QPointF(19, 15))
+
+    def sur_axe(p):
+        p.setPen(_stylo(encre, 1.6, [4.0, 2.0, 1.0, 2.0]))
+        p.drawLine(QPointF(2, 16), QPointF(22, 16))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(encre))
+        p.drawEllipse(QPointF(12, 16), 3, 3)
+
+    def fixe(p):
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(encre))
+        p.drawEllipse(QPointF(12, 8), 3, 3)
+        p.setPen(_stylo(encre, R))
+        p.drawLine(QPointF(12, 10), QPointF(12, 16))
+        p.drawLine(QPointF(5, 16), QPointF(19, 16))
+        p.setPen(_stylo(encre, 1.3))
+        for x in (6, 10, 14, 18):
+            p.drawLine(QPointF(x, 16.5), QPointF(x - 2.5, 20.5))
+
+    return {
+        "horizontal": horizontal, "vertical": vertical, "coincident": coincident, "point_sur_ligne": point_sur_ligne,
+        "point_sur_arc": point_sur_ligne, "parallele": parallele, "perpendiculaire": perpendiculaire,
+        "tangent": tangent, "egal": egal, "sur_axe": sur_axe, "fixe": fixe,
+    }
+
+
+def icone_relation(nom: str, encre: QColor, fond: QColor) -> QIcon:
+    """Petite icône d'une relation (clé = valeur de `TypeRelation`), dans la couleur de texte du thème."""
+    return _fabriquer(_dessins_relations(encre, fond)[nom])
 
 
 ICONES_OUTILS = {
