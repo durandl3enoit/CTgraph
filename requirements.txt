@@ -1,0 +1,5 @@
+PySide6>=6.7
+planegcs==0.9.6
+pyserial>=3.5
+pyinstaller>=6.0
+pytest>=8.0

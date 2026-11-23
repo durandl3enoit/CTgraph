@@ -1,0 +1,866 @@
+"""Vue d'esquisse : tracé à la souris, accrochage, sélection, glissement des points, cotes.
+
+Coordonnées de scène = coordonnées du modèle : abscisse z, ordonnée x (rayon). La vue est
+retournée verticalement (échelle négative en y) pour que le rayon croisse vers le haut.
+Les textes et marqueurs de points ignorent la transformation de la vue : ils gardent leur
+taille en pixels et ne sont pas retournés.
+
+La vue ne modifie jamais le modèle elle-même : elle appelle le contrôleur (la fenêtre principale)
+qui passe par le solveur et l'annulation.
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QTransform
+from PySide6.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem, QGraphicsLineItem, QGraphicsPathItem,
+                               QGraphicsScene, QGraphicsView, QStyleOptionGraphicsItem, QWidget)
+
+from ..esquisse.modele import Cote, Esquisse, Relation, TypeCote, TypeRelation
+
+ROLE_GENRE = 0
+ROLE_ID = 1
+
+GLYPHES: Dict[TypeRelation, str] = {
+    TypeRelation.COINCIDENT: "●",
+    TypeRelation.HORIZONTAL: "H",
+    TypeRelation.VERTICAL: "V",
+    TypeRelation.PARALLELE: "∥",
+    TypeRelation.PERPENDICULAIRE: "⊥",
+    TypeRelation.TANGENT: "T",
+    TypeRelation.EGAL: "=",
+    TypeRelation.POINT_SUR_LIGNE: "∙/",
+    TypeRelation.SUR_AXE: "axe",
+    TypeRelation.FIXE: "F",
+}
+
+TOLERANCE_PX = 9          # rayon d'accrochage et de sélection, en pixels
+ANGLE_AUTO_DEG = 4.0      # en deçà, un trait reçoit la relation horizontal ou vertical
+
+
+@dataclass
+class Accroche:
+    """Résultat de l'accrochage du curseur : une position, et éventuellement un point existant."""
+    z: float
+    x: float
+    point: Optional[int] = None   # identifiant d'un point existant sous le curseur
+    sur_axe: bool = False         # le curseur est sur l'axe de la pièce (x = 0)
+
+
+class Etiquette(QGraphicsItem):
+    """Texte à taille fixe en pixels avec un fond : symboles de relations et valeurs de cotes."""
+
+    def __init__(self, texte: str, couleur: QColor, fond: QColor, gras: bool = False, parent=None):
+        super().__init__(parent)
+        self.texte = texte
+        self.couleur = couleur
+        self.fond = fond
+        self.police = QFont()
+        self.police.setPointSizeF(9.0)
+        self.police.setBold(gras)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        self.setZValue(20)
+        fm = QFontMetricsF(self.police)
+        w = fm.horizontalAdvance(texte) + 8
+        h = fm.height() + 4
+        self._rect = QRectF(-w / 2, -h / 2, w, h)
+
+    def boundingRect(self) -> QRectF:
+        return self._rect.adjusted(-1, -1, 1, 1)
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget = None) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(self.couleur, 1))
+        painter.setBrush(QBrush(self.fond))
+        painter.drawRoundedRect(self._rect, 3, 3)
+        painter.setFont(self.police)
+        painter.drawText(self._rect, Qt.AlignmentFlag.AlignCenter, self.texte)
+
+
+class VueEsquisse(QGraphicsView):
+    coordonnees = Signal(float, float)       # (z, x) sous le curseur
+    message = Signal(str)                    # aide contextuelle pour la barre d'état
+    selection_changee = Signal()
+
+    OUTILS = ("selection", "ligne", "arc")
+
+    def __init__(self, controleur, parent=None):
+        super().__init__(parent)
+        self.controleur = controleur
+        self.esquisse: Esquisse = controleur.esquisse
+        self.resultat = None
+        self.selection: List[int] = []
+        self.outil = "selection"
+        self.grille_visible = True
+
+        self._scene = QGraphicsScene(self)
+        self._scene.setSceneRect(-1e5, -1e5, 2e5, 2e5)
+        self.setScene(self._scene)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setTransform(QTransform().scale(4.0, -4.0))
+        self.centerOn(-40.0, 20.0)
+
+        # état des outils
+        self._debut: Optional[Accroche] = None          # premier point d'une ligne ou d'un arc
+        self._arc_fin: Optional[Accroche] = None        # deuxième point d'un arc
+        self._apercu: List[QGraphicsItem] = []
+        self._marqueur: Optional[QGraphicsItem] = None
+        self._glisse_point: Optional[int] = None
+        self._glisse_cote: Optional[int] = None
+        self._glisse_dernier: Optional[QPointF] = None
+        self._glisse_actif = False
+        self._pan_dernier = None
+        self._items: List[QGraphicsItem] = []
+
+        self.reconstruire()
+
+    # -- repère et échelle -----------------------------------------------------------
+
+    def echelle(self) -> float:
+        """Pixels par millimètre."""
+        return abs(self.transform().m11())
+
+    def px_en_mm(self, px: float) -> float:
+        return px / max(self.echelle(), 1e-9)
+
+    def position_scene(self, pos) -> Tuple[float, float]:
+        p = self.mapToScene(pos)
+        return p.x(), p.y()
+
+    def definir_esquisse(self, esquisse: Esquisse) -> None:
+        self.esquisse = esquisse
+        self.selection = [i for i in self.selection if esquisse.genre(i) is not None]
+        self.annuler_outil()
+        self.reconstruire()
+
+    def definir_resultat(self, resultat) -> None:
+        self.resultat = resultat
+
+    def tout_voir(self) -> None:
+        e = self.esquisse
+        if e.points:
+            zs = [p.z for p in e.points.values()]
+            xs = [p.x for p in e.points.values()] + [0.0]
+            rect = QRectF(min(zs), min(xs), max(max(zs) - min(zs), 1e-3), max(max(xs) - min(xs), 1e-3))
+        else:
+            rect = QRectF(-120.0, -10.0, 140.0, 70.0)
+        marge = 0.15
+        rect.adjust(-rect.width() * marge - 5, -rect.height() * marge - 5,
+                    rect.width() * marge + 5, rect.height() * marge + 5)
+        vp = self.viewport().rect()
+        if vp.width() < 10 or vp.height() < 10:
+            return
+        s = min(vp.width() / rect.width(), vp.height() / rect.height())
+        s = max(0.05, min(s, 500.0))
+        self.setTransform(QTransform().scale(s, -s))
+        self.centerOn(rect.center())
+        self.reconstruire()
+
+    def zoomer(self, facteur: float, pos=None) -> None:
+        s = self.echelle() * facteur
+        if s < 0.05 or s > 500.0:
+            return
+        if pos is None:
+            self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
+        self.scale(facteur, facteur)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.reconstruire()
+
+    # -- couleurs --------------------------------------------------------------------
+
+    def _couleurs(self) -> Dict[str, QColor]:
+        pal = self.palette()
+        texte = pal.color(pal.ColorGroup.Active, pal.ColorRole.WindowText)
+        fond = pal.color(pal.ColorGroup.Active, pal.ColorRole.Base)
+        sombre = fond.lightness() < 128
+        return {
+            "texte": texte,
+            "fond": fond,
+            "geometrie": QColor(46, 160, 67) if (self.resultat is not None and self.resultat.entierement_contraint) else texte,
+            "selection": QColor(255, 140, 0),
+            "survol": pal.color(pal.ColorRole.Highlight),
+            "cote": QColor(110, 170, 255) if sombre else QColor(25, 95, 190),
+            "relation": QColor(170, 170, 170) if sombre else QColor(100, 100, 100),
+            "conflit": QColor(230, 60, 50),
+            "redondant": QColor(220, 160, 0),
+            "axe": QColor(texte.red(), texte.green(), texte.blue(), 120),
+            "grille": QColor(texte.red(), texte.green(), texte.blue(), 28),
+            "centre": QColor(texte.red(), texte.green(), texte.blue(), 160),
+        }
+
+    # -- fond : grille et axe ----------------------------------------------------------
+
+    def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
+        super().drawBackground(painter, rect)
+        c = self._couleurs()
+        painter.fillRect(rect, c["fond"])
+        if self.grille_visible:
+            pas = self._pas_grille()
+            pen = QPen(c["grille"], 0)
+            painter.setPen(pen)
+            z0 = math.floor(rect.left() / pas) * pas
+            z = z0
+            while z <= rect.right():
+                painter.drawLine(QPointF(z, rect.top()), QPointF(z, rect.bottom()))
+                z += pas
+            x = math.floor(rect.top() / pas) * pas
+            while x <= rect.bottom():
+                painter.drawLine(QPointF(rect.left(), x), QPointF(rect.right(), x))
+                x += pas
+        # axe de la pièce (x = 0) en tiret-point, et origine Z = 0
+        axe = QPen(c["axe"], 0, Qt.PenStyle.DashDotLine)
+        painter.setPen(axe)
+        painter.drawLine(QPointF(rect.left(), 0.0), QPointF(rect.right(), 0.0))
+        orig = QPen(c["axe"], 0, Qt.PenStyle.DotLine)
+        painter.setPen(orig)
+        painter.drawLine(QPointF(0.0, rect.top()), QPointF(0.0, rect.bottom()))
+
+    def _pas_grille(self) -> float:
+        """Pas de grille en mm pour des carreaux d'au moins 28 px."""
+        mini = self.px_en_mm(28)
+        for pas in (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000):
+            if pas >= mini:
+                return float(pas)
+        return 1000.0
+
+    # -- reconstruction des éléments graphiques -----------------------------------------
+
+    def reconstruire(self) -> None:
+        """Redessine tout à partir du modèle (simple et sûr : les esquisses restent petites)."""
+        for it in self._items:
+            self._scene.removeItem(it)
+        self._items = []
+        self._marqueur = None
+        e, c = self.esquisse, self._couleurs()
+        conflits = set(self.resultat.conflits) if self.resultat is not None else set()
+        redondants = set(self.resultat.redondants) if self.resultat is not None else set()
+        sel = set(self.selection)
+        couleur_geom = c["geometrie"]
+
+        # lignes
+        for li in e.lignes.values():
+            a, b = e.points[li.p1], e.points[li.p2]
+            it = QGraphicsLineItem(a.z, a.x, b.z, b.x)
+            it.setPen(self._stylo(li.id in sel, couleur_geom, c))
+            it.setZValue(5)
+            self._enregistrer(it, "ligne", li.id)
+
+        # arcs : polyligne échantillonnée (l'affichage seulement ; le modèle garde centre et rayon)
+        for a in e.arcs.values():
+            path = QPainterPath()
+            pts = self._points_arc(a.id, 48)
+            path.moveTo(*pts[0])
+            for z, x in pts[1:]:
+                path.lineTo(z, x)
+            it = QGraphicsPathItem(path)
+            it.setPen(self._stylo(a.id in sel, couleur_geom, c))
+            it.setZValue(5)
+            self._enregistrer(it, "arc", a.id)
+
+        # points
+        centres = {a.centre for a in e.arcs.values()}
+        extremites = set()
+        for li in e.lignes.values():
+            extremites.update((li.p1, li.p2))
+        for a in e.arcs.values():
+            extremites.update((a.debut, a.fin))
+        for p in e.points.values():
+            if p.id in centres and p.id not in extremites:
+                it = self._croix(p, c["centre"], p.id in sel, c)
+            else:
+                r = 4.5 if p.id in sel else 3.5
+                it = QGraphicsEllipseItem(-r, -r, 2 * r, 2 * r)
+                it.setPos(p.z, p.x)
+                it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                it.setPen(QPen(c["fond"], 1))
+                it.setBrush(QBrush(c["selection"] if p.id in sel else couleur_geom))
+            it.setZValue(10)
+            self._enregistrer(it, "point", p.id)
+
+        # symboles des relations
+        occupation: Dict[Tuple[int, int], int] = {}
+        for r in e.relations.values():
+            couleur = c["conflit"] if r.id in conflits else (c["redondant"] if r.id in redondants else c["relation"])
+            if r.id in sel:
+                couleur = c["selection"]
+            for ancre in self._ancres_relation(r):
+                ident = ancre[0]
+                n = occupation.get((ident, 0), 0)
+                occupation[(ident, 0)] = n + 1
+                et = Etiquette(GLYPHES[r.type], couleur, c["fond"], gras=r.id in sel)
+                dz, dx = ancre[1], ancre[2]
+                et.setPos(dz, dx)
+                # plusieurs symboles sur le même élément : on les range côte à côte, en pixels
+                et.moveBy(self.px_en_mm(22) * (n % 3), self.px_en_mm(16) * (n // 3))
+                self._enregistrer(et, "relation", r.id)
+
+        # cotes
+        for co in e.cotes.values():
+            couleur = c["conflit"] if co.id in conflits else (c["redondant"] if co.id in redondants else c["cote"])
+            if co.id in sel:
+                couleur = c["selection"]
+            self._dessiner_cote(co, couleur, c)
+
+        self._dessiner_apercu()
+
+    def _enregistrer(self, it: QGraphicsItem, genre: str, ident: int) -> None:
+        it.setData(ROLE_GENRE, genre)
+        it.setData(ROLE_ID, ident)
+        self._scene.addItem(it)
+        self._items.append(it)
+
+    def _stylo(self, selectionne: bool, couleur: QColor, c: Dict[str, QColor]) -> QPen:
+        pen = QPen(c["selection"] if selectionne else couleur, 3 if selectionne else 2)
+        pen.setCosmetic(True)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        return pen
+
+    def _croix(self, p, couleur: QColor, selectionne: bool, c: Dict[str, QColor]) -> QGraphicsPathItem:
+        path = QPainterPath()
+        path.moveTo(-5, 0)
+        path.lineTo(5, 0)
+        path.moveTo(0, -5)
+        path.lineTo(0, 5)
+        it = QGraphicsPathItem(path)
+        it.setPos(p.z, p.x)
+        it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        it.setPen(QPen(c["selection"] if selectionne else couleur, 1.5))
+        return it
+
+    def _points_arc(self, arc_id: int, n: int) -> List[Tuple[float, float]]:
+        e = self.esquisse
+        a = e.arcs[arc_id]
+        ce, d, f = e.points[a.centre], e.points[a.debut], e.points[a.fin]
+        r = math.hypot(d.z - ce.z, d.x - ce.x)
+        a0 = math.atan2(d.x - ce.x, d.z - ce.z)
+        a1 = math.atan2(f.x - ce.x, f.z - ce.z)
+        if a.horaire:
+            while a1 >= a0:
+                a1 -= 2 * math.pi
+        else:
+            while a1 <= a0:
+                a1 += 2 * math.pi
+        pts = []
+        for i in range(n + 1):
+            t = a0 + (a1 - a0) * i / n
+            pts.append((ce.z + r * math.cos(t), ce.x + r * math.sin(t)))
+        # les extrémités sont exactement les points du modèle
+        pts[0] = (d.z, d.x)
+        pts[-1] = (f.z, f.x)
+        return pts
+
+    def _milieu(self, ident: int) -> Tuple[float, float]:
+        e = self.esquisse
+        g = e.genre(ident)
+        if g == "point":
+            p = e.points[ident]
+            return p.z, p.x
+        if g == "arc":
+            pts = self._points_arc(ident, 2)
+            return pts[1]
+        a, b = (e.points[i] for i in e.extremites(ident))
+        return (a.z + b.z) / 2, (a.x + b.x) / 2
+
+    def _ancres_relation(self, r: Relation) -> List[Tuple[int, float, float]]:
+        """Où poser le symbole : (élément, z, x) ; un symbole par élément concerné."""
+        e = self.esquisse
+        decal = self.px_en_mm(14)
+        ancres = []
+        for ident in r.elements:
+            g = e.genre(ident)
+            mz, mx = self._milieu(ident)
+            if g == "point":
+                ancres.append((ident, mz + decal * 0.8, mx + decal * 0.8))
+            elif g == "ligne":
+                a, b = (e.points[i] for i in e.extremites(ident))
+                dz, dx = b.z - a.z, b.x - a.x
+                n = math.hypot(dz, dx) or 1.0
+                # normale à la ligne, du côté opposé à l'axe quand c'est possible
+                nz, nx = -dx / n, dz / n
+                if nx < 0:
+                    nz, nx = -nz, -nx
+                ancres.append((ident, mz + nz * decal, mx + nx * decal))
+            else:
+                ancres.append((ident, mz, mx + decal))
+            if r.type in (TypeRelation.COINCIDENT, TypeRelation.POINT_SUR_LIGNE, TypeRelation.TANGENT):
+                break   # un seul symbole suffit pour ces relations
+        return ancres
+
+    # -- cotes -------------------------------------------------------------------------
+
+    def decalage_par_defaut(self, type_: TypeCote, elements: Tuple[int, ...]) -> Tuple[float, float]:
+        """Décalage initial de l'étiquette, en mm, pour une cote que l'on crée."""
+        d = self.px_en_mm(34)
+        if type_ == TypeCote.LONGUEUR_Z:
+            return (0.0, d)
+        if type_ == TypeCote.DIAMETRE:
+            return (d, 0.0)
+        if type_ == TypeCote.DISTANCE:
+            return (0.0, d)
+        return (d * 0.6, d * 0.6)
+
+    def _fleche(self, path: QPainterPath, pointe: Tuple[float, float], direction: Tuple[float, float]) -> None:
+        """Ajoute une flèche de 9 px dont la pointe est en `pointe`, orientée selon `direction`."""
+        lg = self.px_en_mm(9)
+        dz, dx = direction
+        n = math.hypot(dz, dx) or 1.0
+        dz, dx = dz / n, dx / n
+        pz, px = pointe
+        bz, bx = pz - dz * lg, px - dx * lg
+        wz, wx = -dx * lg * 0.35, dz * lg * 0.35
+        path.moveTo(pz, px)
+        path.lineTo(bz + wz, bx + wx)
+        path.moveTo(pz, px)
+        path.lineTo(bz - wz, bx - wx)
+
+    def _dessiner_cote(self, co: Cote, couleur: QColor, c: Dict[str, QColor]) -> None:
+        e = self.esquisse
+        path = QPainterPath()
+        dz, dx = co.decalage
+        texte = e.texte_cote(co)
+        ext = self.px_en_mm(4)
+        if co.type in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE):
+            if len(co.elements) == 1:
+                a, b = (e.points[i] for i in e.extremites(co.elements[0]))
+            else:
+                a, b = (e.points[i] for i in co.elements)
+            if co.type == TypeCote.LONGUEUR_Z:
+                xl = max(a.x, b.x) + dx
+                path.moveTo(a.z, a.x)
+                path.lineTo(a.z, xl + math.copysign(ext, dx or 1.0))
+                path.moveTo(b.z, b.x)
+                path.lineTo(b.z, xl + math.copysign(ext, dx or 1.0))
+                path.moveTo(a.z, xl)
+                path.lineTo(b.z, xl)
+                self._fleche(path, (a.z, xl), (a.z - b.z, 0.0))
+                self._fleche(path, (b.z, xl), (b.z - a.z, 0.0))
+                pos = ((a.z + b.z) / 2 + dz, xl)
+            else:
+                vz, vx = b.z - a.z, b.x - a.x
+                n = math.hypot(vz, vx) or 1.0
+                nz, nx = -vx / n, vz / n
+                if nx < 0:
+                    nz, nx = -nz, -nx
+                az, ax = a.z + nz * dx, a.x + nx * dx
+                bz, bx = b.z + nz * dx, b.x + nx * dx
+                path.moveTo(a.z, a.x)
+                path.lineTo(az + nz * ext, ax + nx * ext)
+                path.moveTo(b.z, b.x)
+                path.lineTo(bz + nz * ext, bx + nx * ext)
+                path.moveTo(az, ax)
+                path.lineTo(bz, bx)
+                self._fleche(path, (az, ax), (-vz, -vx))
+                self._fleche(path, (bz, bx), (vz, vx))
+                pos = ((az + bz) / 2 + dz * 0.0, (ax + bx) / 2)
+        elif co.type == TypeCote.DIAMETRE:
+            el = co.elements[0]
+            p = e.points[el] if e.genre(el) == "point" else e.points[e.lignes[el].p1]
+            zl = p.z + dz
+            path.moveTo(p.z, p.x)
+            path.lineTo(zl + math.copysign(ext, dz or 1.0), p.x)
+            path.moveTo(zl, 0.0)
+            path.lineTo(zl, p.x)
+            self._fleche(path, (zl, p.x), (0.0, 1.0))
+            # petit trait sur l'axe, symétrique du diamètre
+            path.moveTo(zl - ext, 0.0)
+            path.lineTo(zl + ext, 0.0)
+            pos = (zl, p.x / 2 + dx)
+        elif co.type == TypeCote.RAYON:
+            a = e.arcs[co.elements[0]]
+            ce = e.points[a.centre]
+            mz, mx = self._points_arc(a.id, 2)[1]
+            path.moveTo(ce.z, ce.x)
+            path.lineTo(mz, mx)
+            self._fleche(path, (mz, mx), (mz - ce.z, mx - ce.x))
+            pos = (mz + dz, mx + dx)
+        else:  # angle
+            if len(co.elements) == 1:
+                mz, mx = self._milieu(co.elements[0])
+            else:
+                l1, l2 = (e.lignes[i] for i in co.elements)
+                commun = {l1.p1, l1.p2} & {l2.p1, l2.p2}
+                if commun:
+                    p = e.points[commun.pop()]
+                    mz, mx = p.z, p.x
+                else:
+                    m1, m2 = self._milieu(l1.id), self._milieu(l2.id)
+                    mz, mx = (m1[0] + m2[0]) / 2, (m1[1] + m2[1]) / 2
+            path.moveTo(mz, mx)
+            path.lineTo(mz + dz, mx + dx)
+            pos = (mz + dz, mx + dx)
+        it = QGraphicsPathItem(path)
+        pen = QPen(couleur, 1)
+        pen.setCosmetic(True)
+        it.setPen(pen)
+        it.setZValue(3)
+        self._enregistrer(it, "cote", co.id)
+        et = Etiquette(texte, couleur, c["fond"], gras=True)
+        et.setPos(*pos)
+        self._enregistrer(et, "cote", co.id)
+
+    # -- aperçu pendant le tracé ---------------------------------------------------------
+
+    def _dessiner_apercu(self, curseur: Optional[Accroche] = None) -> None:
+        for it in self._apercu:
+            self._scene.removeItem(it)
+        self._apercu = []
+        c = self._couleurs()
+        if curseur is None:
+            return
+        pen = QPen(c["survol"], 1, Qt.PenStyle.DashLine)
+        pen.setCosmetic(True)
+        if self.outil == "ligne" and self._debut is not None:
+            it = QGraphicsLineItem(self._debut.z, self._debut.x, curseur.z, curseur.x)
+            it.setPen(pen)
+            it.setZValue(4)
+            self._scene.addItem(it)
+            self._apercu.append(it)
+        elif self.outil == "arc" and self._debut is not None:
+            if self._arc_fin is None:
+                it = QGraphicsLineItem(self._debut.z, self._debut.x, curseur.z, curseur.x)
+                it.setPen(pen)
+                it.setZValue(4)
+                self._scene.addItem(it)
+                self._apercu.append(it)
+            else:
+                arc = self._arc_par_trois_points((self._debut.z, self._debut.x), (self._arc_fin.z, self._arc_fin.x),
+                                                 (curseur.z, curseur.x))
+                if arc is not None:
+                    (cz, cx), horaire = arc
+                    path = QPainterPath()
+                    pts = self._echantillonner_arc((cz, cx), (self._debut.z, self._debut.x),
+                                                   (self._arc_fin.z, self._arc_fin.x), horaire, 48)
+                    path.moveTo(*pts[0])
+                    for z, x in pts[1:]:
+                        path.lineTo(z, x)
+                    it = QGraphicsPathItem(path)
+                    it.setPen(pen)
+                    it.setZValue(4)
+                    self._scene.addItem(it)
+                    self._apercu.append(it)
+        # marqueur d'accrochage
+        if self.outil in ("ligne", "arc"):
+            taille = 6
+            it = QGraphicsPathItem()
+            path = QPainterPath()
+            if curseur.point is not None:
+                path.addEllipse(-taille, -taille, 2 * taille, 2 * taille)
+            elif curseur.sur_axe:
+                path.moveTo(-taille, 0)
+                path.lineTo(taille, 0)
+                path.moveTo(0, -taille)
+                path.lineTo(0, taille)
+            else:
+                path.addRect(-taille + 1, -taille + 1, 2 * taille - 2, 2 * taille - 2)
+            it.setPath(path)
+            it.setPos(curseur.z, curseur.x)
+            it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+            it.setPen(QPen(c["survol"], 1.5))
+            it.setZValue(30)
+            self._scene.addItem(it)
+            self._apercu.append(it)
+
+    @staticmethod
+    def _echantillonner_arc(centre, debut, fin, horaire: bool, n: int) -> List[Tuple[float, float]]:
+        cz, cx = centre
+        r = math.hypot(debut[0] - cz, debut[1] - cx)
+        a0 = math.atan2(debut[1] - cx, debut[0] - cz)
+        a1 = math.atan2(fin[1] - cx, fin[0] - cz)
+        if horaire:
+            while a1 >= a0:
+                a1 -= 2 * math.pi
+        else:
+            while a1 <= a0:
+                a1 += 2 * math.pi
+        return [(cz + r * math.cos(a0 + (a1 - a0) * i / n), cx + r * math.sin(a0 + (a1 - a0) * i / n))
+                for i in range(n + 1)]
+
+    @staticmethod
+    def _arc_par_trois_points(a, b, m):
+        """Centre et sens d'un arc allant de a à b en passant par m. None si les points sont alignés."""
+        ax, ay = a
+        bx, by = b
+        mx, my = m
+        d = 2 * (ax * (by - my) + bx * (my - ay) + mx * (ay - by))
+        if abs(d) < 1e-9:
+            return None
+        ux = ((ax * ax + ay * ay) * (by - my) + (bx * bx + by * by) * (my - ay) + (mx * mx + my * my) * (ay - by)) / d
+        uy = ((ax * ax + ay * ay) * (mx - bx) + (bx * bx + by * by) * (ax - mx) + (mx * mx + my * my) * (bx - ax)) / d
+        aa = math.atan2(ay - uy, ax - ux)
+        ab = math.atan2(by - uy, bx - ux)
+        am = math.atan2(my - uy, mx - ux)
+        balayage_b = (ab - aa) % (2 * math.pi)
+        balayage_m = (am - aa) % (2 * math.pi)
+        horaire = balayage_m > balayage_b      # en tournant dans le sens direct, on atteint b avant m
+        return (ux, uy), horaire
+
+    # -- accrochage et sélection ---------------------------------------------------------
+
+    def accrocher(self, pos) -> Accroche:
+        """Position du curseur accrochée à un point existant ou à l'axe, sinon libre."""
+        z, x = self.position_scene(pos)
+        tol = self.px_en_mm(TOLERANCE_PX)
+        meilleur, dist = None, tol
+        for p in self.esquisse.points.values():
+            d = math.hypot(p.z - z, p.x - x)
+            if d <= dist:
+                meilleur, dist = p, d
+        if meilleur is not None:
+            return Accroche(meilleur.z, meilleur.x, meilleur.id, abs(meilleur.x) < 1e-9)
+        if abs(x) <= tol:
+            return Accroche(z, 0.0, None, True)
+        return Accroche(z, x, None, False)
+
+    def element_sous(self, pos) -> Optional[Tuple[str, int]]:
+        """(genre, identifiant) de l'élément sous le curseur, les points et textes d'abord."""
+        t = TOLERANCE_PX
+        # Les textes (symboles de relations, valeurs de cotes) ne répondent qu'à un clic exactement dessus,
+        # sinon ils masqueraient la ligne qu'ils annotent.
+        for it in self.items(pos):
+            if isinstance(it, Etiquette) and it.data(ROLE_GENRE):
+                return it.data(ROLE_GENRE), it.data(ROLE_ID)
+        rect = QRect(pos.x() - t, pos.y() - t, 2 * t + 1, 2 * t + 1)
+        candidats = [(it.data(ROLE_GENRE), it.data(ROLE_ID)) for it in self.items(rect)
+                     if it.data(ROLE_GENRE) and not isinstance(it, Etiquette)]
+        if not candidats:
+            return None
+        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4}
+        candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
+        return candidats[0]
+
+    def selectionner(self, ident: Optional[int], ajouter: bool = False) -> None:
+        if ident is None:
+            if not ajouter:
+                self.selection = []
+        elif ajouter:
+            if ident in self.selection:
+                self.selection.remove(ident)
+            else:
+                self.selection.append(ident)
+        else:
+            self.selection = [ident]
+        self.reconstruire()
+        self.selection_changee.emit()
+
+    def deselectionner(self) -> None:
+        if self.selection:
+            self.selection = []
+            self.reconstruire()
+            self.selection_changee.emit()
+
+    # -- outils --------------------------------------------------------------------------
+
+    def definir_outil(self, outil: str) -> None:
+        if outil not in self.OUTILS:
+            return
+        self.outil = outil
+        self.annuler_outil()
+        self._aide()
+
+    def annuler_outil(self) -> None:
+        """Interrompt le tracé en cours (ligne enchaînée, arc) sans changer d'outil."""
+        self._debut = None
+        self._arc_fin = None
+        self._dessiner_apercu(None)
+        self._aide()
+
+    def _aide(self) -> None:
+        if self.outil == "ligne":
+            self.message.emit("Ligne : cliquez le départ, puis chaque sommet. Clic droit ou Échap pour finir."
+                              if self._debut is None else
+                              "Ligne : cliquez le sommet suivant. Clic droit ou Échap pour finir la chaîne.")
+        elif self.outil == "arc":
+            if self._debut is None:
+                self.message.emit("Arc : cliquez le point de départ.")
+            elif self._arc_fin is None:
+                self.message.emit("Arc : cliquez le point d'arrivée.")
+            else:
+                self.message.emit("Arc : cliquez un point par où passe l'arc.")
+        else:
+            self.message.emit("Sélection : cliquez un élément (Ctrl pour en ajouter), tirez un point, "
+                              "double-cliquez une cote pour la modifier.")
+
+    # -- souris ------------------------------------------------------------------------
+
+    def mousePressEvent(self, event) -> None:
+        pos = event.position().toPoint()
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._pan_dernier = pos
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return
+        if event.button() == Qt.MouseButton.RightButton:
+            if self.outil in ("ligne", "arc") and self._debut is not None:
+                self.annuler_outil()
+            else:
+                self.deselectionner()
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self.outil == "selection":
+            self._presser_selection(pos, bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier))
+        elif self.outil == "ligne":
+            self._presser_ligne(pos)
+        elif self.outil == "arc":
+            self._presser_arc(pos)
+
+    def _presser_selection(self, pos, ajouter: bool) -> None:
+        el = self.element_sous(pos)
+        if el is None:
+            self.selectionner(None, ajouter)
+            return
+        genre, ident = el
+        if genre == "point" and not ajouter:
+            self.selectionner(ident)
+            self._glisse_point = ident
+            self._glisse_actif = False
+            return
+        if genre == "cote" and not ajouter:
+            self.selectionner(ident)
+            self._glisse_cote = ident
+            self._glisse_dernier = self.mapToScene(pos)
+            return
+        self.selectionner(ident, ajouter)
+
+    def _presser_ligne(self, pos) -> None:
+        acc = self.accrocher(pos)
+        if self._debut is None:
+            self._debut = acc
+            self._aide()
+            return
+        if acc.point is not None and acc.point == self._debut.point:
+            return
+        auto = None
+        if acc.point is None:
+            dz, dx = acc.z - self._debut.z, acc.x - self._debut.x
+            if math.hypot(dz, dx) < 1e-9:
+                return
+            angle = math.degrees(math.atan2(abs(dx), abs(dz)))
+            if angle < ANGLE_AUTO_DEG:
+                acc = Accroche(acc.z, self._debut.x, None, acc.sur_axe or abs(self._debut.x) < 1e-9)
+                auto = TypeRelation.HORIZONTAL
+            elif angle > 90.0 - ANGLE_AUTO_DEG:
+                acc = Accroche(self._debut.z, acc.x, None, acc.sur_axe)
+                auto = TypeRelation.VERTICAL
+        else:
+            dz, dx = acc.z - self._debut.z, acc.x - self._debut.x
+            angle = math.degrees(math.atan2(abs(dx), abs(dz)))
+            if angle < ANGLE_AUTO_DEG:
+                auto = TypeRelation.HORIZONTAL
+            elif angle > 90.0 - ANGLE_AUTO_DEG:
+                auto = TypeRelation.VERTICAL
+        fin = self.controleur.ajouter_ligne(self._debut, acc, auto)
+        if fin is None:
+            return
+        self._debut = Accroche(acc.z, acc.x, fin, acc.sur_axe)
+        p = self.esquisse.points.get(fin)
+        if p is not None:
+            self._debut = Accroche(p.z, p.x, fin, abs(p.x) < 1e-9)
+        self._aide()
+
+    def _presser_arc(self, pos) -> None:
+        acc = self.accrocher(pos)
+        if self._debut is None:
+            self._debut = acc
+        elif self._arc_fin is None:
+            if acc.point is not None and acc.point == self._debut.point:
+                return
+            self._arc_fin = acc
+        else:
+            arc = self._arc_par_trois_points((self._debut.z, self._debut.x), (self._arc_fin.z, self._arc_fin.x),
+                                             (acc.z, acc.x))
+            if arc is None:
+                self.message.emit("Arc : les trois points sont alignés, choisissez un autre point de passage.")
+                return
+            (cz, cx), horaire = arc
+            self.controleur.ajouter_arc(self._debut, self._arc_fin, (cz, cx), horaire)
+            self._debut = None
+            self._arc_fin = None
+            self._dessiner_apercu(None)
+        self._aide()
+
+    def mouseMoveEvent(self, event) -> None:
+        pos = event.position().toPoint()
+        z, x = self.position_scene(pos)
+        self.coordonnees.emit(z, x)
+        if self._pan_dernier is not None:
+            delta = pos - self._pan_dernier
+            self._pan_dernier = pos
+            self.translate(delta.x() / self.echelle(), -delta.y() / self.echelle())
+            return
+        if self._glisse_point is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            if not self._glisse_actif:
+                self._glisse_actif = True
+                self.controleur.debut_glissement()
+            acc = self.accrocher(pos)
+            cible_z, cible_x = acc.z, acc.x
+            if acc.point == self._glisse_point:
+                cible_z, cible_x = z, x
+            self.controleur.glisser(self._glisse_point, cible_z, cible_x)
+            return
+        if self._glisse_cote is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            p = self.mapToScene(pos)
+            d = p - self._glisse_dernier
+            self._glisse_dernier = p
+            self.controleur.deplacer_etiquette(self._glisse_cote, d.x(), d.y())
+            return
+        if self.outil in ("ligne", "arc"):
+            self._dessiner_apercu(self.accrocher(pos))
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._pan_dernier = None
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._glisse_point is not None:
+                if self._glisse_actif:
+                    self.controleur.fin_glissement()
+                self._glisse_point = None
+                self._glisse_actif = False
+            if self._glisse_cote is not None:
+                self._glisse_cote = None
+                self._glisse_dernier = None
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() != Qt.MouseButton.LeftButton or self.outil != "selection":
+            return
+        el = self.element_sous(event.position().toPoint())
+        if el is not None and el[0] == "cote":
+            self._glisse_cote = None
+            self.controleur.editer_cote(el[1])
+
+    def wheelEvent(self, event) -> None:
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        facteur = 1.15 ** (delta / 120.0)
+        self.zoomer(facteur, event.position().toPoint())
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            if self._debut is not None:
+                self.annuler_outil()
+            else:
+                self.deselectionner()
+            return
+        super().keyPressEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._dessiner_apercu(None)
+        super().leaveEvent(event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.reconstruire()
