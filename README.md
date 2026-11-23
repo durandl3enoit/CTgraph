@@ -50,6 +50,9 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   Une relation ou une cote en conflit est affichée en rouge, une relation redondante en jaune.
 * **État** : « sous-contraint » avec le nombre de degrés de liberté, « entièrement contraint » (profil en vert),
   ou « sur-contraint » avec les relations en cause. Un contour fermé se remplit d'une teinte discrète.
+* **Vue 3D** (en haut à droite, touche `3` pour la masquer) : la pièce obtenue par révolution des contours fermés,
+  mise à jour en continu. Bouton gauche : orbite. Molette : zoom. Bouton du milieu : déplacement. Double-clic ou
+  `Ctrl+3` : recadrer. Le coin inférieur gauche la redimensionne.
 * **Fichiers** : les esquisses sont enregistrées en `.ctg` (JSON lisible). `Ctrl+Z` / `Ctrl+Y` annulent et rétablissent.
 
 ## Lancer

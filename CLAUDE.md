@@ -57,6 +57,10 @@ vérification par relecture du G-code généré, réception des programmes depui
   automatiquement en cote pilotée (`Cote.pilotee`, paramètre libre et `driving=False` pour PlaneGCS), grisée et
   entre parenthèses ; le solveur y écrit la mesure après chaque résolution. Elle redevient pilotante à la demande
   si cela ne sur-contraint pas.
+- **Vue 3D** (`ctgraph/ui/vue_3d.py`) : QOpenGLWidget incrusté en haut à droite de l'esquisse, nuanceurs GLSL 1.20,
+  sans PyOpenGL. Révolution des contours fermés à 64 facettes, normales par facette, éclairage deux faces.
+  Repère : Z pièce = X monde. `CTGRAPH_SANS_3D=1` la désactive (tests hors écran). Le mandrin, le brut et
+  l'outil viendront s'y ajouter.
 - **Contours fermés remplis** d'une teinte discrète (`VueEsquisse.contours_fermes`) : chaînes dont chaque sommet
   relie exactement deux éléments, refermées sur elles-mêmes ou dont les deux bouts touchent l'axe (fermeture par
   l'axe de révolution). Les boucles à sommets de degré ≥ 3 attendent un vrai parcours de faces.

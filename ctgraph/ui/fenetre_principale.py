@@ -74,6 +74,22 @@ class FenetrePrincipale(QMainWindow):
         if self.vue.mode_elagage not in elagage.MODES:
             self.vue.mode_elagage = "croisement"
 
+        # vue 3D incrustée en haut à droite (CTGRAPH_SANS_3D=1 la désactive : tests hors écran sans OpenGL)
+        self.vue3d = None
+        if not os.environ.get("CTGRAPH_SANS_3D"):
+            from .vue_3d import TAILLE_DEFAUT, Incrustation3D
+            self.vue3d = Incrustation3D(self.vue)
+            taille = str(self.reglages.get("vue3d.taille", "") or "")
+            try:
+                w, h = (int(v) for v in taille.split(","))
+                self.vue3d.resize(max(w, 100), max(h, 80))
+            except ValueError:
+                self.vue3d.resize(TAILLE_DEFAUT)
+            self.vue3d.taille_changee.connect(lambda s: self.reglages.set("vue3d.taille", f"{s.width()},{s.height()}"))
+            self.vue3d.setVisible(self.reglages.get_bool("vue3d.visible", True))
+            self.vue.vue3d = self.vue3d
+            self.vue.placer_superposition()
+
         colonne = QWidget()
         colonne.setFixedWidth(240)
         vbox = QVBoxLayout(colonne)
@@ -222,6 +238,14 @@ class FenetrePrincipale(QMainWindow):
         self._action(m_aff, "Zoom &avant", QKeySequence.StandardKey.ZoomIn, lambda: self.vue.zoomer(1.25))
         self._action(m_aff, "Zoom a&rrière", QKeySequence.StandardKey.ZoomOut, lambda: self.vue.zoomer(0.8))
         self.act_grille = self._action(m_aff, "&Grille", QKeySequence("G"), self.case_grille.toggle)
+        self.act_vue3d = QAction("Vue &3D", self, checkable=True)
+        self.act_vue3d.setShortcut(QKeySequence("3"))
+        self.act_vue3d.setChecked(self.vue3d is not None and self.vue3d.isVisibleTo(self.vue))
+        self.act_vue3d.setEnabled(self.vue3d is not None)
+        self.act_vue3d.toggled.connect(self._basculer_vue3d)
+        m_aff.addAction(self.act_vue3d)
+        self._action(m_aff, "Recadrer la vue 3&D", QKeySequence("Ctrl+3"),
+                     lambda: self.vue3d.recadrer() if self.vue3d is not None else None)
 
         m_aide = barre.addMenu("&Aide")
         self._action(m_aide, "À &propos de CTgraph", None, self.a_propos)
@@ -344,6 +368,14 @@ class FenetrePrincipale(QMainWindow):
         self.vue.grille_visible = actif
         self.reglages.set("grille", actif)
         self.vue.viewport().update()
+
+    def _basculer_vue3d(self, actif: bool) -> None:
+        if self.vue3d is None:
+            return
+        self.vue3d.setVisible(actif)
+        if actif:
+            self.vue.placer_superposition()
+        self.reglages.set("vue3d.visible", actif)
 
     def _basculer_aimant(self, cle: str, actif: bool) -> None:
         self.vue.aimants[cle] = actif

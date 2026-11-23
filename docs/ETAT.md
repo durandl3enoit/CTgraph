@@ -16,6 +16,9 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
   de l'élément cliqué et de l'endroit où la cote est posée, avec aperçu sous le curseur. Une cote qui sur-contraint
   devient automatiquement pilotée (grisée, entre parenthèses, mesurée par le solveur), réversible par le menu.
   Les contours fermés sont remplis d'une teinte discrète.
+- **Vue 3D** incrustée en haut à droite de l'esquisse (`ctgraph/ui/vue_3d.py`) : révolution des contours fermés,
+  orbite, zoom, déplacement, redimensionnable, masquable (touche 3). Première brique du point 3 du périmètre ;
+  mandrin, brut et outil sur tourelle restent à ajouter.
 - **Module d'esquisse paramétrique, version 0.1, fonctionnel** :
   - `ctgraph/esquisse/modele.py` : points, lignes, arcs, dix relations, cinq cotes, validation des genres,
     suppression en cascade, mesures, JSON (`.ctg`).

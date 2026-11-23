@@ -26,6 +26,7 @@ SHOTS = os.environ.get("CTGRAPH_SHOTS")
 def app():
     tmp = tempfile.mkdtemp(prefix="ctgraph_gui_")
     os.environ["CTGRAPH_SETTINGS"] = os.path.join(tmp, "prefs.ini")
+    os.environ["CTGRAPH_SANS_3D"] = "1"          # pas d'OpenGL sur la plateforme hors écran
     a = QApplication.instance() or QApplication(sys.argv)
     yield a
 

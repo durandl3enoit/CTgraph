@@ -145,6 +145,7 @@ class VueEsquisse(QGraphicsView):
         self.grille_visible = True
         self.aimants: Dict[str, bool] = dict(AIMANTS_DEFAUT)
         self.mode_elagage = "croisement"
+        self.vue3d = None                 # incrustation 3D en haut à droite, posée par la fenêtre
 
         self._scene = QGraphicsScene(self)
         self._scene.setSceneRect(-1e5, -1e5, 2e5, 2e5)
@@ -315,14 +316,17 @@ class VueEsquisse(QGraphicsView):
         sel = set(self.selection)
         couleur_geom = c["geometrie"]
 
-        # contours fermés : un remplissage discret valide que le profil se referme
-        for chaine in self.contours_fermes():
+        # contours fermés : un remplissage discret valide que le profil se referme, et la vue 3D les révolutionne
+        contours = self.contours_fermes()
+        for chaine in contours:
             it = QGraphicsPathItem(self._chemin_contour(chaine))
             it.setPen(QPen(Qt.PenStyle.NoPen))
             it.setBrush(QBrush(QColor(couleur_geom.red(), couleur_geom.green(), couleur_geom.blue(), 30)))
             it.setZValue(1)
             self._scene.addItem(it)
             self._items.append(it)
+        if self.vue3d is not None:
+            self.vue3d.definir_contours([self._polyligne_contour(ch) for ch in contours])
 
         for li in e.lignes.values():
             a, b = e.points[li.p1], e.points[li.p2]
@@ -478,10 +482,10 @@ class VueEsquisse(QGraphicsView):
                 contours.append(chaine)
         return contours
 
-    def _chemin_contour(self, chaine: List[Tuple[int, bool]]) -> QPainterPath:
+    def _polyligne_contour(self, chaine: List[Tuple[int, bool]]) -> List[Tuple[float, float]]:
+        """Points (z, x) d'un contour fermé, dans l'ordre de parcours, le premier répété à la fin."""
         e = self.esquisse
-        path = QPainterPath()
-        premier = True
+        poly: List[Tuple[float, float]] = []
         for ident, inverse in chaine:
             if e.genre(ident) == "ligne":
                 a, b = (e.points[i] for i in e.extremites(ident))
@@ -490,13 +494,32 @@ class VueEsquisse(QGraphicsView):
                 pts = self._points_arc(ident, 32)
             if inverse:
                 pts = pts[::-1]
-            if premier:
-                path.moveTo(*pts[0])
-                premier = False
-            for q in pts[1:]:
+            poly.extend(pts if not poly else pts[1:])
+        if poly and poly[0] != poly[-1]:
+            poly.append(poly[0])
+        return poly
+
+    def _chemin_contour(self, chaine: List[Tuple[int, bool]]) -> QPainterPath:
+        path = QPainterPath()
+        poly = self._polyligne_contour(chaine)
+        if poly:
+            path.moveTo(*poly[0])
+            for q in poly[1:]:
                 path.lineTo(*q)
-        path.closeSubpath()
+            path.closeSubpath()
         return path
+
+    def placer_superposition(self) -> None:
+        """Garde la vue 3D ancrée en haut à droite de l'esquisse."""
+        if self.vue3d is None:
+            return
+        marge = 10
+        w = min(self.vue3d.width(), max(self.width() - 2 * marge, 1))
+        h = min(self.vue3d.height(), max(self.height() - 2 * marge, 1))
+        if (w, h) != (self.vue3d.width(), self.vue3d.height()):
+            self.vue3d.resize(w, h)
+        self.vue3d.move(self.width() - w - marge, marge)
+        self.vue3d.raise_()
 
     def _milieu(self, ident: int) -> Tuple[float, float]:
         e = self.esquisse
@@ -1368,4 +1391,5 @@ class VueEsquisse(QGraphicsView):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self.placer_superposition()
         self.reconstruire()
