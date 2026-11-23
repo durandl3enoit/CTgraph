@@ -10,6 +10,9 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
   quatre modes (`ctgraph/esquisse/elagage.py`, sur une géométrie exacte `geometrie.py`) ; aimantation débrayable
   (horizontal/vertical, 45°, objets proches avec « point sur ligne/arc » et alignements, axe Z) ; sélection cumulative
   par clics et vidée par un clic dans le vide ; menu contextuel du clic droit avec relations et cotes possibles.
+  Puis : symboles « -z- » et x barré pour horizontal et vertical, icônes dessinées sur les boutons d'outils,
+  clic droit maintenu + molette pour changer d'outil (bulle sous le curseur), clic semi-long + glisser pour élaguer
+  depuis n'importe quel outil.
 - **Module d'esquisse paramétrique, version 0.1, fonctionnel** :
   - `ctgraph/esquisse/modele.py` : points, lignes, arcs, dix relations, cinq cotes, validation des genres,
     suppression en cascade, mesures, JSON (`.ctg`).
@@ -20,7 +23,7 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
     relations automatiques, outils Ligne et Arc 3 points, sélection, glissement, cotes dessinées avec flèches,
     étiquettes déplaçables, édition par double-clic, symboles des relations, couleurs d'état (vert contraint,
     rouge conflit, jaune redondant), annulation et rétablissement, fichiers récents, préférences.
-  - 49 tests (`tests/`) : modèle, géométrie, élagage, solveur, interface hors écran. Tous passent.
+  - 52 tests (`tests/`) : modèle, géométrie, élagage, solveur, interface hors écran. Tous passent.
   - `build.ps1` produit `dist\CTgraph\CTgraph.exe` (120 Mo avec Qt), vérifié au lancement.
   - `tools/make_sample.py` génère `exemples/arbre-epaule.ctg` (arbre épaulé, chanfrein, congé, entièrement contraint),
     `tools/capture.py` fait une capture en vraie fenêtre.

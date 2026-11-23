@@ -11,6 +11,12 @@ vue 3D, séquences d'usinage, post-processeur, liaison RS232) viendront ensuite.
 Une pièce est un **demi-profil** dans le plan (Z, X) : Z le long de l'axe de la pièce, X le rayon.
 L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les cotes « Ø ».
 
+* **Changer d'outil** : les boutons à icônes de la colonne, les touches `S`, `L`, `A`, `E`, ou **clic droit
+  maintenu + molette** sur le dessin : le nom de l'outil s'affiche sous le curseur.
+* **Clic semi-long puis glisser** (environ un tiers de seconde sans bouger) : quel que soit l'outil, le glisser
+  qui suit est un trait d'élagage ; l'outil d'avant revient au relâchement.
+* **Symboles des relations** : « -z- » pour horizontal (le long de l'axe Z), un x coupant une barre verticale
+  pour vertical, puis ∥, ⊥, T, =, ●, axe, F.
 * **Colonne de gauche** : les outils de tracé (Sélection, Ligne, Arc 3 points, Élaguer et son mode), les relations
   (horizontal, vertical, coïncident, point sur ligne ou sur arc, parallèle, perpendiculaire, tangent, égal, sur l'axe,
   fixe), les cotes (longueur Z, diamètre, rayon, angle, distance), l'état du solveur avec la liste des relations

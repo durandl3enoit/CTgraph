@@ -273,6 +273,72 @@ def test_elaguer_par_un_trait(fenetre):
     assert verticale.id in win.esquisse.lignes
 
 
+def test_clic_semi_long_puis_glisser_elague(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
+    win.choisir_outil("ligne")
+    clic(vue, -20, -5)
+    clic(vue, -20, 30)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    win.choisir_outil("selection")
+    verticale = next(li for li in e.lignes.values() if max(e.points[li.p1].x, e.points[li.p2].x) > 25)
+    dessus = max(p.x for li in e.lignes.values() if li.id != verticale.id for p in (e.points[li.p1], e.points[li.p2]))
+    win.combo_elagage.setCurrentIndex(0)
+    depart, arrivee = pos(vue, -25, 25), pos(vue, -15, 25)
+    QTest.mousePress(vue.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, depart)
+    QTest.qWait(500)                                   # clic semi-long : l'outil Élaguer se sélectionne
+    assert vue.outil == "elaguer" and win.actions_outils["elaguer"].isChecked()
+    for i in range(1, 6):
+        QTest.mouseMove(vue.viewport(), depart + (arrivee - depart) * i / 5)
+        QTest.qWait(5)
+    QTest.mouseRelease(vue.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, arrivee)
+    QTest.qWait(10)
+    haut = max(e.points[verticale.p1].x, e.points[verticale.p2].x)
+    assert haut == pytest.approx(dessus, abs=1e-6)
+    assert vue.outil == "selection"                    # l'outil d'avant revient après le geste
+    # un clic bref dans le vide reste une désélection, sans élagage
+    n = len(e.lignes)
+    clic(vue, 30, 30)
+    assert len(e.lignes) == n and vue.outil == "selection"
+
+
+def test_clic_droit_molette_change_d_outil(fenetre):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QWheelEvent
+    win, vue = fenetre, fenetre.vue
+    p = pos(vue, -20, 10)
+    QTest.mousePress(vue.viewport(), Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, p)
+
+    def molette(delta):
+        ev = QWheelEvent(QPointF(p), QPointF(vue.viewport().mapToGlobal(p)), QPoint(0, 0), QPoint(0, delta),
+                         Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase,
+                         False)
+        vue.wheelEvent(ev)
+
+    echelle = vue.echelle()
+    molette(-120)
+    assert vue.outil == "ligne" and win.actions_outils["ligne"].isChecked()
+    molette(-120)
+    assert vue.outil == "arc"
+    molette(120)
+    assert vue.outil == "ligne"
+    assert vue.echelle() == pytest.approx(echelle)     # pas de zoom pendant le cycle
+    assert vue._bulle is not None and vue._bulle.isVisible() and vue._bulle.text() == "Ligne"
+    assert vue._droit_molette                          # le relâchement n'ouvrira pas le menu
+    win.choisir_outil("selection")
+
+
+def test_symboles_horizontal_vertical(fenetre):
+    from ctgraph.ui.vue_esquisse import Etiquette
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    symboles = {it.symbole for it in vue._items if isinstance(it, Etiquette)}
+    assert {"horizontal", "vertical"} <= symboles
+    textes = {it.texte for it in vue._items if isinstance(it, Etiquette) and it.symbole}
+    assert textes == {"z", "x"}
+
+
 def test_arc_trois_points(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("arc")

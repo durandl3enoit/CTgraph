@@ -8,8 +8,8 @@ from __future__ import annotations
 import os
 from typing import Callable, List, Optional, Tuple
 
-from PySide6.QtCore import QByteArray, Qt
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
+from PySide6.QtCore import QByteArray, QSize, Qt
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence, QPalette
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
                                QLabel, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
                                QScrollArea, QSizePolicy, QToolButton, QVBoxLayout, QWidget)
@@ -19,6 +19,7 @@ from ..build_info import BUILD_TIME
 from ..esquisse import elagage
 from ..esquisse.modele import (LIBELLES_COTE, LIBELLES_RELATION, ErreurEsquisse, Esquisse, TypeCote, TypeRelation)
 from ..esquisse.solveur import AdaptateurSolveur, Resultat
+from ..icons import icone_outil
 from ..log import get as get_log
 from ..settings import Settings
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
@@ -85,8 +86,11 @@ class FenetrePrincipale(QMainWindow):
         grille = QGridLayout(g_outils)
         self.groupe_outils = QActionGroup(self)
         self.actions_outils = {}
+        pal = self.palette()
+        encre = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.ButtonText)
+        fond_icone = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Button)
         for i, (cle, libelle, touche) in enumerate(OUTILS):
-            act = QAction(libelle, self, checkable=True)
+            act = QAction(icone_outil(cle, encre, fond_icone), libelle, self, checkable=True)
             act.setShortcut(QKeySequence(touche))
             act.setData(cle)
             act.triggered.connect(lambda _=False, c=cle: self.choisir_outil(c))
@@ -94,9 +98,11 @@ class FenetrePrincipale(QMainWindow):
             self.actions_outils[cle] = act
             bouton = QToolButton()
             bouton.setDefaultAction(act)
-            bouton.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+            bouton.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            bouton.setIconSize(QSize(30, 30))
             bouton.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            bouton.setMinimumHeight(34)
+            bouton.setMinimumHeight(56)
+            bouton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             grille.addWidget(bouton, i // 2, i % 2)
         self.combo_elagage = QComboBox()
         for mode in elagage.MODES:
@@ -356,6 +362,8 @@ class FenetrePrincipale(QMainWindow):
         self.reglages.set("modeElagage", mode)
 
     def choisir_outil(self, outil: str) -> None:
+        if outil not in self.actions_outils:
+            return
         self.vue.definir_outil(outil)
         self.actions_outils[outil].setChecked(True)
 

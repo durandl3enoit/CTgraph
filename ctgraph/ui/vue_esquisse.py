@@ -14,10 +14,11 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QPointF, QRect, QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPolygonF, QTransform
-from PySide6.QtWidgets import (QGraphicsEllipseItem, QGraphicsItem, QGraphicsLineItem, QGraphicsPathItem,
-                               QGraphicsScene, QGraphicsView, QStyleOptionGraphicsItem, QWidget)
+from PySide6.QtWidgets import (QApplication, QGraphicsEllipseItem, QGraphicsItem, QGraphicsLineItem,
+                               QGraphicsPathItem, QGraphicsScene, QGraphicsView, QLabel, QStyleOptionGraphicsItem,
+                               QWidget)
 
 from ..esquisse import geometrie as geo
 from ..esquisse.elagage import courbe as courbe_de
@@ -26,10 +27,15 @@ from ..esquisse.modele import Cote, Esquisse, Relation, TypeCote, TypeRelation
 ROLE_GENRE = 0
 ROLE_ID = 1
 
+# Symboles dessinés plutôt qu'écrits : horizontal = « -z- », vertical = « x » coupant une barre verticale.
+SYMBOLES: Dict[TypeRelation, str] = {
+    TypeRelation.HORIZONTAL: "horizontal",
+    TypeRelation.VERTICAL: "vertical",
+}
 GLYPHES: Dict[TypeRelation, str] = {
     TypeRelation.COINCIDENT: "●",
-    TypeRelation.HORIZONTAL: "H",
-    TypeRelation.VERTICAL: "V",
+    TypeRelation.HORIZONTAL: "z",
+    TypeRelation.VERTICAL: "x",
     TypeRelation.PARALLELE: "∥",
     TypeRelation.PERPENDICULAIRE: "⊥",
     TypeRelation.TANGENT: "T",
@@ -44,6 +50,10 @@ TOLERANCE_PX = 9          # rayon d'accrochage et de sélection, en pixels
 ANGLE_AUTO_DEG = 4.0      # en deçà, un trait reçoit la relation horizontal ou vertical, ou s'aligne à 45°
 AIMANTS_DEFAUT = {"ortho": True, "diag": True, "objets": True, "axe": True}
 LIBELLES_AIMANTS = {"ortho": "Horizontal / vertical", "diag": "45°", "objets": "Objets proches", "axe": "Axe Z"}
+OUTILS_RAPIDES = ("selection", "ligne", "arc", "elaguer")      # clic droit maintenu + molette
+LIBELLES_OUTILS = {"selection": "Sélection", "ligne": "Ligne", "arc": "Arc 3 points", "elaguer": "Élaguer"}
+DELAI_GESTE_MS = 350      # clic semi-long : au-delà, glisser élague au lieu de sélectionner ou de tracer
+SEUIL_GESTE_PX = 4        # bouger plus que cela avant le délai annule le geste
 
 
 @dataclass
@@ -59,13 +69,19 @@ class Accroche:
 
 
 class Etiquette(QGraphicsItem):
-    """Texte à taille fixe en pixels avec un fond : symboles de relations et valeurs de cotes."""
+    """Texte à taille fixe en pixels avec un fond : symboles de relations et valeurs de cotes.
 
-    def __init__(self, texte: str, couleur: QColor, fond: QColor, gras: bool = False, parent=None):
+    `symbole` = "horizontal" dessine « -z- » (un trait de part et d'autre du z),
+    "vertical" dessine un x coupant une barre verticale.
+    """
+
+    def __init__(self, texte: str, couleur: QColor, fond: QColor, gras: bool = False, symbole: Optional[str] = None,
+                 parent=None):
         super().__init__(parent)
         self.texte = texte
         self.couleur = couleur
         self.fond = fond
+        self.symbole = symbole
         self.police = QFont()
         self.police.setPointSizeF(9.0)
         self.police.setBold(gras)
@@ -74,6 +90,10 @@ class Etiquette(QGraphicsItem):
         fm = QFontMetricsF(self.police)
         w = fm.horizontalAdvance(texte) + 8
         h = fm.height() + 4
+        if symbole == "horizontal":
+            w += 16
+        elif symbole == "vertical":
+            h += 12
         self._rect = QRectF(-w / 2, -h / 2, w, h)
 
     def boundingRect(self) -> QRectF:
@@ -85,7 +105,19 @@ class Etiquette(QGraphicsItem):
         painter.setBrush(QBrush(self.fond))
         painter.drawRoundedRect(self._rect, 3, 3)
         painter.setFont(self.police)
+        fm = QFontMetricsF(self.police)
         painter.drawText(self._rect, Qt.AlignmentFlag.AlignCenter, self.texte)
+        trait = QPen(self.couleur, 1.6)
+        trait.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(trait)
+        if self.symbole == "horizontal":
+            demi = fm.horizontalAdvance(self.texte) / 2 + 2
+            painter.drawLine(QPointF(self._rect.left() + 3, 0), QPointF(-demi, 0))
+            painter.drawLine(QPointF(demi, 0), QPointF(self._rect.right() - 3, 0))
+        elif self.symbole == "vertical":
+            demi = fm.capHeight() / 2 + 2
+            painter.drawLine(QPointF(0, self._rect.top() + 3), QPointF(0, -demi))
+            painter.drawLine(QPointF(0, demi), QPointF(0, self._rect.bottom() - 3))
 
 
 class VueEsquisse(QGraphicsView):
@@ -133,6 +165,21 @@ class VueEsquisse(QGraphicsView):
         self._glisse_actif = False
         self._pan_dernier = None
         self._items: List[QGraphicsItem] = []
+
+        # clic semi-long + glisser : élagage, quel que soit l'outil
+        self._press_pos: Optional[QPoint] = None
+        self._geste = False
+        self._outil_avant: Optional[str] = None
+        self._timer_geste = QTimer(self)
+        self._timer_geste.setSingleShot(True)
+        self._timer_geste.timeout.connect(self._declencher_geste)
+
+        # clic droit maintenu + molette : changement d'outil, avec le nom affiché sous le curseur
+        self._droit_molette = False
+        self._bulle: Optional[QLabel] = None
+        self._timer_bulle = QTimer(self)
+        self._timer_bulle.setSingleShot(True)
+        self._timer_bulle.timeout.connect(self._cacher_bulle)
 
         self.reconstruire()
 
@@ -303,7 +350,7 @@ class VueEsquisse(QGraphicsView):
             for ident, dz, dx in self._ancres_relation(r):
                 n = occupation.get(ident, 0)
                 occupation[ident] = n + 1
-                et = Etiquette(GLYPHES[r.type], couleur, c["fond"], gras=r.id in sel)
+                et = Etiquette(GLYPHES[r.type], couleur, c["fond"], gras=r.id in sel, symbole=SYMBOLES.get(r.type))
                 et.setPos(dz, dx)
                 et.moveBy(self.px_en_mm(22) * (n % 3), self.px_en_mm(16) * (n // 3))
                 self._enregistrer(et, "relation", r.id)
@@ -706,11 +753,67 @@ class VueEsquisse(QGraphicsView):
         self._debut = None
         self._arc_fin = None
         self._trait = []
+        self._timer_geste.stop()
         self._dessiner_apercu(None)
         self._aide()
 
     def en_cours(self) -> bool:
         return self._debut is not None or bool(self._trait)
+
+    # -- geste d'élagage et cycle d'outils -------------------------------------------------
+
+    def _declencher_geste(self) -> None:
+        """Le bouton gauche est resté enfoncé sans bouger : le glisser qui suit sera un trait d'élagage."""
+        if self._press_pos is None or not (QApplication.mouseButtons() & Qt.MouseButton.LeftButton):
+            return
+        self._geste = True
+        self._outil_avant = self.outil
+        depart = self.position_scene(self._press_pos)
+        if self.outil != "elaguer":
+            self.controleur.choisir_outil("elaguer")
+        self._trait = [depart]
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.message.emit("Élaguer : tirez le trait au travers des objets à couper, puis relâchez.")
+        self._dessiner_apercu(None)
+
+    def _terminer_geste(self) -> None:
+        trait = self._trait
+        self._trait = []
+        self._geste = False
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self._dessiner_apercu(None)
+        if len(trait) >= 2:
+            self.controleur.elaguer(self.croisements_du_trait(trait), self.mode_elagage)
+        if self._outil_avant is not None and self._outil_avant != self.outil:
+            self.controleur.choisir_outil(self._outil_avant)
+        self._outil_avant = None
+
+    def _a_bouge(self, pos) -> bool:
+        return self._press_pos is not None and (pos - self._press_pos).manhattanLength() > SEUIL_GESTE_PX
+
+    def cycler_outil(self, sens: int, pos=None) -> None:
+        """Passe à l'outil suivant (sens > 0) ou précédent dans l'ordre Sélection, Ligne, Arc, Élaguer."""
+        courant = self.outil if self.outil in OUTILS_RAPIDES else "selection"
+        i = (OUTILS_RAPIDES.index(courant) + (1 if sens > 0 else -1)) % len(OUTILS_RAPIDES)
+        nouveau = OUTILS_RAPIDES[i]
+        self.controleur.choisir_outil(nouveau)
+        if pos is not None:
+            self._montrer_bulle(LIBELLES_OUTILS[nouveau], pos)
+
+    def _montrer_bulle(self, texte: str, pos) -> None:
+        if self._bulle is None:
+            self._bulle = QLabel(self.viewport())
+            self._bulle.setStyleSheet("background: rgba(40, 40, 40, 215); color: white; padding: 3px 8px; "
+                                      "border-radius: 4px; font-weight: 600;")
+        self._bulle.setText(texte)
+        self._bulle.adjustSize()
+        self._bulle.move(pos + QPoint(14, 14))
+        self._bulle.show()
+        self._timer_bulle.start(900)
+
+    def _cacher_bulle(self) -> None:
+        if self._bulle is not None:
+            self._bulle.hide()
 
     def _aide(self) -> None:
         if self.outil == "ligne":
@@ -727,8 +830,9 @@ class VueEsquisse(QGraphicsView):
         elif self.outil == "elaguer":
             self.message.emit("Élaguer : tirez un trait au travers des lignes ou des arcs à couper.")
         else:
-            self.message.emit("Sélection : les clics s'ajoutent, un clic dans le vide vide la sélection. "
-                              "Tirez un point pour le déplacer, double-cliquez une cote pour la modifier.")
+            self.message.emit("Sélection : les clics s'ajoutent, clic dans le vide pour tout désélectionner. "
+                              "Tirez un point, double-cliquez une cote. Clic semi-long + glisser : élaguer. "
+                              "Clic droit + molette : outil.")
 
     # -- souris ------------------------------------------------------------------------
 
@@ -739,22 +843,17 @@ class VueEsquisse(QGraphicsView):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         if event.button() == Qt.MouseButton.RightButton:
-            if self.en_cours():
-                self.annuler_outil()
-                return
-            el = self.element_sous(pos)
-            if el is not None and el[1] not in self.selection:
-                self.selectionner(el[1], ajouter=True)
-            self.controleur.menu_contextuel(event.globalPosition().toPoint())
+            self._droit_molette = False        # l'action du clic droit est décidée au relâchement
             return
         if event.button() != Qt.MouseButton.LeftButton:
             return
+        self._press_pos = pos
+        self._geste = False
         if self.outil == "selection":
             self._presser_selection(pos)
-        elif self.outil == "ligne":
-            self._presser_ligne(pos)
-        elif self.outil == "arc":
-            self._presser_arc(pos)
+        elif self.outil in ("ligne", "arc"):
+            if not self.en_cours():
+                self._timer_geste.start(DELAI_GESTE_MS)
         elif self.outil == "elaguer":
             self._trait = [self.position_scene(pos)]
             self._dessiner_apercu(None)
@@ -763,6 +862,7 @@ class VueEsquisse(QGraphicsView):
         el = self.element_sous(pos)
         if el is None:
             self.selectionner(None)
+            self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
         if genre == "point":
@@ -775,6 +875,8 @@ class VueEsquisse(QGraphicsView):
             self._glisse_actif = False
             return
         self.selectionner(ident, ajouter=True)
+        if genre in ("ligne", "arc"):
+            self._timer_geste.start(DELAI_GESTE_MS)
 
     def _presser_ligne(self, pos) -> None:
         if self._debut is None:
@@ -824,6 +926,12 @@ class VueEsquisse(QGraphicsView):
             self.translate(delta.x() / self.echelle(), -delta.y() / self.echelle())
             return
         gauche = bool(event.buttons() & Qt.MouseButton.LeftButton)
+        if self._geste and gauche:
+            self._trait.append((z, x))
+            self._dessiner_apercu(None)
+            return
+        if gauche and self._timer_geste.isActive() and self._a_bouge(pos):
+            self._timer_geste.stop()           # on a bougé trop tôt : ce n'est pas un clic semi-long
         if self._glisse_point is not None and gauche:
             if not self._glisse_actif:
                 self._glisse_actif = True
@@ -850,12 +958,35 @@ class VueEsquisse(QGraphicsView):
             self._dessiner_apercu(self.accrocher(pos, depuis))
 
     def mouseReleaseEvent(self, event) -> None:
+        pos = event.position().toPoint()
         if event.button() == Qt.MouseButton.MiddleButton:
             self._pan_dernier = None
             self.setCursor(Qt.CursorShape.ArrowCursor)
             return
+        if event.button() == Qt.MouseButton.RightButton:
+            if self._droit_molette:
+                self._droit_molette = False     # la molette a servi à changer d'outil : pas de menu
+                return
+            if self.en_cours():
+                self.annuler_outil()
+                return
+            el = self.element_sous(pos)
+            if el is not None and el[1] not in self.selection:
+                self.selectionner(el[1], ajouter=True)
+            self.controleur.menu_contextuel(event.globalPosition().toPoint())
+            return
         if event.button() != Qt.MouseButton.LeftButton:
             return
+        self._timer_geste.stop()
+        if self._geste:
+            self._terminer_geste()
+            self._press_pos = None
+            return
+        if self.outil == "ligne" and not self._a_bouge(pos):
+            self._presser_ligne(pos)
+        elif self.outil == "arc" and not self._a_bouge(pos):
+            self._presser_arc(pos)
+        self._press_pos = None
         if self._glisse_point is not None:
             if self._glisse_actif:
                 self.controleur.fin_glissement()
@@ -897,6 +1028,12 @@ class VueEsquisse(QGraphicsView):
     def wheelEvent(self, event) -> None:
         delta = event.angleDelta().y()
         if delta == 0:
+            return
+        if event.buttons() & Qt.MouseButton.RightButton:
+            # clic droit maintenu + molette : Sélection -> Ligne -> Arc -> Élaguer
+            self._droit_molette = True
+            self.cycler_outil(1 if delta < 0 else -1, event.position().toPoint())
+            event.accept()
             return
         self.zoomer(1.15 ** (delta / 120.0), event.position().toPoint())
 

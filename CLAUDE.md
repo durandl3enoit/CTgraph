@@ -47,6 +47,12 @@ vérification par relecture du G-code généré, réception des programmes depui
   Le clic droit ouvre le menu des relations et cotes possibles pour la sélection ; pendant un tracé, il termine la chaîne.
 - **Aimantation** débrayable par cases (zone Affichage) : horizontal/vertical, 45°, objets proches, axe Z.
   Accrocher sur une ligne ou un arc pose « point sur ligne » ou « point sur arc ».
+- **Changement d'outil** : boutons à icônes dessinées (`ctgraph/icons.py`, couleur du thème), touches S/L/A/E,
+  ou clic droit maintenu + molette avec le nom de l'outil sous le curseur, comme dans DXFgraph.
+- **Geste d'élagage** : clic gauche semi-long (350 ms sans bouger) puis glisser élague quel que soit l'outil ;
+  l'outil d'avant revient au relâchement.
+- **Symboles des relations** : horizontal = « -z- », vertical = x coupant une barre verticale ; dessinés dans
+  `Etiquette`, pas des lettres H et V.
 - **Élaguer** : un trait tiré au travers des objets ; quatre modes qui ne changent que les bornes de la portion retirée
   (croisements avec les autres objets, points d'esquisse sur l'objet, extrémité la plus proche, objet entier).
   Les points de coupe reçoivent « point sur » l'objet croisé ; une ligne scindée garde horizontal/vertical/parallèle/
