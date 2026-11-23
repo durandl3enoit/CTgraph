@@ -29,6 +29,7 @@ class TypeRelation(str, Enum):
     POINT_SUR_LIGNE = "point_sur_ligne"  # (point, ligne)
     POINT_SUR_ARC = "point_sur_arc"      # (point, arc)
     SUR_AXE = "sur_axe"                  # (point) : x = 0
+    ORIGINE_Z = "origine_z"              # (point) : z = 0, la face d'origine de la pièce
     FIXE = "fixe"                        # (point) : z et x figés
 
 
@@ -39,6 +40,7 @@ class TypeCote(str, Enum):
     ANGLE = "angle"            # (ligne) par rapport à l'axe Z, ou (ligne, ligne) ; en degrés
     DISTANCE = "distance"      # (point, point) ou (ligne) : distance vraie
     ECART = "ecart"            # (ligne, ligne) parallèles : distance perpendiculaire (profondeur de gorge…)
+    POSITION_Z = "position_z"  # (point) ou (ligne) : coordonnée z depuis l'origine de la pièce, signée
 
 
 LIBELLES_RELATION: Dict[TypeRelation, str] = {
@@ -52,6 +54,7 @@ LIBELLES_RELATION: Dict[TypeRelation, str] = {
     TypeRelation.POINT_SUR_LIGNE: "Point sur ligne",
     TypeRelation.POINT_SUR_ARC: "Point sur arc",
     TypeRelation.SUR_AXE: "Sur l'axe",
+    TypeRelation.ORIGINE_Z: "Origine Z",
     TypeRelation.FIXE: "Fixe",
 }
 
@@ -62,6 +65,7 @@ LIBELLES_COTE: Dict[TypeCote, str] = {
     TypeCote.ANGLE: "Angle",
     TypeCote.DISTANCE: "Distance",
     TypeCote.ECART: "Écart",
+    TypeCote.POSITION_Z: "Position Z",
 }
 
 # Formes acceptées : suites de genres d'éléments, dans l'ordre donné.
@@ -76,6 +80,7 @@ _FORMES_RELATION: Dict[TypeRelation, List[Tuple[str, ...]]] = {
     TypeRelation.POINT_SUR_LIGNE: [("point", "ligne"), ("ligne", "point")],
     TypeRelation.POINT_SUR_ARC: [("point", "arc"), ("arc", "point")],
     TypeRelation.SUR_AXE: [("point",)],
+    TypeRelation.ORIGINE_Z: [("point",)],
     TypeRelation.FIXE: [("point",)],
 }
 
@@ -86,6 +91,7 @@ _FORMES_COTE: Dict[TypeCote, List[Tuple[str, ...]]] = {
     TypeCote.ANGLE: [("ligne",), ("ligne", "ligne")],
     TypeCote.DISTANCE: [("point", "point"), ("ligne",)],
     TypeCote.ECART: [("ligne", "ligne")],
+    TypeCote.POSITION_Z: [("point",), ("ligne",)],
 }
 
 
@@ -339,6 +345,10 @@ class Esquisse:
         c, d = self.points[a.centre], self.points[a.debut]
         return math.hypot(d.z - c.z, d.x - c.x)
 
+    def point_reference(self, ident: int) -> int:
+        """Le point que vise une cote posée sur un point ou sur une ligne (son premier point)."""
+        return ident if self.genre(ident) == "point" else self.lignes[ident].p1
+
     def ecart(self, l1: int, l2: int) -> float:
         """Distance du premier point de `l1` à la droite portant `l2` (écart entre deux lignes parallèles)."""
         a = self.points[self.lignes[l1].p1]
@@ -375,6 +385,8 @@ class Esquisse:
             return self.rayon(elements[0])
         if type_ == TypeCote.ECART:
             return self.ecart(elements[0], elements[1])
+        if type_ == TypeCote.POSITION_Z:
+            return self.points[self.point_reference(elements[0])].z
         if type_ == TypeCote.ANGLE:
             if len(elements) == 1:
                 return self.angle_ligne(elements[0])
@@ -397,6 +409,8 @@ class Esquisse:
             texte = "R " + v
         elif cote.type == TypeCote.ANGLE:
             texte = v + "°"
+        elif cote.type == TypeCote.POSITION_Z:
+            texte = "Z " + v                     # coordonnée signée, comme sur la commande numérique
         else:
             texte = v
         return f"({texte})" if cote.pilotee else texte   # convention du dessin : une cote mesurée entre parenthèses

@@ -158,6 +158,33 @@ def test_arc_tangent_et_rayon():
     assert e.points[c.id].x == pytest.approx(18.0, abs=1e-6)
 
 
+def test_origine_z_et_position_z_ancrent_le_profil():
+    e, n = arbre_contraint()
+    e.supprimer(next(r.id for r in e.relations.values() if r.type == TypeRelation.FIXE))
+    e.ajouter_relation(TypeRelation.SUR_AXE, (n["p0"].id,))
+    s = AdaptateurSolveur(e)
+    res = s.resoudre()
+    assert res.succes and res.dof == 1            # tout glisse le long de Z
+    e.ajouter_relation(TypeRelation.ORIGINE_Z, (n["p0"].id,))
+    s.construire()
+    res = s.resoudre()
+    assert res.succes and res.dof == 0 and not res.conflits and not res.redondants
+    assert e.points[n["p0"].id].z == pytest.approx(0.0, abs=1e-6)
+    # une position Z sur la face arrière, à la place de la longueur totale
+    e.supprimer(n["l_total"].id)
+    c = e.ajouter_cote(TypeCote.POSITION_Z, (n["fond"].id,), -90.0)
+    s.construire()
+    res = s.resoudre()
+    assert res.succes and res.dof == 0, res
+    assert e.points[n["p4"].id].z == pytest.approx(-90.0, abs=1e-6)
+    assert e.texte_cote(c) == "Z -90"
+    # « fixe » sur un point déjà sur l'axe et à l'origine n'ajoute rien, donc pas de redondance
+    e.ajouter_relation(TypeRelation.FIXE, (n["p0"].id,))
+    s.construire()
+    res = s.resoudre()
+    assert res.succes and not res.redondants and not res.conflits
+
+
 def test_ecart_entre_deux_lignes_paralleles():
     e, n = arbre_contraint()
     AdaptateurSolveur(e).resoudre()

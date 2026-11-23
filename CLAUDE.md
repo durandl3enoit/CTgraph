@@ -60,6 +60,11 @@ vérification par relecture du G-code généré, réception des programmes depui
   Le menu contextuel et les menus ont des icônes (`icone_action` pour supprimer, désélectionner, tout voir, pilotée).
 - **Curseur par outil** (`curseur_outil`) : croix au point chaud et symbole de l'outil en bas à droite ; la sélection
   garde la flèche. L'outil Cote déplace aussi les cotes posées et les édite au double-clic.
+- **Cycle d'outils à la molette** : bande d'icônes (`BulleOutils`) tournée pour garder l'outil actif au centre.
+- **Origine de la pièce** : Z = 0 sur l'axe, la face avant finie par convention ; le mandrin se placera par rapport à
+  elle. Relation `ORIGINE_Z` (z = 0, posée d'office quand le tracé s'accroche à la verticale Z = 0) et cote
+  `POSITION_Z` (coordonnée z signée d'un point ou d'une face, affichée « Z -30 »). « Fixe » ne fige que ce que
+  « sur l'axe » et « origine Z » ne tiennent pas déjà.
 - **Cote sur-contrainte = cote pilotée** : une cote posée qui entre en conflit, est redondante ou n'est pas atteignable passe
   automatiquement en cote pilotée (`Cote.pilotee`, paramètre libre et `driving=False` pour PlaneGCS), grisée et
   entre parenthèses ; le solveur y écrit la mesure après chaque résolution. Elle redevient pilotante à la demande

@@ -167,12 +167,18 @@ class AdaptateurSolveur:
             return [s.point_on_arc(self._pts[els[0]], self._arcs[els[1]])]
         if r.type == T.SUR_AXE:
             return [s.coordinate_y(self._pts[els[0]], s.add_fixed_param(0.0))]
+        if r.type == T.ORIGINE_Z:
+            return [s.coordinate_x(self._pts[els[0]], s.add_fixed_param(0.0))]
         if r.type == T.FIXE:
             p = e.points[els[0]]
-            if any(rr.type == T.SUR_AXE for rr in e.relations_de(p.id)):
-                # le point est déjà tenu sur l'axe : ne figer que z, sinon la relation serait redondante
-                return [s.coordinate_x(self._pts[p.id], s.add_fixed_param(p.z))]
-            return list(s.fix_point(self._pts[els[0]], p.z, p.x))
+            types = {rr.type for rr in e.relations_de(p.id)}
+            tags = []
+            # ne figer que ce que « sur l'axe » et « origine Z » ne tiennent pas déjà, sinon redondance
+            if T.ORIGINE_Z not in types:
+                tags.append(s.coordinate_x(self._pts[p.id], s.add_fixed_param(p.z)))
+            if T.SUR_AXE not in types:
+                tags.append(s.coordinate_y(self._pts[p.id], s.add_fixed_param(p.x)))
+            return tags
         raise ValueError(f"relation inconnue : {r.type}")
 
     def _points_cote(self, els: Tuple[int, ...]) -> Tuple[int, int]:
@@ -219,6 +225,8 @@ class AdaptateurSolveur:
             return s.arc_radius(self._arcs[els[0]], param, driving=pilote)
         if c.type == TypeCote.ECART:
             return s.p2l_distance(self._pts[e.lignes[els[0]].p1], self._lignes[els[1]], param, driving=pilote)
+        if c.type == TypeCote.POSITION_Z:
+            return s.coordinate_x(self._pts[e.point_reference(els[0])], param, driving=pilote)
         if c.type == TypeCote.ANGLE:
             if len(els) == 1:
                 li = e.lignes[els[0]]
@@ -244,7 +252,7 @@ class AdaptateurSolveur:
             c = self.esquisse.cotes.get(cid)
             if c is not None and c.pilotee:
                 c.valeur = self._valeur_depuis_param(c, float(self._s.get_param(param)))
-                if c.type != TypeCote.ANGLE:
+                if c.type not in (TypeCote.ANGLE, TypeCote.POSITION_Z):
                     c.valeur = abs(c.valeur)
 
     def resoudre(self, diagnostiquer: bool = True) -> Resultat:

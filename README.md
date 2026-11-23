@@ -12,7 +12,8 @@ Une pièce est un **demi-profil** dans le plan (Z, X) : Z le long de l'axe de la
 L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les cotes « Ø ».
 
 * **Changer d'outil** : les boutons à icônes de la colonne, les touches `S`, `L`, `A`, `C`, `E`, ou **clic droit
-  maintenu + molette** sur le dessin : le nom de l'outil s'affiche sous le curseur. Le curseur porte le symbole
+  maintenu + molette** sur le dessin : une bande d'icônes défile sous le curseur, l'outil actif au milieu avec
+  son nom. Le curseur porte le symbole
   de l'outil actif, avec une petite croix au point de visée.
 * **Clic semi-long puis glisser** (environ un tiers de seconde sans bouger) : quel que soit l'outil, le glisser
   qui suit est un trait d'élagage ; l'outil d'avant revient au relâchement.
@@ -21,9 +22,11 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
 * **Colonne de gauche** : les outils (Sélection, Ligne, Arc 3 points, Cote, Élaguer et son mode), les relations
   (horizontal, vertical, coïncident, point sur ligne ou sur arc, parallèle, perpendiculaire, tangent, égal, sur l'axe,
   fixe), l'état du solveur avec la liste des relations et des cotes, l'affichage et l'aimantation.
-* **Cote** (`C`) : un seul outil, le type se déduit. Cliquez un point : diamètre. Un arc : rayon. Une ligne, puis
+* **Cote** (`C`) : un seul outil, le type se déduit. Cliquez un point : diamètre si la cote est posée à côté,
+  position Z depuis l'origine de la pièce si elle est posée au-dessus. Un arc : rayon. Une ligne, puis
   l'endroit où poser la cote : au-dessus ou au-dessous, c'est la longueur Z ; à côté, c'est le diamètre d'une ligne
-  horizontale, l'angle d'une ligne inclinée, la hauteur d'une ligne verticale. Deux lignes : angle entre elles,
+  horizontale ou l'angle d'une ligne inclinée. Une face verticale : sa position Z si la cote est posée au-dessus,
+  sa hauteur si elle est posée à côté. Deux lignes : angle entre elles,
   longueur Z entre deux faces verticales, ou écart entre deux lignes parallèles (profondeur de gorge), que l'on
   glisse le long de la première. Deux points : longueur Z. La cote suit le curseur en aperçu, le clic la pose
   et demande sa valeur, proposée à la mesure actuelle. `Ctrl+K` ou le menu du clic droit cotent la sélection.
@@ -43,7 +46,12 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
 * **Aimantation** (zone Affichage, chaque case se désactive) : *horizontal / vertical* pose la relation d'office sur
   un trait presque droit ; *45°* aligne le trait sur la diagonale ; *objets proches* accroche aux points (cercle),
   aux lignes et aux arcs (croix, avec la relation « point sur ») et aux alignements avec les points existants
-  (pointillés) ; *axe Z* accroche à l'axe de la pièce (croix) et pose « sur l'axe ».
+  (pointillés) ; *axe Z* accroche à l'axe de la pièce et pose « sur l'axe », et accroche à la face d'origine
+  (la verticale pointillée Z = 0) et pose « origine Z ».
+* **Ancrer le profil** : l'origine de la pièce est Z = 0 sur l'axe, par convention la face avant finie ; le
+  mandrin sera placé par rapport à elle dans le module machine. Un profil entièrement coté garde un degré de
+  liberté tant que rien ne le tient en Z : posez « origine Z » sur un point (automatique si le tracé part de
+  l'origine), ou une cote « position Z » sur une face, ou « fixe » sur un point.
 * **Sélection** (`S`) : les clics successifs s'ajoutent à la sélection, un second clic sur un élément le retire,
   un clic dans le vide vide la sélection. Tirez un point pour le faire glisser : le solveur recalcule tout le profil
   en continu en respectant relations et cotes. Tirez une valeur de cote pour déplacer son étiquette ; double-cliquez-la

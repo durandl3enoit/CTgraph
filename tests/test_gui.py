@@ -91,7 +91,7 @@ def rectangle(win, largeur: float = 40.0, hauteur: float = 20.0, fermer: bool = 
 def test_tracer_un_rectangle_pose_les_relations_automatiques(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("ligne")
-    clic(vue, 0, 0)            # départ sur l'axe, à l'origine
+    clic(vue, 0, 0)            # départ sur l'axe, à l'origine : « sur l'axe » et « origine Z »
     clic(vue, 0.2, 20)         # presque vertical : relation verticale automatique
     clic(vue, -40, 20.3)       # presque horizontal
     clic(vue, -40.1, 0)        # retour sur l'axe
@@ -101,11 +101,15 @@ def test_tracer_un_rectangle_pose_les_relations_automatiques(fenetre):
     assert len(e.points) == 4
     assert len(e.lignes) == 4
     types = sorted(r.type for r in e.relations.values())
-    assert types.count(TypeRelation.VERTICAL) == 2
-    # une seule horizontale : celle du trait sur l'axe serait redondante avec « sur l'axe », elle est retirée
+    # les deux points de la face avant s'accrochent sur Z = 0 : « origine Z » chacun, la verticale automatique
+    # devient redondante et disparaît ; de même l'horizontale du trait sur l'axe, redondante avec « sur l'axe »
+    assert types.count(TypeRelation.ORIGINE_Z) == 2
+    assert types.count(TypeRelation.VERTICAL) == 1
     assert types.count(TypeRelation.HORIZONTAL) == 1
     assert types.count(TypeRelation.SUR_AXE) == 2
     assert win.resultat.succes
+    # un rectangle ancré à l'origine n'a plus que ses deux dimensions comme degrés de liberté
+    assert win.resultat.dof == 2
     xs = sorted({round(p.x, 6) for p in e.points.values()})
     assert xs[0] == 0.0 and len(xs) == 2
     ecran(win, "rectangle")
@@ -295,11 +299,23 @@ def test_outil_cote_deduit_le_type(fenetre):
     clic(vue, 15, 10)
     c = list(e.cotes.values())[-1]
     assert c.type == TypeCote.DIAMETRE and c.valeur == pytest.approx(40.0, abs=0.2)
-    # un point : diamètre
+    # un point : diamètre si la cote est posée à côté
     clic(vue, -40, 20)
     clic(vue, -55, 10)
     c = list(e.cotes.values())[-1]
     assert c.type == TypeCote.DIAMETRE and e.genre(c.elements[0]) == "point"
+    # le même point, cote posée au-dessus : position Z depuis l'origine de la pièce. Le tracé est parti de
+    # l'origine et la longueur est déjà cotée : cette position est redondante, elle devient pilotée.
+    clic(vue, -40, 20)
+    clic(vue, -30, 36)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.POSITION_Z and c.valeur == pytest.approx(-40.0, abs=0.2)
+    assert c.pilotee and e.texte_cote(c).startswith("(Z -")
+    # la face arrière (verticale), cote posée au-dessus : position Z aussi
+    clic(vue, -40, 10)
+    clic(vue, -20, 44)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.POSITION_Z and c.valeur == pytest.approx(-40.0, abs=0.2)
     # deux faces verticales : longueur Z entre elles
     clic(vue, 0, 10)
     clic(vue, -40, 10)
@@ -545,7 +561,8 @@ def test_clic_droit_molette_change_d_outil(fenetre):
     molette(120)
     assert vue.outil == "ligne"
     assert vue.echelle() == pytest.approx(echelle)     # pas de zoom pendant le cycle
-    assert vue._bulle is not None and vue._bulle.isVisible() and vue._bulle.text() == "Ligne"
+    assert vue._bulle is not None and vue._bulle.isVisible() and vue._bulle.courant == "ligne"
+    assert vue._bulle.ordre()[2] == "ligne"            # l'outil actif est au milieu de la bande
     assert vue._droit_molette                          # le relâchement n'ouvrira pas le menu
     win.choisir_outil("selection")
 

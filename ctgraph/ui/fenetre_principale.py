@@ -28,7 +28,8 @@ FILTRE_FICHIERS = "Esquisse CTgraph (*.ctg);;Tous les fichiers (*)"
 MAX_ANNULATION = 200
 ORDRE_RELATIONS = [TypeRelation.HORIZONTAL, TypeRelation.VERTICAL, TypeRelation.COINCIDENT,
                    TypeRelation.POINT_SUR_LIGNE, TypeRelation.PARALLELE, TypeRelation.PERPENDICULAIRE,
-                   TypeRelation.TANGENT, TypeRelation.EGAL, TypeRelation.SUR_AXE, TypeRelation.FIXE]
+                   TypeRelation.TANGENT, TypeRelation.EGAL, TypeRelation.SUR_AXE, TypeRelation.ORIGINE_Z,
+                   TypeRelation.FIXE]
 OUTILS = (("selection", "Sélection", "S"), ("ligne", "Ligne", "L"), ("arc", "Arc 3 points", "A"),
           ("cote", "Cote", "C"), ("elaguer", "Élaguer", "E"))
 
@@ -456,8 +457,11 @@ class FenetrePrincipale(QMainWindow):
         if acc.courbe is not None and e.genre(acc.courbe) in ("ligne", "arc"):
             typ = TypeRelation.POINT_SUR_LIGNE if e.genre(acc.courbe) == "ligne" else TypeRelation.POINT_SUR_ARC
             e.ajouter_relation(typ, (p.id, acc.courbe))
-        elif acc.sur_axe:
-            e.ajouter_relation(TypeRelation.SUR_AXE, (p.id,))
+        else:
+            if acc.sur_axe:
+                e.ajouter_relation(TypeRelation.SUR_AXE, (p.id,))
+            if acc.sur_origine:
+                e.ajouter_relation(TypeRelation.ORIGINE_Z, (p.id,))
         return p.id
 
     def ajouter_ligne(self, debut: Accroche, fin: Accroche, auto: Optional[TypeRelation] = None) -> Optional[int]:
@@ -553,7 +557,7 @@ class FenetrePrincipale(QMainWindow):
                 self.basculer_pilotee(cote_id)
             return
         unite = "°" if c.type == TypeCote.ANGLE else "mm"
-        mini = -360.0 if c.type == TypeCote.ANGLE else 0.0
+        mini = -360.0 if c.type == TypeCote.ANGLE else (-1e6 if c.type == TypeCote.POSITION_Z else 0.0)
         saisie, ok = self._demander_valeur(libelle, unite, c.valeur / facteur, mini)
         valeur = saisie * facteur
         if not ok or abs(valeur - c.valeur) < 1e-12:
@@ -620,7 +624,7 @@ class FenetrePrincipale(QMainWindow):
             return
         libelle = LIBELLES_COTE[type_]
         unite = "°" if type_ == TypeCote.ANGLE else "mm"
-        mini = -360.0 if type_ == TypeCote.ANGLE else 0.0
+        mini = -360.0 if type_ == TypeCote.ANGLE else (-1e6 if type_ == TypeCote.POSITION_Z else 0.0)
         valeur, ok = self._demander_valeur(libelle, unite, abs(mesure) if mini == 0 else mesure, mini)
         if not ok:
             return

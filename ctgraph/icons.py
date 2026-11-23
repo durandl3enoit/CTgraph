@@ -242,6 +242,13 @@ def _dessins_relations(encre: QColor, fond: QColor):
         p.setBrush(QBrush(encre))
         p.drawEllipse(QPointF(12, 16), 3, 3)
 
+    def origine_z(p):
+        p.setPen(_stylo(encre, 1.6, [1.0, 2.0]))
+        p.drawLine(QPointF(12, 2), QPointF(12, 22))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(encre))
+        p.drawEllipse(QPointF(12, 12), 3, 3)
+
     def fixe(p):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(encre))
@@ -256,7 +263,7 @@ def _dessins_relations(encre: QColor, fond: QColor):
     return {
         "horizontal": horizontal, "vertical": vertical, "coincident": coincident, "point_sur_ligne": point_sur_ligne,
         "point_sur_arc": point_sur_ligne, "parallele": parallele, "perpendiculaire": perpendiculaire,
-        "tangent": tangent, "egal": egal, "sur_axe": sur_axe, "fixe": fixe,
+        "tangent": tangent, "egal": egal, "sur_axe": sur_axe, "origine_z": origine_z, "fixe": fixe,
     }
 
 

@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QApplication, QGraphicsEllipseItem, QGraphicsItem
 from ..esquisse import geometrie as geo
 from ..esquisse.elagage import courbe as courbe_de
 from ..esquisse.modele import Cote, Esquisse, Relation, TypeCote, TypeRelation
-from ..icons import curseur_outil
+from ..icons import curseur_outil, icone_outil
 
 ROLE_GENRE = 0
 ROLE_ID = 1
@@ -45,6 +45,7 @@ GLYPHES: Dict[TypeRelation, str] = {
     TypeRelation.POINT_SUR_LIGNE: "∙/",
     TypeRelation.POINT_SUR_ARC: "∙(",
     TypeRelation.SUR_AXE: "axe",
+    TypeRelation.ORIGINE_Z: "z0",
     TypeRelation.FIXE: "F",
 }
 
@@ -66,6 +67,7 @@ class Accroche:
     x: float
     point: Optional[int] = None            # point existant sous le curseur
     sur_axe: bool = False                  # sur l'axe de la pièce (x = 0)
+    sur_origine: bool = False              # sur la face d'origine (z = 0) : pose la relation « origine Z »
     courbe: Optional[int] = None           # sur une ligne ou un arc existant
     auto: Optional[TypeRelation] = None    # relation à poser d'office sur le trait en cours (horizontal, vertical)
     guides: List[Tuple[Tuple[float, float], Tuple[float, float]]] = field(default_factory=list)
@@ -130,6 +132,63 @@ class Etiquette(QGraphicsItem):
             painter.drawLine(QPointF(0, demi), QPointF(0, self._rect.bottom() - 3))
 
 
+class BulleOutils(QWidget):
+    """Bande d'icônes affichée sous le curseur pendant le cycle d'outils à la molette.
+
+    Les outils sont rangés en anneau et la bande tourne pour garder l'outil actif au centre, en plus gros,
+    avec son nom dessous : la molette fait défiler les icônes.
+    """
+
+    PAS = 38
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.courant = "selection"
+        encre, fond = QColor(240, 240, 240), QColor(40, 40, 40)
+        self._icones = {nom: icone_outil(nom, encre, fond) for nom in OUTILS_RAPIDES}
+        self.resize(self.PAS * len(OUTILS_RAPIDES) + 16, 72)
+        self.hide()
+
+    def montrer(self, outil: str, pos: QPoint) -> None:
+        self.courant = outil if outil in OUTILS_RAPIDES else "selection"
+        self.move(pos)
+        self.show()
+        self.raise_()
+        self.update()
+
+    def ordre(self) -> List[str]:
+        """Les outils tournés pour que l'outil actif soit au milieu."""
+        n = len(OUTILS_RAPIDES)
+        i = OUTILS_RAPIDES.index(self.courant)
+        decal = i - n // 2
+        return [OUTILS_RAPIDES[(k + decal) % n] for k in range(n)]
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(40, 40, 40, 225)))
+        p.drawRoundedRect(self.rect(), 6, 6)
+        milieu = len(OUTILS_RAPIDES) // 2
+        for k, nom in enumerate(self.ordre()):
+            cx = 8 + self.PAS * k + self.PAS // 2
+            if k == milieu:
+                p.setBrush(QBrush(QColor(90, 160, 220, 110)))
+                p.drawEllipse(QPointF(cx, 26), 17, 17)
+                taille = 28
+            else:
+                taille = 20
+            pm = self._icones[nom].pixmap(taille, taille)
+            p.drawPixmap(int(cx - taille / 2), int(26 - taille / 2), pm)
+        p.setPen(QPen(QColor(255, 255, 255)))
+        police = QFont()
+        police.setBold(True)
+        p.setFont(police)
+        p.drawText(QRectF(0, 48, self.width(), 20), Qt.AlignmentFlag.AlignCenter, LIBELLES_OUTILS[self.courant])
+        p.end()
+
+
 class VueEsquisse(QGraphicsView):
     coordonnees = Signal(float, float)       # (z, x) sous le curseur
     message = Signal(str)                    # aide contextuelle pour la barre d'état
@@ -186,9 +245,9 @@ class VueEsquisse(QGraphicsView):
         self._timer_geste.setSingleShot(True)
         self._timer_geste.timeout.connect(self._declencher_geste)
 
-        # clic droit maintenu + molette : changement d'outil, avec le nom affiché sous le curseur
+        # clic droit maintenu + molette : changement d'outil, bande d'icônes qui défile sous le curseur
         self._droit_molette = False
-        self._bulle: Optional[QLabel] = None
+        self._bulle: Optional[BulleOutils] = None
         self._timer_bulle = QTimer(self)
         self._timer_bulle.setSingleShot(True)
         self._timer_bulle.timeout.connect(self._cacher_bulle)
@@ -643,6 +702,26 @@ class VueEsquisse(QGraphicsView):
             path.lineTo(mz, mx)
             self._fleche(path, (mz, mx), (mz - ce.z, mx - ce.x))
             pos = (mz + dz, mx + dx)
+        elif co.type == TypeCote.POSITION_Z:
+            # de la face d'origine (z = 0) au point visé, sur une horizontale au-dessus du point ou de la face
+            el = co.elements[0]
+            p = e.points[e.point_reference(el)]
+            if e.genre(el) == "ligne":
+                a, b = (e.points[i] for i in e.extremites(el))
+                base_x = max(a.x, b.x)
+            else:
+                base_x = p.x
+            xl = base_x + dx
+            path.moveTo(p.z, base_x)
+            path.lineTo(p.z, xl + math.copysign(ext, dx or 1.0))
+            path.moveTo(0.0, xl - ext)
+            path.lineTo(0.0, xl + ext)
+            path.moveTo(0.0, xl)
+            path.lineTo(p.z, xl)
+            if abs(p.z) > 1e-9:
+                self._fleche(path, (0.0, xl), (-p.z, 0.0))
+                self._fleche(path, (p.z, xl), (p.z, 0.0))
+            pos = (p.z / 2 + dz, xl)
         elif co.type == TypeCote.ECART:
             # segment perpendiculaire entre les deux lignes, glissé le long de la première selon le décalage
             l1, l2 = (e.lignes[i] for i in co.elements)
@@ -765,7 +844,7 @@ class VueEsquisse(QGraphicsView):
                 path.lineTo(taille, taille)
                 path.moveTo(-taille, taille)
                 path.lineTo(taille, -taille)
-            elif curseur.sur_axe:
+            elif curseur.sur_axe or curseur.sur_origine:
                 path.moveTo(-taille, 0)
                 path.lineTo(taille, 0)
                 path.moveTo(0, -taille)
@@ -822,11 +901,13 @@ class VueEsquisse(QGraphicsView):
                     if d <= dist:
                         proche, dist = (ident, q), d
                 if proche is not None:
-                    acc = Accroche(proche[1][0], proche[1][1], None, abs(proche[1][1]) < 1e-9, proche[0])
+                    acc = Accroche(proche[1][0], proche[1][1], None, abs(proche[1][1]) < 1e-9, courbe=proche[0])
 
         if acc.point is None and acc.courbe is None:
             if self.aimants["axe"] and abs(acc.x) <= tol:
                 acc.x = 0.0
+            if self.aimants["axe"] and abs(acc.z) <= tol:
+                acc.z = 0.0                      # face d'origine de la pièce
             if self.aimants["objets"]:
                 for p in e.points.values():
                     if depuis is not None and p.id == depuis.point:
@@ -862,6 +943,7 @@ class VueEsquisse(QGraphicsView):
                     acc.x = depuis.x + math.copysign(abs(dz), dx)
                     acc.guides = [((depuis.z, depuis.x), (acc.z, acc.x))]
         acc.sur_axe = abs(acc.x) < 1e-9 if acc.point is None else abs(e.points[acc.point].x) < 1e-9
+        acc.sur_origine = acc.point is None and acc.courbe is None and self.aimants["axe"] and abs(acc.z) < 1e-9
         return acc
 
     def etiquette_sous(self, pos) -> Optional[Tuple[str, int]]:
@@ -978,14 +1060,9 @@ class VueEsquisse(QGraphicsView):
 
     def _montrer_bulle(self, texte: str, pos) -> None:
         if self._bulle is None:
-            self._bulle = QLabel(self.viewport())
-            self._bulle.setStyleSheet("background: rgba(40, 40, 40, 215); color: white; padding: 3px 8px; "
-                                      "border-radius: 4px; font-weight: 600;")
-        self._bulle.setText(texte)
-        self._bulle.adjustSize()
-        self._bulle.move(pos + QPoint(14, 14))
-        self._bulle.show()
-        self._timer_bulle.start(900)
+            self._bulle = BulleOutils(self.viewport())
+        self._bulle.montrer(self.outil, pos + QPoint(14, 14))
+        self._timer_bulle.start(1100)
 
     def _cacher_bulle(self) -> None:
         if self._bulle is not None:
@@ -1149,6 +1226,10 @@ class VueEsquisse(QGraphicsView):
             return TypeCote.RAYON, elements, dec
         if genres == ["point"]:
             p = e.points[elements[0]]
+            # à côté du point : diamètre ; au-dessus ou au-dessous : position Z depuis l'origine de la pièce
+            if abs(p.x) < 1e-9 or (z is not None and abs(x - p.x) >= abs(z - p.z)):
+                dec = (0.0, d) if z is None else (z - p.z / 2, x - p.x)
+                return TypeCote.POSITION_Z, elements, dec
             dec = (d, 0.0) if z is None else (z - p.z, x - p.x / 2)
             return TypeCote.DIAMETRE, elements, dec
         if genres == ["ligne"]:
@@ -1156,22 +1237,27 @@ class VueEsquisse(QGraphicsView):
             a, b = e.points[li.p1], e.points[li.p2]
             horizontale, verticale = self.est_horizontale(li.id), self.est_verticale(li.id)
             if z is None:
-                famille = "cote" if verticale else "dessus"
+                famille = "dessus"
+                dz_hors = dx_hors = 0.0
             else:
                 zmin, zmax = sorted((a.z, b.z))
                 xmin, xmax = sorted((a.x, b.x))
                 dz_hors = max(0.0, zmin - z, z - zmax)
                 dx_hors = max(0.0, xmin - x, x - xmax)
                 famille = "cote" if (verticale or dz_hors > dx_hors) else "dessus"
+            if verticale:
+                # une face : posée au-dessus ou au-dessous, sa position Z depuis l'origine ; à côté, sa hauteur
+                if z is None or dx_hors > 0.0:
+                    haut = max(a.x, b.x)
+                    dec = (0.0, d) if z is None else (z - a.z / 2, x - haut)
+                    return TypeCote.POSITION_Z, elements, dec
+                return TypeCote.DISTANCE, elements, self._decalage_normal(a, b, z, x)
             if famille == "dessus":
                 dec = (0.0, d) if z is None else (z - (a.z + b.z) / 2, x - max(a.x, b.x))
                 return TypeCote.LONGUEUR_Z, elements, dec
             if horizontale:
                 dec = (d, 0.0) if z is None else (z - a.z, x - a.x / 2)
                 return TypeCote.DIAMETRE, elements, dec
-            if verticale:
-                dec = (0.0, d) if z is None else self._decalage_normal(a, b, z, x)
-                return TypeCote.DISTANCE, elements, dec
             mz, mx = (a.z + b.z) / 2, (a.x + b.x) / 2
             dec = (d * 0.6, d * 0.6) if z is None else (z - mz, x - mx)
             return TypeCote.ANGLE, elements, dec
