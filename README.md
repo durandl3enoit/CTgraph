@@ -11,20 +11,30 @@ vue 3D, séquences d'usinage, post-processeur, liaison RS232) viendront ensuite.
 Une pièce est un **demi-profil** dans le plan (Z, X) : Z le long de l'axe de la pièce, X le rayon.
 L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les cotes « Ø ».
 
-* **Colonne de gauche** : les outils de tracé (Sélection, Ligne, Arc 3 points), les relations
-  (horizontal, vertical, coïncident, point sur ligne, parallèle, perpendiculaire, tangent, égal, sur l'axe, fixe),
-  les cotes (longueur Z, diamètre, rayon, angle, distance), l'état du solveur avec la liste des relations
-  et des cotes, et l'affichage.
-* **À droite** : le dessin. Molette pour zoomer, bouton du milieu pour déplacer la vue, `F` pour tout voir.
+* **Colonne de gauche** : les outils de tracé (Sélection, Ligne, Arc 3 points, Élaguer et son mode), les relations
+  (horizontal, vertical, coïncident, point sur ligne ou sur arc, parallèle, perpendiculaire, tangent, égal, sur l'axe,
+  fixe), les cotes (longueur Z, diamètre, rayon, angle, distance), l'état du solveur avec la liste des relations
+  et des cotes, l'affichage et l'aimantation.
+* **À droite** : le dessin. Molette pour zoomer autour du curseur, bouton du milieu pour déplacer la vue, `F` pour tout voir.
 * **Ligne** (`L`) : cliquez le départ puis chaque sommet ; la chaîne continue jusqu'au clic droit ou `Échap`.
-  Le curseur s'accroche aux points existants (cercle) et à l'axe de la pièce (croix). Un trait presque
-  horizontal ou vertical reçoit la relation correspondante d'office ; un point posé sur l'axe reçoit « sur l'axe ».
 * **Arc 3 points** (`A`) : départ, arrivée, puis un point par où passe l'arc.
-* **Sélection** (`S`) : clic sur un élément, `Ctrl` + clic pour en ajouter. Tirez un point pour le faire glisser :
-  le solveur recalcule tout le profil en continu en respectant relations et cotes. Tirez une valeur de cote pour
-  déplacer son étiquette ; double-cliquez-la pour changer sa valeur. `Suppr` supprime la sélection.
-* **Relations et cotes** : sélectionnez les éléments concernés puis cliquez le bouton. La cote propose la mesure
-  actuelle. Une relation ou une cote en conflit est affichée en rouge, une relation redondante en jaune.
+* **Élaguer** (`E`) : tirez un trait au travers des lignes ou des arcs à couper. Le mode, dans la zone Outils, dit ce
+  qui est retiré autour du point traversé : *jusqu'aux croisements* avec les autres objets, *entre deux points*
+  d'esquisse posés sur l'objet, *jusqu'à l'extrémité* la plus proche, ou *tout l'objet*. Les nouveaux points de coupe
+  reçoivent « point sur ligne » ou « point sur arc » avec l'objet croisé : la coupe suit les modifications du profil.
+* **Aimantation** (zone Affichage, chaque case se désactive) : *horizontal / vertical* pose la relation d'office sur
+  un trait presque droit ; *45°* aligne le trait sur la diagonale ; *objets proches* accroche aux points (cercle),
+  aux lignes et aux arcs (croix, avec la relation « point sur ») et aux alignements avec les points existants
+  (pointillés) ; *axe Z* accroche à l'axe de la pièce (croix) et pose « sur l'axe ».
+* **Sélection** (`S`) : les clics successifs s'ajoutent à la sélection, un second clic sur un élément le retire,
+  un clic dans le vide vide la sélection. Tirez un point pour le faire glisser : le solveur recalcule tout le profil
+  en continu en respectant relations et cotes. Tirez une valeur de cote pour déplacer son étiquette ; double-cliquez-la
+  pour changer sa valeur. `Suppr` supprime la sélection.
+* **Clic droit** : menu contextuel avec les relations et cotes possibles pour la sélection, la suppression, les outils
+  et « Tout voir ». Pendant un tracé, le clic droit termine la chaîne.
+* **Relations et cotes** : sélectionnez les éléments concernés puis cliquez le bouton (ou le menu du clic droit).
+  La cote propose la mesure actuelle. Une relation ou une cote en conflit est affichée en rouge, une relation
+  redondante en jaune.
 * **État** : « sous-contraint » avec le nombre de degrés de liberté, « entièrement contraint » (profil en vert),
   ou « sur-contraint » avec les relations en cause.
 * **Fichiers** : les esquisses sont enregistrées en `.ctg` (JSON lisible). `Ctrl+Z` / `Ctrl+Y` annulent et rétablissent.
@@ -43,8 +53,8 @@ py -3.12 -m venv .venv
 ```
 
 Fabrication de l'exécutable : `powershell -ExecutionPolicy Bypass -File build.ps1`. Le script génère l'icône
-et l'exemple `exemples\arbre-epaule.ctg`, inscrit la date de compilation dans `ctgraph\build_info.py`
-(visible dans *Aide → À propos*) et produit `dist\CTgraph\`.
+et l'exemple `exemples\arbre-epaule.ctg`, inscrit la date de compilation dans `ctgraph\build_info.py` le temps
+de la compilation (visible dans *Aide → À propos*) et produit `dist\CTgraph\`.
 
 Contrôle visuel : `.venv\Scripts\python tools\capture.py captures\fenetre.png` ouvre la fenêtre sur l'exemple
 et enregistre une capture.
@@ -53,14 +63,16 @@ et enregistre une capture.
 
 ```
 ctgraph/
-  main.py                 point d'entrée, QApplication
-  esquisse/modele.py      points, lignes, arcs, relations, cotes ; validation ; JSON. Ne connaît pas le solveur.
-  esquisse/solveur.py     adaptateur PlaneGCS : traduction du modèle, résolution, glissement, diagnostic
-  ui/vue_esquisse.py      QGraphicsView : tracé, accrochage, sélection, dessin des cotes et des symboles
-  ui/fenetre_principale.py fenêtre, menus, fichiers, annulation ; contrôleur de la vue
-tests/                    modèle, solveur, interface (plateforme Qt hors écran)
-tools/                    icône, exemple, capture
-docs/                     état d'avancement, décisions, référence NUM 750 T observée dans les programmes Go2CAM
+  main.py                  point d'entrée, QApplication
+  esquisse/modele.py       points, lignes, arcs, relations, cotes ; validation ; JSON. Ne connaît pas le solveur.
+  esquisse/geometrie.py    géométrie exacte : paramètres, intersections ligne/arc, point le plus proche
+  esquisse/elagage.py      élagage : raccourcir ou scinder une ligne ou un arc en gardant les relations cohérentes
+  esquisse/solveur.py      adaptateur PlaneGCS : traduction du modèle, résolution, glissement, diagnostic
+  ui/vue_esquisse.py       QGraphicsView : tracé, aimantation, sélection, élagage, dessin des cotes et des symboles
+  ui/fenetre_principale.py fenêtre, menus, menu contextuel, fichiers, annulation ; contrôleur de la vue
+tests/                     modèle, géométrie, élagage, solveur, interface (plateforme Qt hors écran)
+tools/                     icône, exemple, capture
+docs/                      état d'avancement, décisions, référence NUM 750 T observée dans les programmes Go2CAM
 ```
 
 ## Licences des composants

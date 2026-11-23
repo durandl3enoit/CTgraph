@@ -27,6 +27,7 @@ class TypeRelation(str, Enum):
     TANGENT = "tangent"                  # (ligne, arc) ou (arc, arc)
     EGAL = "egal"                        # (ligne, ligne) longueurs ou (arc, arc) rayons
     POINT_SUR_LIGNE = "point_sur_ligne"  # (point, ligne)
+    POINT_SUR_ARC = "point_sur_arc"      # (point, arc)
     SUR_AXE = "sur_axe"                  # (point) : x = 0
     FIXE = "fixe"                        # (point) : z et x figés
 
@@ -48,6 +49,7 @@ LIBELLES_RELATION: Dict[TypeRelation, str] = {
     TypeRelation.TANGENT: "Tangent",
     TypeRelation.EGAL: "Égal",
     TypeRelation.POINT_SUR_LIGNE: "Point sur ligne",
+    TypeRelation.POINT_SUR_ARC: "Point sur arc",
     TypeRelation.SUR_AXE: "Sur l'axe",
     TypeRelation.FIXE: "Fixe",
 }
@@ -70,6 +72,7 @@ _FORMES_RELATION: Dict[TypeRelation, List[Tuple[str, ...]]] = {
     TypeRelation.TANGENT: [("ligne", "arc"), ("arc", "ligne"), ("arc", "arc")],
     TypeRelation.EGAL: [("ligne", "ligne"), ("arc", "arc")],
     TypeRelation.POINT_SUR_LIGNE: [("point", "ligne"), ("ligne", "point")],
+    TypeRelation.POINT_SUR_ARC: [("point", "arc"), ("arc", "point")],
     TypeRelation.SUR_AXE: [("point",)],
     TypeRelation.FIXE: [("point",)],
 }
@@ -204,12 +207,27 @@ class Esquisse:
         elements = tuple(int(e) for e in elements)
         self._verifier_forme(_FORMES_RELATION[type_], elements, LIBELLES_RELATION[type_])
         # Formes symétriques : on range dans l'ordre canonique (point avant ligne, ligne avant arc).
-        if type_ in (TypeRelation.TANGENT, TypeRelation.POINT_SUR_LIGNE):
+        if type_ in (TypeRelation.TANGENT, TypeRelation.POINT_SUR_LIGNE, TypeRelation.POINT_SUR_ARC):
             ordre = {"point": 0, "ligne": 1, "arc": 2}
             elements = tuple(sorted(elements, key=lambda e: ordre[self.genre(e)]))
         r = Relation(self._nouvel_id(), type_, elements)
         self.relations[r.id] = r
         return r
+
+    def relation_possible(self, type_: TypeRelation, elements: Iterable[int]) -> bool:
+        """Vrai si ces éléments peuvent porter une relation de ce type (sans l'ajouter)."""
+        try:
+            self._verifier_forme(_FORMES_RELATION[TypeRelation(type_)], tuple(int(e) for e in elements), "")
+        except ErreurEsquisse:
+            return False
+        return True
+
+    def cote_possible(self, type_: TypeCote, elements: Iterable[int]) -> bool:
+        try:
+            self.verifier_cote(type_, tuple(int(e) for e in elements))
+        except ErreurEsquisse:
+            return False
+        return True
 
     def ajouter_cote(self, type_: TypeCote, elements: Iterable[int], valeur: Optional[float] = None,
                      decalage: Tuple[float, float] = (0.0, 0.0)) -> Cote:

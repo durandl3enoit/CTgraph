@@ -1,11 +1,15 @@
 # CTgraph — état d'avancement
 
-Mis à jour le 23 novembre 2026 (fin de la deuxième séance, poste de la semaine).
+Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semaine).
 
 ## Fait
 
 - Périmètre, décisions de conception et **pile technique validée** : Python 3.12, PySide6, `planegcs`,
   `pyserial`, PyInstaller (voir `CLAUDE.md`).
+- **Retours du premier essai de l'esquisse, traités** : zoom centré sur le curseur ; outil Élaguer par un trait avec
+  quatre modes (`ctgraph/esquisse/elagage.py`, sur une géométrie exacte `geometrie.py`) ; aimantation débrayable
+  (horizontal/vertical, 45°, objets proches avec « point sur ligne/arc » et alignements, axe Z) ; sélection cumulative
+  par clics et vidée par un clic dans le vide ; menu contextuel du clic droit avec relations et cotes possibles.
 - **Module d'esquisse paramétrique, version 0.1, fonctionnel** :
   - `ctgraph/esquisse/modele.py` : points, lignes, arcs, dix relations, cinq cotes, validation des genres,
     suppression en cascade, mesures, JSON (`.ctg`).
@@ -16,7 +20,7 @@ Mis à jour le 23 novembre 2026 (fin de la deuxième séance, poste de la semain
     relations automatiques, outils Ligne et Arc 3 points, sélection, glissement, cotes dessinées avec flèches,
     étiquettes déplaçables, édition par double-clic, symboles des relations, couleurs d'état (vert contraint,
     rouge conflit, jaune redondant), annulation et rétablissement, fichiers récents, préférences.
-  - 26 tests (`tests/`) : modèle, solveur, interface hors écran. Tous passent.
+  - 49 tests (`tests/`) : modèle, géométrie, élagage, solveur, interface hors écran. Tous passent.
   - `build.ps1` produit `dist\CTgraph\CTgraph.exe` (120 Mo avec Qt), vérifié au lancement.
   - `tools/make_sample.py` génère `exemples/arbre-epaule.ctg` (arbre épaulé, chanfrein, congé, entièrement contraint),
     `tools/capture.py` fait une capture en vraie fenêtre.
@@ -30,9 +34,8 @@ Mis à jour le 23 novembre 2026 (fin de la deuxième séance, poste de la semain
 
 ## Prochaines étapes
 
-1. **Essayer l'esquisse à la souris** sur une vraie pièce et noter ce qui manque (accrochages, cotes, ergonomie).
-   Manques connus : pas d'accrochage sur l'alignement avec un point existant (même Z ou même X),
-   pas de cote entre deux lignes parallèles, pas de symétrie, pas de miroir, pas de construction (lignes d'aide),
+1. **Second essai de l'esquisse** avec les retours traités. Manques connus : pas de cote entre deux lignes parallèles,
+   pas de symétrie, pas de miroir, pas de construction (lignes d'aide), pas de prolongement jusqu'à un objet,
    pas de profil intérieur distinct, pas d'export DXF.
 2. **Dépôt distant privé** : créer le dépôt (GitHub ou autre), `git remote add origin …`, `git push -u origin main`.
    Sur le poste du week-end : installer Git, cloner, créer `.venv` avec `requirements.txt`.

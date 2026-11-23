@@ -163,6 +163,8 @@ class AdaptateurSolveur:
             return [s.equal_radius_aa(self._arcs[els[0]], self._arcs[els[1]])]
         if r.type == T.POINT_SUR_LIGNE:
             return [s.point_on_line(self._pts[els[0]], self._lignes[els[1]])]
+        if r.type == T.POINT_SUR_ARC:
+            return [s.point_on_arc(self._pts[els[0]], self._arcs[els[1]])]
         if r.type == T.SUR_AXE:
             return [s.coordinate_y(self._pts[els[0]], s.add_fixed_param(0.0))]
         if r.type == T.FIXE:

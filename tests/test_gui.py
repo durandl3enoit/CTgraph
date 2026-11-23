@@ -1,4 +1,4 @@
-"""Tests de l'interface (plateforme Qt hors écran) : tracé à la souris, accrochage, cotes, glissement, fichiers.
+"""Tests de l'interface (plateforme Qt hors écran) : tracé, aimantation, sélection, cotes, glissement, élagage, fichiers.
 
 Lancer : .venv\\Scripts\\python -m pytest tests\\test_gui.py
 Une variable CTGRAPH_SHOTS=<dossier> enregistre des captures PNG pour contrôle visuel.
@@ -37,6 +37,8 @@ def fenetre(app):
     win.resize(1300, 900)
     win.show()
     QTest.qWaitForWindowExposed(win)
+    for cle in win.vue.aimants:
+        win.cases_aimants[cle].setChecked(True)
     win.vue.tout_voir()
     QTest.qWait(30)
     yield win
@@ -62,6 +64,29 @@ def clic(vue, z: float, x: float, bouton=Qt.MouseButton.LeftButton, modif=Qt.Key
     QTest.qWait(10)
 
 
+def glisser(vue, depart: QPoint, arrivee: QPoint, pas: int = 5) -> None:
+    QTest.mousePress(vue.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, depart)
+    for i in range(1, pas + 1):
+        QTest.mouseMove(vue.viewport(), depart + (arrivee - depart) * i / pas)
+        QTest.qWait(5)
+    QTest.mouseRelease(vue.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, arrivee)
+    QTest.qWait(10)
+
+
+def rectangle(win, largeur: float = 40.0, hauteur: float = 20.0, fermer: bool = True) -> None:
+    """Trace un rectangle posé sur l'axe entre z = -largeur et z = 0, puis termine la chaîne (Échap)."""
+    vue = win.vue
+    win.choisir_outil("ligne")
+    clic(vue, 0, 0)
+    clic(vue, 0, hauteur)
+    clic(vue, -largeur, hauteur)
+    clic(vue, -largeur, 0)
+    if fermer:
+        clic(vue, 0, 0)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    win.choisir_outil("selection")
+
+
 def test_tracer_un_rectangle_pose_les_relations_automatiques(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("ligne")
@@ -70,7 +95,7 @@ def test_tracer_un_rectangle_pose_les_relations_automatiques(fenetre):
     clic(vue, -40, 20.3)       # presque horizontal
     clic(vue, -40.1, 0)        # retour sur l'axe
     clic(vue, 0, 0)            # fermeture sur le premier point (accrochage)
-    clic(vue, 0, 0, Qt.MouseButton.RightButton)   # fin de la chaîne
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
     e = win.esquisse
     assert len(e.points) == 4
     assert len(e.lignes) == 4
@@ -80,28 +105,103 @@ def test_tracer_un_rectangle_pose_les_relations_automatiques(fenetre):
     assert types.count(TypeRelation.HORIZONTAL) == 1
     assert types.count(TypeRelation.SUR_AXE) == 2
     assert win.resultat.succes
-    # le rectangle a bien été redressé par le solveur
     xs = sorted({round(p.x, 6) for p in e.points.values()})
     assert xs[0] == 0.0 and len(xs) == 2
     ecran(win, "rectangle")
 
 
-def test_cotes_et_modification(fenetre):
+def test_aimantation_desactivable(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win.cases_aimants["ortho"].setChecked(False)
+    win.cases_aimants["axe"].setChecked(False)
+    assert win.vue.aimants["ortho"] is False and win.vue.aimants["axe"] is False
+    win.choisir_outil("ligne")
+    clic(vue, 0, 0.5)          # près de l'axe mais pas dessus : pas d'accrochage
+    clic(vue, 0.3, 20)         # presque vertical : pas de relation
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    e = win.esquisse
+    assert not e.relations
+    # un clic simulé vise au pixel près : environ 0,1 mm à cette échelle
+    zs = sorted(p.z for p in e.points.values())
+    assert zs[1] == pytest.approx(0.3, abs=0.1)
+    assert min(abs(p.x) for p in e.points.values()) == pytest.approx(0.5, abs=0.1)
+    # les réglages sont mémorisés
+    assert win.reglages.get_bool("aimant.ortho", True) is False
+    win.cases_aimants["ortho"].setChecked(True)
+    win.cases_aimants["axe"].setChecked(True)
+
+
+def test_aimantation_45_degres_et_alignement(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("ligne")
     clic(vue, 0, 0)
-    clic(vue, 0, 20)
-    clic(vue, -40, 20)
-    clic(vue, -40, 0)
-    clic(vue, 0, 0)
-    clic(vue, 0, 0, Qt.MouseButton.RightButton)
+    clic(vue, -20, 19.4)       # à 44° environ : aligné sur 45°
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
     e = win.esquisse
-    win.choisir_outil("selection")
-    # fixer l'origine
+    haut = max(e.points.values(), key=lambda p: p.x)
+    assert haut.z == pytest.approx(-20.0, abs=0.1)
+    assert haut.x == pytest.approx(-haut.z, abs=1e-9)      # exactement à 45°
+    # alignement avec un point existant : même x que le sommet, depuis un départ ni vertical ni à 45°
+    win.choisir_outil("ligne")
+    clic(vue, -50, 35)
+    acc = vue.accrocher(pos(vue, -30, 19.6), vue._debut)
+    assert acc.x == pytest.approx(haut.x, abs=1e-9) and acc.guides and acc.auto is None
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+
+
+def test_accrochage_sur_une_ligne_pose_point_sur_ligne(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    win.choisir_outil("ligne")
+    clic(vue, -20, 20)         # milieu du côté haut : point sur ligne
+    clic(vue, -20, 30)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    e = win.esquisse
+    assert any(r.type == TypeRelation.POINT_SUR_LIGNE for r in e.relations.values())
+    assert win.resultat.succes and not win.resultat.conflits
+
+
+def test_selection_cumulative_et_vide(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
+    clic(vue, -20, 20)         # côté haut
+    clic(vue, 0, 10)           # face avant
+    assert len(vue.selection) == 2 and all(e.genre(i) == "ligne" for i in vue.selection)
+    clic(vue, -20, 20)         # un second clic sur le même élément le retire
+    assert len(vue.selection) == 1
+    clic(vue, 0, 20)           # un point s'ajoute aussi
+    assert len(vue.selection) == 2 and any(e.genre(i) == "point" for i in vue.selection)
+    clic(vue, 30, 30)          # dans le vide : tout est désélectionné
+    assert vue.selection == []
+
+
+def test_menu_contextuel_propose_les_relations_possibles(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
+    menu = win.construire_menu_contextuel()
+    assert any("Sélectionnez" in a.text() for a in menu.actions())
+    clic(vue, -20, 20)
+    clic(vue, 0, 10)           # deux lignes perpendiculaires
+    textes = [a.text() for a in win.construire_menu_contextuel().actions()]
+    assert "Perpendiculaire" in textes and "Parallèle" in textes and "Égal" in textes
+    assert "Cote : Angle" in textes
+    assert "Horizontal" not in textes          # pas pour deux lignes
+    assert "Supprimer la sélection" in textes
+    # une ligne et un point : point sur ligne
+    vue.selection = [next(iter(e.lignes)), next(iter(e.points))]
+    textes = [a.text() for a in win.construire_menu_contextuel().actions()]
+    assert "Point sur ligne" in textes
+
+
+def test_cotes_et_modification(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
     p_origine = next(p for p in e.points.values() if abs(p.z) < 1e-6 and abs(p.x) < 1e-6)
     vue.selection = [p_origine.id]
     win.appliquer_relation(TypeRelation.FIXE)
-    # cotes posées par le modèle (la boîte de dialogue est contournée)
     haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
     assert win._modifier(lambda: e.ajouter_cote(TypeCote.DIAMETRE, (haut.id,), 40.0, (5, 0)))
     assert win._modifier(lambda: e.ajouter_cote(TypeCote.LONGUEUR_Z, (haut.id,), 40.0, (0, 6)))
@@ -112,7 +212,6 @@ def test_cotes_et_modification(fenetre):
     assert max(p.x for p in e.points.values()) == pytest.approx(28.0, abs=1e-6)
     win._appliquer_resultat(res)
     ecran(win, "cotes")
-    # annulation : la cote de longueur disparaît
     n = len(e.cotes)
     win.annuler()
     assert len(win.esquisse.cotes) == n - 1
@@ -120,30 +219,58 @@ def test_cotes_et_modification(fenetre):
 
 def test_glisser_un_point_a_la_souris(fenetre):
     win, vue = fenetre, fenetre.vue
-    win.choisir_outil("ligne")
-    clic(vue, 0, 0)
-    clic(vue, 0, 20)
-    clic(vue, -40, 20)
-    clic(vue, -40, 0)
-    clic(vue, 0, 0, Qt.MouseButton.RightButton)
+    rectangle(win, fermer=False)
     e = win.esquisse
-    win.choisir_outil("selection")
     coin = next(p for p in e.points.values() if p.z < -30 and p.x > 10)
-    depart = pos(vue, coin.z, coin.x)
-    arrivee = pos(vue, -60, 20)
-    QTest.mousePress(vue.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, depart)
-    # mouvement en plusieurs pas, comme une vraie souris
-    for i in range(1, 6):
-        p = depart + (arrivee - depart) * i / 5
-        QTest.mouseMove(vue.viewport(), p)
-        QTest.qWait(5)
-    QTest.mouseRelease(vue.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, arrivee)
-    QTest.qWait(10)
+    glisser(vue, pos(vue, coin.z, coin.x), pos(vue, -60, 20))
     assert coin.z == pytest.approx(-60.0, abs=0.5)
     assert coin.x == pytest.approx(20.0, abs=0.5)         # la ligne horizontale le retient en x
+    assert vue.selection == []                            # un glissement ne sélectionne pas
     assert win.act_annuler.isEnabled()
     win.annuler()
     assert win.esquisse.points[coin.id].z == pytest.approx(-40.0, abs=0.5)
+
+
+def test_zoom_garde_le_point_sous_le_curseur(fenetre):
+    vue = fenetre.vue
+    p = pos(vue, -30, 10)
+    avant = vue.mapToScene(p)
+    vue.zoomer(1.5, p)
+    apres = vue.mapToScene(p)
+    assert (apres.x(), apres.y()) == pytest.approx((avant.x(), avant.y()), abs=0.05)
+    vue.zoomer(1 / 1.5, p)
+    apres = vue.mapToScene(p)
+    assert (apres.x(), apres.y()) == pytest.approx((avant.x(), avant.y()), abs=0.05)
+
+
+def test_elaguer_par_un_trait(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
+    # une ligne qui traverse le rectangle de part en part, de (-20, -5) à (-20, 30)
+    win.choisir_outil("ligne")
+    clic(vue, -20, -5)
+    clic(vue, -20, 30)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    verticale = next(li for li in e.lignes.values() if max(e.points[li.p1].x, e.points[li.p2].x) > 25)
+    dessus = max(p.x for li in e.lignes.values() if li.id != verticale.id for p in (e.points[li.p1], e.points[li.p2]))
+    n_lignes = len(e.lignes)
+    win.choisir_outil("elaguer")
+    win.combo_elagage.setCurrentIndex(0)                   # jusqu'aux croisements
+    glisser(vue, pos(vue, -25, 25), pos(vue, -15, 25))     # trait au-dessus du rectangle : coupe le dépassement haut
+    assert len(e.lignes) == n_lignes
+    haut = max(e.points[verticale.p1].x, e.points[verticale.p2].x)
+    assert haut == pytest.approx(dessus, abs=1e-6)         # raccourcie exactement au côté haut du rectangle
+    assert any(r.type == TypeRelation.POINT_SUR_LIGNE for r in e.relations.values())
+    assert win.resultat.succes and not win.resultat.conflits
+    # mode « tout » : le trait supprime la verticale entière
+    win.combo_elagage.setCurrentIndex(3)
+    glisser(vue, pos(vue, -25, 10), pos(vue, -15, 10))
+    assert verticale.id not in e.lignes
+    assert len(e.lignes) == n_lignes - 1
+    ecran(win, "elagage")
+    win.annuler()
+    assert verticale.id in win.esquisse.lignes
 
 
 def test_arc_trois_points(fenetre):
@@ -164,11 +291,7 @@ def test_arc_trois_points(fenetre):
 
 def test_enregistrer_et_rouvrir(fenetre, tmp_path):
     win, vue = fenetre, fenetre.vue
-    win.choisir_outil("ligne")
-    clic(vue, 0, 0)
-    clic(vue, 0, 20)
-    clic(vue, -40, 20)
-    clic(vue, 0, 0, Qt.MouseButton.RightButton)
+    rectangle(win, fermer=False)
     chemin = str(tmp_path / "piece.ctg")
     assert win._ecrire(chemin)
     assert not win._modifie
@@ -180,13 +303,13 @@ def test_enregistrer_et_rouvrir(fenetre, tmp_path):
     assert os.path.basename(chemin) in win.windowTitle()
 
 
-def test_suppression_et_selection(fenetre):
+def test_suppression(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("ligne")
     clic(vue, 0, 0)
     clic(vue, 0, 20)
     clic(vue, -40, 20)
-    clic(vue, 0, 0, Qt.MouseButton.RightButton)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
     win.choisir_outil("selection")
     e = win.esquisse
     clic(vue, -20, 20)        # sur la ligne horizontale
@@ -194,5 +317,3 @@ def test_suppression_et_selection(fenetre):
     win.supprimer_selection()
     assert len(e.lignes) == 1
     assert len(e.points) == 2          # le point orphelin a disparu
-    clic(vue, 30, 30)                  # dans le vide : désélection
-    assert vue.selection == []

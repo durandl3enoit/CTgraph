@@ -43,6 +43,15 @@ vérification par relecture du G-code généré, réception des programmes depui
   contrainte générique distance centre-droite = rayon, qui converge mal (racine double).
 - **Relations automatiques du tracé** (horizontal, vertical, sur l'axe) : ajoutées, puis retirées si le
   solveur les trouve en conflit ou redondantes.
+- **Sélection** : les clics s'ajoutent (un second clic retire), un clic dans le vide vide la sélection, pas de Ctrl.
+  Le clic droit ouvre le menu des relations et cotes possibles pour la sélection ; pendant un tracé, il termine la chaîne.
+- **Aimantation** débrayable par cases (zone Affichage) : horizontal/vertical, 45°, objets proches, axe Z.
+  Accrocher sur une ligne ou un arc pose « point sur ligne » ou « point sur arc ».
+- **Élaguer** : un trait tiré au travers des objets ; quatre modes qui ne changent que les bornes de la portion retirée
+  (croisements avec les autres objets, points d'esquisse sur l'objet, extrémité la plus proche, objet entier).
+  Les points de coupe reçoivent « point sur » l'objet croisé ; une ligne scindée garde horizontal/vertical/parallèle/
+  perpendiculaire sur ses deux morceaux, un arc scindé garde son centre et reçoit « égal » entre ses morceaux ;
+  les cotes de longueur disparaissent.
 
 ## Points ouverts
 

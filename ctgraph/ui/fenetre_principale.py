@@ -10,20 +10,27 @@ from typing import Callable, List, Optional, Tuple
 
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence
-from PySide6.QtWidgets import (QCheckBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
-                               QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QScrollArea,
-                               QSizePolicy, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
+                               QLabel, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
+                               QScrollArea, QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__
 from ..build_info import BUILD_TIME
+from ..esquisse import elagage
 from ..esquisse.modele import (LIBELLES_COTE, LIBELLES_RELATION, ErreurEsquisse, Esquisse, TypeCote, TypeRelation)
 from ..esquisse.solveur import AdaptateurSolveur, Resultat
 from ..log import get as get_log
 from ..settings import Settings
-from .vue_esquisse import Accroche, VueEsquisse
+from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
 
 FILTRE_FICHIERS = "Esquisse CTgraph (*.ctg);;Tous les fichiers (*)"
 MAX_ANNULATION = 200
+ORDRE_RELATIONS = [TypeRelation.HORIZONTAL, TypeRelation.VERTICAL, TypeRelation.COINCIDENT,
+                   TypeRelation.POINT_SUR_LIGNE, TypeRelation.PARALLELE, TypeRelation.PERPENDICULAIRE,
+                   TypeRelation.TANGENT, TypeRelation.EGAL, TypeRelation.SUR_AXE, TypeRelation.FIXE]
+ORDRE_COTES = [TypeCote.LONGUEUR_Z, TypeCote.DIAMETRE, TypeCote.RAYON, TypeCote.ANGLE, TypeCote.DISTANCE]
+OUTILS = (("selection", "Sélection", "S"), ("ligne", "Ligne", "L"), ("arc", "Arc 3 points", "A"),
+          ("elaguer", "Élaguer", "E"))
 
 
 class FenetrePrincipale(QMainWindow):
@@ -47,7 +54,7 @@ class FenetrePrincipale(QMainWindow):
         self._restaurer_geometrie()
         self._rafraichir_titre()
         self._appliquer_resultat(self.resultat)
-        self.vue.definir_outil("selection")
+        self.choisir_outil("selection")
 
     # -- interface -----------------------------------------------------------------------
 
@@ -61,6 +68,11 @@ class FenetrePrincipale(QMainWindow):
         self.vue.coordonnees.connect(self._afficher_coordonnees)
         self.vue.message.connect(self._afficher_aide)
         self.vue.selection_changee.connect(self._selection_changee)
+        for cle in AIMANTS_DEFAUT:
+            self.vue.aimants[cle] = self.reglages.get_bool("aimant." + cle, AIMANTS_DEFAUT[cle])
+        self.vue.mode_elagage = str(self.reglages.get("modeElagage", "croisement") or "croisement")
+        if self.vue.mode_elagage not in elagage.MODES:
+            self.vue.mode_elagage = "croisement"
 
         colonne = QWidget()
         colonne.setFixedWidth(240)
@@ -73,8 +85,7 @@ class FenetrePrincipale(QMainWindow):
         grille = QGridLayout(g_outils)
         self.groupe_outils = QActionGroup(self)
         self.actions_outils = {}
-        for i, (cle, libelle, touche) in enumerate((("selection", "Sélection", "S"), ("ligne", "Ligne", "L"),
-                                                    ("arc", "Arc 3 points", "A"))):
+        for i, (cle, libelle, touche) in enumerate(OUTILS):
             act = QAction(libelle, self, checkable=True)
             act.setShortcut(QKeySequence(touche))
             act.setData(cle)
@@ -87,7 +98,14 @@ class FenetrePrincipale(QMainWindow):
             bouton.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             bouton.setMinimumHeight(34)
             grille.addWidget(bouton, i // 2, i % 2)
-        self.actions_outils["selection"].setChecked(True)
+        self.combo_elagage = QComboBox()
+        for mode in elagage.MODES:
+            self.combo_elagage.addItem(elagage.LIBELLES_MODE[mode], mode)
+        self.combo_elagage.setCurrentIndex(list(elagage.MODES).index(self.vue.mode_elagage))
+        self.combo_elagage.setToolTip("Ce que retire l'outil Élaguer autour du point traversé par le trait")
+        self.combo_elagage.currentIndexChanged.connect(self._changer_mode_elagage)
+        grille.addWidget(QLabel("Mode d'élagage :"), 2, 0, 1, 2)
+        grille.addWidget(self.combo_elagage, 3, 0, 1, 2)
         vbox.addWidget(g_outils)
 
         # Relations
@@ -95,10 +113,7 @@ class FenetrePrincipale(QMainWindow):
         grille = QGridLayout(g_rel)
         grille.setSpacing(4)
         self.boutons_relations = {}
-        ordre_relations = [TypeRelation.HORIZONTAL, TypeRelation.VERTICAL, TypeRelation.COINCIDENT,
-                           TypeRelation.POINT_SUR_LIGNE, TypeRelation.PARALLELE, TypeRelation.PERPENDICULAIRE,
-                           TypeRelation.TANGENT, TypeRelation.EGAL, TypeRelation.SUR_AXE, TypeRelation.FIXE]
-        for i, t in enumerate(ordre_relations):
+        for i, t in enumerate(ORDRE_RELATIONS):
             b = QPushButton(LIBELLES_RELATION[t])
             b.clicked.connect(lambda _=False, tt=t: self.appliquer_relation(tt))
             grille.addWidget(b, i // 2, i % 2)
@@ -110,8 +125,7 @@ class FenetrePrincipale(QMainWindow):
         grille = QGridLayout(g_cotes)
         grille.setSpacing(4)
         self.boutons_cotes = {}
-        for i, t in enumerate((TypeCote.LONGUEUR_Z, TypeCote.DIAMETRE, TypeCote.RAYON, TypeCote.ANGLE,
-                               TypeCote.DISTANCE)):
+        for i, t in enumerate(ORDRE_COTES):
             b = QPushButton(LIBELLES_COTE[t])
             b.clicked.connect(lambda _=False, tt=t: self.appliquer_cote(tt))
             grille.addWidget(b, i // 2, i % 2)
@@ -127,12 +141,16 @@ class FenetrePrincipale(QMainWindow):
         self.liste = QListWidget()
         self.liste.setToolTip("Relations et cotes de l'esquisse. Cliquer sélectionne, Suppr supprime.")
         self.liste.itemSelectionChanged.connect(self._liste_selectionnee)
+        # la liste prend la hauteur qui reste, sans en réclamer : les groupes du dessous restent visibles
+        self.liste.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Ignored)
+        self.liste.setMinimumHeight(70)
         v.addWidget(self.liste, 1)
         vbox.addWidget(g_etat, 1)
 
-        # Affichage
+        # Affichage et aimantation
         g_aff = QGroupBox("Affichage")
-        h = QHBoxLayout(g_aff)
+        v = QVBoxLayout(g_aff)
+        h = QHBoxLayout()
         b = QPushButton("Tout voir")
         b.clicked.connect(self.vue.tout_voir)
         h.addWidget(b)
@@ -140,6 +158,18 @@ class FenetrePrincipale(QMainWindow):
         self.case_grille.setChecked(self.reglages.get_bool("grille", True))
         self.case_grille.toggled.connect(self._basculer_grille)
         h.addWidget(self.case_grille)
+        v.addLayout(h)
+        v.addWidget(QLabel("Aimantation :"))
+        grille = QGridLayout()
+        grille.setSpacing(2)
+        self.cases_aimants = {}
+        for i, cle in enumerate(AIMANTS_DEFAUT):
+            case = QCheckBox(LIBELLES_AIMANTS[cle])
+            case.setChecked(self.vue.aimants[cle])
+            case.toggled.connect(lambda actif, c=cle: self._basculer_aimant(c, actif))
+            grille.addWidget(case, i // 2, i % 2)
+            self.cases_aimants[cle] = case
+        v.addLayout(grille)
         vbox.addWidget(g_aff)
 
         defilement = QScrollArea()
@@ -214,6 +244,42 @@ class FenetrePrincipale(QMainWindow):
         menu.addAction(act)
         return act
 
+    def construire_menu_contextuel(self) -> QMenu:
+        """Menu du clic droit : relations et cotes possibles pour la sélection, suppression, outils, vue."""
+        menu = QMenu(self)
+        sel = list(self.vue.selection)
+        possibles = False
+        if sel:
+            for t in ORDRE_RELATIONS:
+                if self.esquisse.relation_possible(t, sel) or (
+                        t == TypeRelation.POINT_SUR_LIGNE and self.esquisse.relation_possible(TypeRelation.POINT_SUR_ARC, sel)):
+                    menu.addAction(LIBELLES_RELATION[t], lambda tt=t: self.appliquer_relation(tt))
+                    possibles = True
+            if possibles:
+                menu.addSeparator()
+            for t in ORDRE_COTES:
+                if self.esquisse.cote_possible(t, sel):
+                    menu.addAction("Cote : " + LIBELLES_COTE[t], lambda tt=t: self.appliquer_cote(tt))
+                    possibles = True
+            if not possibles:
+                act = menu.addAction("Aucune relation ni cote pour cette sélection")
+                act.setEnabled(False)
+            menu.addSeparator()
+            menu.addAction("Supprimer la sélection", self.supprimer_selection)
+            menu.addAction("Tout désélectionner", self.vue.deselectionner)
+        else:
+            act = menu.addAction("Sélectionnez des éléments pour poser une relation ou une cote")
+            act.setEnabled(False)
+        menu.addSeparator()
+        m_outils = menu.addMenu("Outils")
+        for act in self.actions_outils.values():
+            m_outils.addAction(act)
+        menu.addAction("Tout voir", self.vue.tout_voir)
+        return menu
+
+    def menu_contextuel(self, pos_globale) -> None:
+        self.construire_menu_contextuel().exec(pos_globale)
+
     # -- état et affichage ---------------------------------------------------------------
 
     def _appliquer_resultat(self, res: Resultat) -> None:
@@ -280,6 +346,15 @@ class FenetrePrincipale(QMainWindow):
         self.reglages.set("grille", actif)
         self.vue.viewport().update()
 
+    def _basculer_aimant(self, cle: str, actif: bool) -> None:
+        self.vue.aimants[cle] = actif
+        self.reglages.set("aimant." + cle, actif)
+
+    def _changer_mode_elagage(self, index: int) -> None:
+        mode = self.combo_elagage.itemData(index)
+        self.vue.mode_elagage = mode
+        self.reglages.set("modeElagage", mode)
+
     def choisir_outil(self, outil: str) -> None:
         self.vue.definir_outil(outil)
         self.actions_outils[outil].setChecked(True)
@@ -325,11 +400,15 @@ class FenetrePrincipale(QMainWindow):
         self.act_retablir.setEnabled(bool(self._retablir))
 
     def _point_depuis_accroche(self, acc: Accroche) -> int:
-        if acc.point is not None and acc.point in self.esquisse.points:
+        e = self.esquisse
+        if acc.point is not None and acc.point in e.points:
             return acc.point
-        p = self.esquisse.ajouter_point(acc.z, acc.x)
-        if acc.sur_axe:
-            self.esquisse.ajouter_relation(TypeRelation.SUR_AXE, (p.id,))
+        p = e.ajouter_point(acc.z, acc.x)
+        if acc.courbe is not None and e.genre(acc.courbe) in ("ligne", "arc"):
+            typ = TypeRelation.POINT_SUR_LIGNE if e.genre(acc.courbe) == "ligne" else TypeRelation.POINT_SUR_ARC
+            e.ajouter_relation(typ, (p.id, acc.courbe))
+        elif acc.sur_axe:
+            e.ajouter_relation(TypeRelation.SUR_AXE, (p.id,))
         return p.id
 
     def ajouter_ligne(self, debut: Accroche, fin: Accroche, auto: Optional[TypeRelation] = None) -> Optional[int]:
@@ -355,17 +434,32 @@ class FenetrePrincipale(QMainWindow):
         self._appliquer_resultat(res)
         return p2
 
-    def ajouter_arc(self, debut: Accroche, fin: Accroche, centre: Tuple[float, float], horaire: bool) -> Optional[int]:
+    def ajouter_arc(self, debut: Accroche, fin: Accroche, centre: Tuple[float, float], horaire: bool) -> None:
         e = self.esquisse
 
         def action():
             p1 = self._point_depuis_accroche(debut)
             p2 = self._point_depuis_accroche(fin)
             c = e.ajouter_point(*centre)
-            return e.ajouter_arc(c.id, p1, p2, horaire)
+            e.ajouter_arc(c.id, p1, p2, horaire)
 
         self._modifier(action)
-        return None
+
+    def elaguer(self, coups: List[Tuple[int, float]], mode: str) -> None:
+        """Applique l'élagage à chaque (élément, paramètre) traversé par le trait."""
+        if not coups:
+            self.statusBar().showMessage("Élaguer : le trait n'a traversé aucune ligne ni aucun arc.", 4000)
+            return
+        e = self.esquisse
+
+        def action():
+            for ident, t in coups:
+                if e.genre(ident) in ("ligne", "arc"):
+                    elagage.elaguer(e, ident, t, mode)
+
+        self.vue.selection = []
+        self._modifier(action)
+        self._selection_changee()
 
     def debut_glissement(self) -> None:
         self._avant_glissement = self.esquisse.to_json()
@@ -417,10 +511,14 @@ class FenetrePrincipale(QMainWindow):
         if not sel:
             self.statusBar().showMessage("Sélectionnez d'abord les éléments concernés.", 5000)
             return
+        e = self.esquisse
+        if type_ == TypeRelation.POINT_SUR_LIGNE and not e.relation_possible(type_, sel) \
+                and e.relation_possible(TypeRelation.POINT_SUR_ARC, sel):
+            type_ = TypeRelation.POINT_SUR_ARC
         nouvelle = []
 
         def action():
-            r = self.esquisse.ajouter_relation(type_, sel)
+            r = e.ajouter_relation(type_, sel)
             nouvelle.append(r.id)
 
         if self._modifier(action):
