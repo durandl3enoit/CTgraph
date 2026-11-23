@@ -27,7 +27,8 @@ GL_DEPTH_TEST = 0x0B71
 GL_COLOR_BUFFER_BIT = 0x4000
 GL_MULTISAMPLE = 0x809D
 
-SEGMENTS = 64             # facettes sur un tour
+SEGMENTS = 96             # facettes sur un tour
+ANGLE_PLI_DEG = 30.0      # en deçà, deux segments voisins du profil partagent une normale lissée (arcs, congés)
 TAILLE_DEFAUT = QSize(380, 270)
 TAILLE_MINI = QSize(180, 130)
 
@@ -73,33 +74,73 @@ def _norme(v):
     return (v[0] / n, v[1] / n, v[2] / n) if n > 1e-12 else None
 
 
-def maillage_revolution(contours: Sequence[Sequence[Point2]], segments: int = SEGMENTS) -> Tuple[array, int]:
+def _normales_profil(poly: Sequence[Point2], angle_pli: float) -> List[Tuple[Point2, Point2, Point2, Point2]]:
+    """Pour chaque segment non dégénéré du profil : (début, fin, normale 2D au début, normale 2D à la fin).
+
+    La normale 2D (composantes z, x) est perpendiculaire au segment. Entre deux segments voisins dont
+    l'angle est inférieur à `angle_pli`, les normales sont moyennées : un arc échantillonné paraît lisse,
+    un épaulement reste net. Un profil refermé sur lui-même lisse aussi la jonction.
+    """
+    segs = []
+    for p, q in zip(poly, poly[1:]):
+        dz, dx = q[0] - p[0], q[1] - p[1]
+        lg = math.hypot(dz, dx)
+        if lg < 1e-9:
+            continue
+        segs.append((p, q, (dx / lg, -dz / lg)))
+    if not segs:
+        return []
+    ferme = len(poly) > 2 and abs(poly[0][0] - poly[-1][0]) < 1e-9 and abs(poly[0][1] - poly[-1][1]) < 1e-9
+    cos_pli = math.cos(math.radians(angle_pli))
+
+    def lissee(n1, n2):
+        if n1[0] * n2[0] + n1[1] * n2[1] >= cos_pli:
+            sz, sx = n1[0] + n2[0], n1[1] + n2[1]
+            lg = math.hypot(sz, sx)
+            if lg > 1e-12:
+                return (sz / lg, sx / lg)
+        return None
+
+    out = []
+    n = len(segs)
+    for i, (p, q, nrm) in enumerate(segs):
+        debut, fin = nrm, nrm
+        if i > 0 or ferme:
+            voisin = segs[i - 1][2]
+            debut = lissee(voisin, nrm) or nrm
+        if i < n - 1 or ferme:
+            voisin = segs[(i + 1) % n][2]
+            fin = lissee(nrm, voisin) or nrm
+        out.append((p, q, debut, fin))
+    return out
+
+
+def maillage_revolution(contours: Sequence[Sequence[Point2]], segments: int = SEGMENTS,
+                        angle_pli: float = ANGLE_PLI_DEG) -> Tuple[array, int]:
     """Triangles de la révolution des polylignes (z, x) autour de l'axe Z.
 
     Renvoie (tableau de flottants, nombre de sommets). Chaque sommet : position (3) puis normale (3).
-    Les triangles dégénérés (sur l'axe) sont omis.
+    Les normales sont celles de la surface de révolution exacte, pas des facettes : l'éclairage d'un
+    cylindre est continu quel que soit le nombre de facettes. Les triangles dégénérés (sur l'axe) sont omis.
     """
     data = array("f")
     nb = 0
     cos = [math.cos(2.0 * math.pi * j / segments) for j in range(segments)] + [1.0]
     sin = [math.sin(2.0 * math.pi * j / segments) for j in range(segments)] + [0.0]
     for poly in contours:
-        for (z1, x1), (z2, x2) in zip(poly, poly[1:]):
-            if abs(z1 - z2) < 1e-9 and abs(x1 - x2) < 1e-9:
-                continue
+        for (z1, x1), (z2, x2), (nz1, nx1), (nz2, nx2) in _normales_profil(poly, angle_pli):
             for j in range(segments):
                 c0, s0, c1, s1 = cos[j], sin[j], cos[j + 1], sin[j + 1]
-                a = (z1, x1 * c0, x1 * s0)
-                b = (z2, x2 * c0, x2 * s0)
-                c = (z2, x2 * c1, x2 * s1)
-                d = (z1, x1 * c1, x1 * s1)
+                a = ((z1, x1 * c0, x1 * s0), (nz1, nx1 * c0, nx1 * s0))
+                b = ((z2, x2 * c0, x2 * s0), (nz2, nx2 * c0, nx2 * s0))
+                c = ((z2, x2 * c1, x2 * s1), (nz2, nx2 * c1, nx2 * s1))
+                d = ((z1, x1 * c1, x1 * s1), (nz1, nx1 * c1, nx1 * s1))
                 for tri in ((a, b, c), (a, c, d)):
-                    p, q, r = tri
-                    n = _norme(_croix(_sous(q, p), _sous(r, p)))
-                    if n is None:
-                        continue
-                    for s in tri:
-                        data.extend((s[0], s[1], s[2], n[0], n[1], n[2]))
+                    (p, _), (q, _), (r, _) = tri
+                    if _norme(_croix(_sous(q, p), _sous(r, p))) is None:
+                        continue                      # triangle écrasé sur l'axe
+                    for pos, nrm in tri:
+                        data.extend((pos[0], pos[1], pos[2], nrm[0], nrm[1], nrm[2]))
                     nb += 3
     return data, nb
 

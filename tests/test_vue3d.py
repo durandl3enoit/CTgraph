@@ -27,6 +27,37 @@ def test_cylindre_ferme_par_l_axe():
     assert rayon == pytest.approx(10.0, abs=1e-5)
 
 
+def test_normales_lisses_sur_le_cylindre_et_nettes_aux_epaulements():
+    poly = [(0, 0), (0, 10), (-20, 10), (-20, 0), (0, 0)]
+    data, nb = maillage_revolution([poly], segments=16)
+    for i in range(0, len(data), 6):
+        z, y, x3, nz, ny, nx3 = data[i:i + 6]
+        r = math.hypot(y, x3)
+        if abs(r - 10.0) < 1e-6 and -20 < z < 0:
+            pass
+        if abs(r - 10.0) < 1e-6 and abs(nz) < 1e-6:
+            # sommet du cylindre : la normale est radiale et alignée sur la position, pas sur la facette
+            assert (ny, nx3) == pytest.approx((y / r, x3 / r), abs=1e-6)
+        if abs(r) < 1e-6:
+            # sur l'axe : normale axiale (face avant ou arrière), l'angle droit n'est pas lissé
+            assert abs(nz) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_arc_echantillonne_est_lisse():
+    from ctgraph.ui.vue_3d import _normales_profil
+    # un quart de cercle en 8 segments : angle entre voisins 11°, sous le pli de 30°
+    arc = [(10 * math.cos(math.radians(90 - 11.25 * k)) - 10, 10 * math.sin(math.radians(90 - 11.25 * k)))
+           for k in range(9)]
+    segs = _normales_profil(arc, 30.0)
+    assert len(segs) == 8
+    for (p, q, n_debut, n_fin) in segs:
+        assert n_debut != n_fin                  # lissées avec les voisins, donc différentes aux deux bouts
+        assert math.hypot(*n_debut) == pytest.approx(1.0) and math.hypot(*n_fin) == pytest.approx(1.0)
+    # la fin d'un segment et le début du suivant partagent la même normale : pas de couture
+    for s1, s2 in zip(segs, segs[1:]):
+        assert s1[3] == pytest.approx(s2[2])
+
+
 def test_sans_contour_rien():
     data, nb = maillage_revolution([], segments=8)
     assert nb == 0 and len(data) == 0
