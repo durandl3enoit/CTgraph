@@ -11,8 +11,9 @@ vue 3D, séquences d'usinage, post-processeur, liaison RS232) viendront ensuite.
 Une pièce est un **demi-profil** dans le plan (Z, X) : Z le long de l'axe de la pièce, X le rayon.
 L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les cotes « Ø ».
 
-* **Changer d'outil** : les boutons à icônes de la colonne, les touches `S`, `L`, `A`, `E`, ou **clic droit
-  maintenu + molette** sur le dessin : le nom de l'outil s'affiche sous le curseur.
+* **Changer d'outil** : les boutons à icônes de la colonne, les touches `S`, `L`, `A`, `C`, `E`, ou **clic droit
+  maintenu + molette** sur le dessin : le nom de l'outil s'affiche sous le curseur. Le curseur porte le symbole
+  de l'outil actif, avec une petite croix au point de visée.
 * **Clic semi-long puis glisser** (environ un tiers de seconde sans bouger) : quel que soit l'outil, le glisser
   qui suit est un trait d'élagage ; l'outil d'avant revient au relâchement.
 * **Symboles des relations** : « -z- » pour horizontal (le long de l'axe Z), un x coupant une barre verticale
@@ -26,6 +27,7 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   longueur Z entre deux faces verticales, ou écart entre deux lignes parallèles (profondeur de gorge), que l'on
   glisse le long de la première. Deux points : longueur Z. La cote suit le curseur en aperçu, le clic la pose
   et demande sa valeur, proposée à la mesure actuelle. `Ctrl+K` ou le menu du clic droit cotent la sélection.
+  Avec le même outil, tirez une valeur de cote déjà posée pour la déplacer, double-cliquez-la pour la modifier.
   Une cote de diamètre affiche aussi le rayon équivalent sous elle ; double-cliquez l'une ou l'autre valeur pour
   l'éditer, l'autre suit.
   Une cote qui sur-contraindrait l'esquisse devient aussitôt une **cote pilotée** : grisée, entre parenthèses,

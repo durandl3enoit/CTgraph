@@ -38,53 +38,129 @@ def _fabriquer(dessin: Callable[[QPainter], None]) -> QIcon:
 TRAIT = 2.4   # épaisseur commune des icônes d'outils : un seul trait, une seule idée par icône
 
 
-def icone_selection(encre: QColor, fond: QColor) -> QIcon:
+def _dessin_selection(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
     """Flèche pleine."""
     def dessin(p: QPainter):
         p.setPen(_stylo(encre, 1.2))
         p.setBrush(QBrush(encre))
         pts = [(6, 3), (6, 19.5), (10.3, 15.6), (13.2, 21.5), (16, 20.2), (13.2, 14.6), (18.8, 14.4)]
         p.drawPolygon(QPolygonF([QPointF(*pt) for pt in pts]))
-    return _fabriquer(dessin)
+    return dessin
 
 
-def icone_ligne(encre: QColor, fond: QColor) -> QIcon:
-    """Un profil en escalier, rien d'autre."""
+def _dessin_ligne(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
+    """Un épaulement : trois segments."""
     def dessin(p: QPainter):
         p.setPen(_stylo(encre, TRAIT))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawPolyline(QPolygonF([QPointF(3.5, 20), QPointF(3.5, 11), QPointF(13, 11), QPointF(13, 4.5),
-                                  QPointF(20.5, 4.5)]))
-    return _fabriquer(dessin)
+        p.drawPolyline(QPolygonF([QPointF(3.5, 17), QPointF(11.5, 17), QPointF(11.5, 7), QPointF(20.5, 7)]))
+    return dessin
 
 
-def icone_arc(encre: QColor, fond: QColor) -> QIcon:
+def _dessin_arc(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
     """Un demi-cercle."""
     def dessin(p: QPainter):
         p.setPen(_stylo(encre, TRAIT))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawArc(QRectF(4, 6, 16, 16), 0, 180 * 16)
-    return _fabriquer(dessin)
+    return dessin
 
 
-def icone_cote(encre: QColor, fond: QColor) -> QIcon:
+def _dessin_cote(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
     """Une ligne de cote fléchée aux deux bouts."""
     def dessin(p: QPainter):
         p.setPen(_stylo(encre, 2.0))
         p.drawLine(QPointF(3.5, 12), QPointF(20.5, 12))
         p.drawPolyline(QPolygonF([QPointF(8, 8), QPointF(3.5, 12), QPointF(8, 16)]))
         p.drawPolyline(QPolygonF([QPointF(16, 8), QPointF(20.5, 12), QPointF(16, 16)]))
-    return _fabriquer(dessin)
+    return dessin
 
 
-def icone_elaguer(encre: QColor, fond: QColor) -> QIcon:
+def _dessin_elaguer(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
     """Une ligne barrée d'un trait rouge."""
     def dessin(p: QPainter):
         p.setPen(_stylo(encre, TRAIT))
         p.drawLine(QPointF(3.5, 13), QPointF(20.5, 13))
         p.setPen(_stylo(ROUGE, TRAIT))
         p.drawLine(QPointF(15, 4), QPointF(9, 21))
-    return _fabriquer(dessin)
+    return dessin
+
+
+def _dessins_actions(encre: QColor, fond: QColor):
+    def supprimer(p: QPainter):
+        p.setPen(_stylo(encre, TRAIT))
+        p.drawLine(QPointF(6, 6), QPointF(18, 18))
+        p.drawLine(QPointF(6, 18), QPointF(18, 6))
+
+    def deselectionner(p: QPainter):
+        p.setPen(_stylo(encre, 1.4, [2.0, 2.0]))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(QRectF(4, 4, 16, 16))
+        p.setPen(_stylo(encre, 1.8))
+        p.drawLine(QPointF(9, 9), QPointF(15, 15))
+        p.drawLine(QPointF(9, 15), QPointF(15, 9))
+
+    def tout_voir(p: QPainter):
+        p.setPen(_stylo(encre, 1.8))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for sx, sy in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+            cx, cy = 12 - sx * 8, 12 - sy * 8
+            p.drawLine(QPointF(12 - sx * 2.5, 12 - sy * 2.5), QPointF(cx, cy))
+            p.drawPolyline(QPolygonF([QPointF(cx + sx * 4, cy), QPointF(cx, cy), QPointF(cx, cy + sy * 4)]))
+
+    def pilotee(p: QPainter):
+        p.setPen(_stylo(QColor(encre.red(), encre.green(), encre.blue(), 150), 1.6))
+        p.drawLine(QPointF(3.5, 12), QPointF(20.5, 12))
+        p.drawPolyline(QPolygonF([QPointF(8, 8), QPointF(3.5, 12), QPointF(8, 16)]))
+        p.drawPolyline(QPolygonF([QPointF(16, 8), QPointF(20.5, 12), QPointF(16, 16)]))
+        p.setPen(QPen(encre, 1))
+        p.setFont(_police(10))
+        p.drawText(QRectF(0, 0, 24, 9), Qt.AlignmentFlag.AlignCenter, "( )")
+
+    return {"supprimer": supprimer, "deselectionner": deselectionner, "tout_voir": tout_voir, "pilotee": pilotee}
+
+
+def icone_action(nom: str, encre: QColor, fond: QColor) -> QIcon:
+    """Icône d'une action de menu : supprimer, deselectionner, tout_voir, pilotee."""
+    return _fabriquer(_dessins_actions(encre, fond)[nom])
+
+
+_CURSEURS: dict = {}
+
+
+def curseur_outil(nom: str, encre: QColor, fond: QColor):
+    """Curseur propre à un outil : une petite croix au point chaud, le symbole de l'outil en bas à droite.
+
+    La sélection garde la flèche habituelle. Dessiné net en HiDPI (facteur 2), mis en cache.
+    """
+    from PySide6.QtGui import QCursor
+    if nom == "selection":
+        return QCursor(Qt.CursorShape.ArrowCursor)
+    cle = (nom, encre.rgb(), fond.rgb())
+    if cle in _CURSEURS:
+        return _CURSEURS[cle]
+    taille, facteur = 32, 2
+    pm = QPixmap(taille * facteur, taille * facteur)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
+    p.scale(facteur, facteur)
+    # croix au point chaud (8, 8), avec un halo de la couleur du fond pour rester visible partout
+    for couleur, largeur in ((fond, 3.2), (encre, 1.4)):
+        p.setPen(_stylo(couleur, largeur))
+        p.drawLine(QPointF(1, 8), QPointF(15, 8))
+        p.drawLine(QPointF(8, 1), QPointF(8, 15))
+    # symbole de l'outil, réduit, en bas à droite
+    p.save()
+    p.translate(13, 13)
+    p.scale(0.75, 0.75)
+    ICONES_OUTILS[nom](encre, fond)(p)
+    p.restore()
+    p.end()
+    pm.setDevicePixelRatio(facteur)
+    cur = QCursor(pm, 8, 8)
+    _CURSEURS[cle] = cur
+    return cur
 
 
 def _police(px: int) -> QFont:
@@ -190,17 +266,17 @@ def icone_relation(nom: str, encre: QColor, fond: QColor) -> QIcon:
 
 
 ICONES_OUTILS = {
-    "selection": icone_selection,
-    "ligne": icone_ligne,
-    "arc": icone_arc,
-    "cote": icone_cote,
-    "elaguer": icone_elaguer,
+    "selection": _dessin_selection,
+    "ligne": _dessin_ligne,
+    "arc": _dessin_arc,
+    "cote": _dessin_cote,
+    "elaguer": _dessin_elaguer,
 }
 
 
 def icone_outil(nom: str, encre: QColor, fond: QColor) -> QIcon:
     """Icône d'un outil d'esquisse, dans la couleur de texte du thème (lisible en clair comme en sombre)."""
-    return ICONES_OUTILS[nom](encre, fond)
+    return _fabriquer(ICONES_OUTILS[nom](encre, fond))
 
 
 def app_pixmap(size: int = 256) -> QPixmap:

@@ -347,6 +347,43 @@ def test_outil_cote_deduit_le_type(fenetre):
     ecran(win, "outil_cote")
 
 
+def test_curseur_suit_l_outil(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win.choisir_outil("selection")
+    assert vue.viewport().cursor().shape() == Qt.CursorShape.ArrowCursor
+    for outil in ("ligne", "arc", "cote", "elaguer"):
+        win.choisir_outil(outil)
+        assert vue.viewport().cursor().shape() == Qt.CursorShape.BitmapCursor
+    win.choisir_outil("selection")
+
+
+def test_menu_contextuel_a_des_icones(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    clic(vue, -20, 20)
+    clic(vue, 0, 10)
+    menu = win.construire_menu_contextuel()
+    actions = [a for a in menu.actions() if not a.isSeparator() and a.isEnabled()]
+    assert actions and all(not a.icon().isNull() for a in actions)
+
+
+def test_outil_cote_deplace_une_cote(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (defaut, True)
+    rectangle(win)
+    e = win.esquisse
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    win.poser_cote(TypeCote.LONGUEUR_Z, (haut.id,), (0.0, 8.0))
+    c = list(e.cotes.values())[-1]
+    win.choisir_outil("cote")
+    depart = pos(vue, -20, 28)                 # l'étiquette « 40 » est au-dessus de la ligne, à x = 20 + 8
+    arrivee = pos(vue, -10, 34)
+    glisser(vue, depart, arrivee)
+    assert c.decalage[0] == pytest.approx(10.0, abs=0.3) and c.decalage[1] == pytest.approx(14.0, abs=0.3)
+    assert vue._cote_elements == []            # déplacer une cote n'en commence pas une nouvelle
+    assert len(e.cotes) == 1
+
+
 def test_diametre_accompagne_de_son_rayon(fenetre):
     from ctgraph.ui.vue_esquisse import ROLE_ID, ROLE_VARIANTE, Etiquette
     win, vue = fenetre, fenetre.vue

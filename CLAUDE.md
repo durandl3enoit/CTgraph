@@ -57,6 +57,9 @@ vérification par relecture du G-code généré, réception des programmes depui
   sur l'une ou l'autre édite la grandeur correspondante (le modèle ne stocke que le diamètre).
 - **Icônes sobres** : un trait, une idée par icône, pas de points ni de pointillés. Les boutons de relations
   portent une petite icône (`icone_relation`), les mêmes symboles que dans l'esquisse pour horizontal et vertical.
+  Le menu contextuel et les menus ont des icônes (`icone_action` pour supprimer, désélectionner, tout voir, pilotée).
+- **Curseur par outil** (`curseur_outil`) : croix au point chaud et symbole de l'outil en bas à droite ; la sélection
+  garde la flèche. L'outil Cote déplace aussi les cotes posées et les édite au double-clic.
 - **Cote sur-contrainte = cote pilotée** : une cote posée qui entre en conflit, est redondante ou n'est pas atteignable passe
   automatiquement en cote pilotée (`Cote.pilotee`, paramètre libre et `driving=False` pour PlaneGCS), grisée et
   entre parenthèses ; le solveur y écrit la mesure après chaque résolution. Elle redevient pilotante à la demande

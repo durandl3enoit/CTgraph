@@ -19,7 +19,7 @@ from ..build_info import BUILD_TIME
 from ..esquisse import elagage
 from ..esquisse.modele import (LIBELLES_COTE, LIBELLES_RELATION, ErreurEsquisse, Esquisse, TypeCote, TypeRelation)
 from ..esquisse.solveur import AdaptateurSolveur, Resultat
-from ..icons import icone_outil, icone_relation
+from ..icons import icone_action, icone_outil, icone_relation
 from ..log import get as get_log
 from ..settings import Settings
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
@@ -104,6 +104,7 @@ class FenetrePrincipale(QMainWindow):
         pal = self.palette()
         encre = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.ButtonText)
         fond_icone = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Button)
+        self._encre, self._fond_icone = encre, fond_icone
         for i, (cle, libelle, touche) in enumerate(OUTILS):
             act = QAction(icone_outil(cle, encre, fond_icone), libelle, self, checkable=True)
             act.setShortcut(QKeySequence(touche))
@@ -224,7 +225,10 @@ class FenetrePrincipale(QMainWindow):
         m_edition.addSeparator()
         self.act_supprimer = self._action(m_edition, "&Supprimer", QKeySequence.StandardKey.Delete,
                                           self.supprimer_selection)
-        self._action(m_edition, "Tout &désélectionner", QKeySequence("Ctrl+D"), self.vue.deselectionner)
+        self.act_supprimer.setIcon(icone_action("supprimer", self._encre, self._fond_icone))
+        self.act_deselectionner = self._action(m_edition, "Tout &désélectionner", QKeySequence("Ctrl+D"),
+                                               self.vue.deselectionner)
+        self.act_deselectionner.setIcon(icone_action("deselectionner", self._encre, self._fond_icone))
 
         m_esquisse = barre.addMenu("E&squisse")
         for act in self.actions_outils.values():
@@ -232,11 +236,13 @@ class FenetrePrincipale(QMainWindow):
         m_esquisse.addSeparator()
         m_rel = m_esquisse.addMenu("&Relations")
         for t, b in self.boutons_relations.items():
-            self._action(m_rel, LIBELLES_RELATION[t], None, b.click)
-        self._action(m_esquisse, "&Coter la sélection", QKeySequence("Ctrl+K"), self.coter_selection)
+            self._action(m_rel, LIBELLES_RELATION[t], None, b.click).setIcon(b.icon())
+        self.act_coter = self._action(m_esquisse, "&Coter la sélection", QKeySequence("Ctrl+K"), self.coter_selection)
+        self.act_coter.setIcon(self.actions_outils["cote"].icon())
 
         m_aff = barre.addMenu("&Affichage")
-        self._action(m_aff, "&Tout voir", QKeySequence("F"), self.vue.tout_voir)
+        self.act_tout_voir = self._action(m_aff, "&Tout voir", QKeySequence("F"), self.vue.tout_voir)
+        self.act_tout_voir.setIcon(icone_action("tout_voir", self._encre, self._fond_icone))
         self._action(m_aff, "Zoom &avant", QKeySequence.StandardKey.ZoomIn, lambda: self.vue.zoomer(1.25))
         self._action(m_aff, "Zoom a&rrière", QKeySequence.StandardKey.ZoomOut, lambda: self.vue.zoomer(0.8))
         self.act_grille = self._action(m_aff, "&Grille", QKeySequence("G"), self.case_grille.toggle)
@@ -266,37 +272,42 @@ class FenetrePrincipale(QMainWindow):
         menu = QMenu(self)
         sel = list(self.vue.selection)
         possibles = False
+        encre, fond = self._encre, self._fond_icone
         if sel:
             for t in ORDRE_RELATIONS:
                 if self.esquisse.relation_possible(t, sel) or (
                         t == TypeRelation.POINT_SUR_LIGNE and self.esquisse.relation_possible(TypeRelation.POINT_SUR_ARC, sel)):
-                    menu.addAction(LIBELLES_RELATION[t], lambda tt=t: self.appliquer_relation(tt))
+                    menu.addAction(icone_relation(t.value, encre, fond), LIBELLES_RELATION[t],
+                                   lambda tt=t: self.appliquer_relation(tt))
                     possibles = True
             if possibles:
                 menu.addSeparator()
             deduction = self.vue.deduire_cote(sel)
             if deduction is not None:
-                menu.addAction(f"Coter la sélection ({LIBELLES_COTE[deduction[0]]})", self.coter_selection)
+                menu.addAction(self.actions_outils["cote"].icon(),
+                               f"Coter la sélection ({LIBELLES_COTE[deduction[0]]})", self.coter_selection)
                 possibles = True
             cotes_sel = [self.esquisse.cotes[i] for i in sel if i in self.esquisse.cotes]
             for co in cotes_sel:
                 texte = "Rendre la cote pilotante" if co.pilotee else "Rendre la cote pilotée (mesurée)"
-                menu.addAction(f"{texte} : {self.esquisse.texte_cote(co)}", lambda cid=co.id: self.basculer_pilotee(cid))
+                icone = self.actions_outils["cote"].icon() if co.pilotee else icone_action("pilotee", encre, fond)
+                menu.addAction(icone, f"{texte} : {self.esquisse.texte_cote(co)}",
+                               lambda cid=co.id: self.basculer_pilotee(cid))
                 possibles = True
             if not possibles:
                 act = menu.addAction("Aucune relation ni cote pour cette sélection")
                 act.setEnabled(False)
             menu.addSeparator()
-            menu.addAction("Supprimer la sélection", self.supprimer_selection)
-            menu.addAction("Tout désélectionner", self.vue.deselectionner)
+            menu.addAction(self.act_supprimer.icon(), "Supprimer la sélection", self.supprimer_selection)
+            menu.addAction(self.act_deselectionner.icon(), "Tout désélectionner", self.vue.deselectionner)
         else:
             act = menu.addAction("Sélectionnez des éléments pour poser une relation ou une cote")
             act.setEnabled(False)
         menu.addSeparator()
-        m_outils = menu.addMenu("Outils")
+        m_outils = menu.addMenu(self.actions_outils[self.vue.outil].icon(), "Outils")
         for act in self.actions_outils.values():
             m_outils.addAction(act)
-        menu.addAction("Tout voir", self.vue.tout_voir)
+        menu.addAction(self.act_tout_voir.icon(), "Tout voir", self.vue.tout_voir)
         return menu
 
     def menu_contextuel(self, pos_globale) -> None:

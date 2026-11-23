@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (QApplication, QGraphicsEllipseItem, QGraphicsItem
 from ..esquisse import geometrie as geo
 from ..esquisse.elagage import courbe as courbe_de
 from ..esquisse.modele import Cote, Esquisse, Relation, TypeCote, TypeRelation
+from ..icons import curseur_outil
 
 ROLE_GENRE = 0
 ROLE_ID = 1
@@ -863,6 +864,13 @@ class VueEsquisse(QGraphicsView):
         acc.sur_axe = abs(acc.x) < 1e-9 if acc.point is None else abs(e.points[acc.point].x) < 1e-9
         return acc
 
+    def etiquette_sous(self, pos) -> Optional[Tuple[str, int]]:
+        """(genre, identifiant) de l'étiquette de cote exactement sous le curseur, sinon None."""
+        for it in self.items(pos):
+            if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote":
+                return it.data(ROLE_GENRE), it.data(ROLE_ID)
+        return None
+
     def element_sous(self, pos, genres=None) -> Optional[Tuple[str, int]]:
         """(genre, identifiant) de l'élément sous le curseur, les points d'abord.
 
@@ -910,6 +918,12 @@ class VueEsquisse(QGraphicsView):
             return
         self.outil = outil
         self.annuler_outil()
+        self.appliquer_curseur()
+
+    def appliquer_curseur(self) -> None:
+        """Le curseur dit quel outil est actif : flèche en sélection, croix et symbole de l'outil sinon."""
+        c = self._couleurs()
+        self.viewport().setCursor(curseur_outil(self.outil, c["texte"], c["fond"]))
 
     def annuler_outil(self) -> None:
         """Interrompt le tracé en cours (ligne enchaînée, arc, trait d'élagage) sans changer d'outil."""
@@ -936,7 +950,6 @@ class VueEsquisse(QGraphicsView):
         if self.outil != "elaguer":
             self.controleur.choisir_outil("elaguer")
         self._trait = [depart]
-        self.setCursor(Qt.CursorShape.CrossCursor)
         self.message.emit("Élaguer : tirez le trait au travers des objets à couper, puis relâchez.")
         self._dessiner_apercu(None)
 
@@ -944,7 +957,6 @@ class VueEsquisse(QGraphicsView):
         trait = self._trait
         self._trait = []
         self._geste = False
-        self.setCursor(Qt.CursorShape.ArrowCursor)
         self._dessiner_apercu(None)
         if len(trait) >= 2:
             self.controleur.elaguer(self.croisements_du_trait(trait), self.mode_elagage)
@@ -1010,7 +1022,7 @@ class VueEsquisse(QGraphicsView):
         pos = event.position().toPoint()
         if event.button() == Qt.MouseButton.MiddleButton:
             self._pan_dernier = pos
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
             return
         if event.button() == Qt.MouseButton.RightButton:
             self._droit_molette = False        # l'action du clic droit est décidée au relâchement
@@ -1021,6 +1033,11 @@ class VueEsquisse(QGraphicsView):
         self._geste = False
         if self.outil == "selection":
             self._presser_selection(pos)
+        elif self.outil == "cote" and not self._cote_elements and (el := self.etiquette_sous(pos)) is not None:
+            # l'outil Cote déplace aussi les cotes posées : prise de leur étiquette (pas de leurs traits)
+            self._glisse_cote = el[1]
+            self._glisse_dernier = self.mapToScene(pos)
+            self._glisse_actif = False
         elif self.outil in ("ligne", "arc", "cote"):
             if not self.en_cours():
                 self._timer_geste.start(DELAI_GESTE_MS)
@@ -1308,7 +1325,7 @@ class VueEsquisse(QGraphicsView):
         pos = event.position().toPoint()
         if event.button() == Qt.MouseButton.MiddleButton:
             self._pan_dernier = None
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.appliquer_curseur()
             return
         if event.button() == Qt.MouseButton.RightButton:
             if self._droit_molette:
@@ -1329,11 +1346,12 @@ class VueEsquisse(QGraphicsView):
             self._terminer_geste()
             self._press_pos = None
             return
+        etiquette_prise = self._glisse_cote is not None
         if self.outil == "ligne" and not self._a_bouge(pos):
             self._presser_ligne(pos)
         elif self.outil == "arc" and not self._a_bouge(pos):
             self._presser_arc(pos)
-        elif self.outil == "cote" and not self._a_bouge(pos):
+        elif self.outil == "cote" and not etiquette_prise and not self._a_bouge(pos):
             self._presser_cote(pos)
         self._press_pos = None
         if self._glisse_point is not None:
@@ -1344,7 +1362,7 @@ class VueEsquisse(QGraphicsView):
             self._glisse_point = None
             self._glisse_actif = False
         if self._glisse_cote is not None:
-            if not self._glisse_actif:
+            if not self._glisse_actif and self.outil == "selection":
                 self.selectionner(self._glisse_cote, ajouter=True)
             self._glisse_cote = None
             self._glisse_dernier = None
@@ -1367,7 +1385,7 @@ class VueEsquisse(QGraphicsView):
         return coups
 
     def mouseDoubleClickEvent(self, event) -> None:
-        if event.button() != Qt.MouseButton.LeftButton or self.outil != "selection":
+        if event.button() != Qt.MouseButton.LeftButton or self.outil not in ("selection", "cote"):
             return
         pos = event.position().toPoint()
         el = self.element_sous(pos)
