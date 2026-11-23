@@ -53,10 +53,18 @@ vérification par relecture du G-code généré, réception des programmes depui
   l'outil d'avant revient au relâchement.
 - **Symboles des relations** : horizontal = « -z- », vertical = x coupant une barre verticale ; dessinés dans
   `Etiquette`, pas des lettres H et V.
+- **Cote sur-contrainte = cote pilotée** : une cote posée qui entre en conflit, est redondante ou n'est pas atteignable passe
+  automatiquement en cote pilotée (`Cote.pilotee`, paramètre libre et `driving=False` pour PlaneGCS), grisée et
+  entre parenthèses ; le solveur y écrit la mesure après chaque résolution. Elle redevient pilotante à la demande
+  si cela ne sur-contraint pas.
+- **Contours fermés remplis** d'une teinte discrète (`VueEsquisse.contours_fermes`) : chaînes dont chaque sommet
+  relie exactement deux éléments, refermées sur elles-mêmes ou dont les deux bouts touchent l'axe (fermeture par
+  l'axe de révolution). Les boucles à sommets de degré ≥ 3 attendent un vrai parcours de faces.
 - **Les cotes sont un seul outil** (`Cote`, touche C), pas cinq boutons : le type se déduit des éléments cliqués et de
   l'endroit où la cote est posée (`VueEsquisse.deduire_cote`). Point → diamètre ; arc → rayon ; ligne → longueur Z
   si posée au-dessus ou au-dessous, sinon diamètre (horizontale), angle (inclinée) ou distance (verticale) ;
-  deux lignes → angle, ou longueur Z entre deux verticales ; deux points → longueur Z (distance si même z).
+  deux lignes → angle, longueur Z entre deux verticales, ou écart (`TypeCote.ECART`, distance point-droite
+  PlaneGCS) entre deux parallèles ; deux points → longueur Z (distance si même z).
 - **Élaguer** : un trait tiré au travers des objets ; quatre modes qui ne changent que les bornes de la portion retirée
   (croisements avec les autres objets, points d'esquisse sur l'objet, extrémité la plus proche, objet entier).
   Les points de coupe reçoivent « point sur » l'objet croisé ; une ligne scindée garde horizontal/vertical/parallèle/

@@ -132,10 +132,12 @@ def test_serialisation_aller_retour():
     e.ajouter_relation(TypeRelation.HORIZONTAL, (li.id,))
     e.ajouter_relation(TypeRelation.FIXE, (1,))
     c = e.ajouter_cote(TypeCote.DIAMETRE, (4,), 50.0, (3.0, -1.5))
+    c.pilotee = True
     texte = e.to_json()
     e2 = Esquisse.from_json(texte)
     assert e2.to_dict() == e.to_dict()
     assert e2.cotes[c.id].decalage == (3.0, -1.5)
+    assert e2.cotes[c.id].pilotee is True and e2.texte_cote(e2.cotes[c.id]) == "(Ø 50)"
     # les identifiants continuent après le plus grand existant
     p = e2.ajouter_point(1, 1)
     assert p.id > max(list(e.points) + list(e.lignes) + list(e.relations) + list(e.cotes))

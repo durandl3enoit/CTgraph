@@ -38,6 +38,7 @@ class TypeCote(str, Enum):
     RAYON = "rayon"            # (arc)
     ANGLE = "angle"            # (ligne) par rapport à l'axe Z, ou (ligne, ligne) ; en degrés
     DISTANCE = "distance"      # (point, point) ou (ligne) : distance vraie
+    ECART = "ecart"            # (ligne, ligne) parallèles : distance perpendiculaire (profondeur de gorge…)
 
 
 LIBELLES_RELATION: Dict[TypeRelation, str] = {
@@ -60,6 +61,7 @@ LIBELLES_COTE: Dict[TypeCote, str] = {
     TypeCote.RAYON: "Rayon",
     TypeCote.ANGLE: "Angle",
     TypeCote.DISTANCE: "Distance",
+    TypeCote.ECART: "Écart",
 }
 
 # Formes acceptées : suites de genres d'éléments, dans l'ordre donné.
@@ -83,6 +85,7 @@ _FORMES_COTE: Dict[TypeCote, List[Tuple[str, ...]]] = {
     TypeCote.RAYON: [("arc",)],
     TypeCote.ANGLE: [("ligne",), ("ligne", "ligne")],
     TypeCote.DISTANCE: [("point", "point"), ("ligne",)],
+    TypeCote.ECART: [("ligne", "ligne")],
 }
 
 
@@ -131,6 +134,7 @@ class Cote:
     elements: Tuple[int, ...]
     valeur: float
     decalage: Tuple[float, float] = (0.0, 0.0)   # position de l'étiquette par rapport à son point d'ancrage
+    pilotee: bool = False                        # cote pilotée : mesurée par le solveur, elle n'impose rien
 
 
 class Esquisse:
@@ -244,7 +248,8 @@ class Esquisse:
             if a.z > b.z:
                 elements = (elements[1], elements[0])
             valeur = abs(valeur)
-        if type_ in (TypeCote.DIAMETRE, TypeCote.RAYON, TypeCote.DISTANCE, TypeCote.LONGUEUR_Z) and valeur < 0:
+        if type_ in (TypeCote.DIAMETRE, TypeCote.RAYON, TypeCote.DISTANCE, TypeCote.LONGUEUR_Z, TypeCote.ECART) \
+                and valeur < 0:
             raise ErreurEsquisse(f"{LIBELLES_COTE[type_]} : valeur négative refusée")
         c = Cote(self._nouvel_id(), type_, elements, valeur, (float(decalage[0]), float(decalage[1])))
         self.cotes[c.id] = c
@@ -334,6 +339,14 @@ class Esquisse:
         c, d = self.points[a.centre], self.points[a.debut]
         return math.hypot(d.z - c.z, d.x - c.x)
 
+    def ecart(self, l1: int, l2: int) -> float:
+        """Distance du premier point de `l1` à la droite portant `l2` (écart entre deux lignes parallèles)."""
+        a = self.points[self.lignes[l1].p1]
+        c, d = (self.points[i] for i in self.extremites(l2))
+        vz, vx = d.z - c.z, d.x - c.x
+        n = math.hypot(vz, vx) or 1.0
+        return abs((a.z - c.z) * vx - (a.x - c.x) * vz) / n
+
     def angle_ligne(self, ligne_id: int) -> float:
         """Angle en degrés de la ligne (p1 vers p2) par rapport à l'axe Z, dans ]-180, 180]."""
         a, b = self._points_de((ligne_id,))
@@ -360,6 +373,8 @@ class Esquisse:
             return 2.0 * p.x
         if type_ == TypeCote.RAYON:
             return self.rayon(elements[0])
+        if type_ == TypeCote.ECART:
+            return self.ecart(elements[0], elements[1])
         if type_ == TypeCote.ANGLE:
             if len(elements) == 1:
                 return self.angle_ligne(elements[0])
@@ -371,13 +386,17 @@ class Esquisse:
 
     def texte_cote(self, cote: Cote, decimales: int = 2) -> str:
         v = f"{cote.valeur:.{decimales}f}".rstrip("0").rstrip(".") if decimales else f"{cote.valeur:.0f}"
+        if v == "-0":
+            v = "0"
         if cote.type == TypeCote.DIAMETRE:
-            return "Ø " + v
-        if cote.type == TypeCote.RAYON:
-            return "R " + v
-        if cote.type == TypeCote.ANGLE:
-            return v + "°"
-        return v
+            texte = "Ø " + v
+        elif cote.type == TypeCote.RAYON:
+            texte = "R " + v
+        elif cote.type == TypeCote.ANGLE:
+            texte = v + "°"
+        else:
+            texte = v
+        return f"({texte})" if cote.pilotee else texte   # convention du dessin : une cote mesurée entre parenthèses
 
     # -- sérialisation ---------------------------------------------------------------
 
@@ -393,7 +412,7 @@ class Esquisse:
             "relations": [{"id": r.id, "type": r.type.value, "elements": list(r.elements)}
                           for r in self.relations.values()],
             "cotes": [{"id": c.id, "type": c.type.value, "elements": list(c.elements), "valeur": c.valeur,
-                       "decalage": list(c.decalage)} for c in self.cotes.values()],
+                       "decalage": list(c.decalage), "pilotee": c.pilotee} for c in self.cotes.values()],
         }
 
     @classmethod
@@ -416,7 +435,8 @@ class Esquisse:
         for c in d.get("cotes", []):
             dec = c.get("decalage") or [0.0, 0.0]
             e.cotes[int(c["id"])] = Cote(int(c["id"]), TypeCote(c["type"]), tuple(int(x) for x in c["elements"]),
-                                         float(c["valeur"]), (float(dec[0]), float(dec[1])))
+                                         float(c["valeur"]), (float(dec[0]), float(dec[1])),
+                                         bool(c.get("pilotee", False)))
         ids = list(e.points) + list(e.lignes) + list(e.arcs) + list(e.relations) + list(e.cotes)
         e._prochain_id = max([int(d.get("prochain_id", 1))] + [i + 1 for i in ids])
         e._verifier_coherence()

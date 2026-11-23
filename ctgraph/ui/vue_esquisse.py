@@ -269,6 +269,7 @@ class VueEsquisse(QGraphicsView):
             "centre": QColor(texte.red(), texte.green(), texte.blue(), 160),
             "guide": QColor(90, 180, 255, 160) if sombre else QColor(0, 110, 220, 160),
             "elagage": QColor(230, 60, 50),
+            "pilotee": QColor(150, 150, 150) if sombre else QColor(135, 135, 135),
         }
 
     # -- fond : grille et axe ----------------------------------------------------------
@@ -313,6 +314,15 @@ class VueEsquisse(QGraphicsView):
         redondants = set(self.resultat.redondants) if self.resultat is not None else set()
         sel = set(self.selection)
         couleur_geom = c["geometrie"]
+
+        # contours fermés : un remplissage discret valide que le profil se referme
+        for chaine in self.contours_fermes():
+            it = QGraphicsPathItem(self._chemin_contour(chaine))
+            it.setPen(QPen(Qt.PenStyle.NoPen))
+            it.setBrush(QBrush(QColor(couleur_geom.red(), couleur_geom.green(), couleur_geom.blue(), 30)))
+            it.setZValue(1)
+            self._scene.addItem(it)
+            self._items.append(it)
 
         for li in e.lignes.values():
             a, b = e.points[li.p1], e.points[li.p2]
@@ -365,7 +375,10 @@ class VueEsquisse(QGraphicsView):
                 self._enregistrer(et, "relation", r.id)
 
         for co in e.cotes.values():
-            couleur = c["conflit"] if co.id in conflits else (c["redondant"] if co.id in redondants else c["cote"])
+            if co.pilotee:
+                couleur = c["pilotee"]
+            else:
+                couleur = c["conflit"] if co.id in conflits else (c["redondant"] if co.id in redondants else c["cote"])
             if co.id in sel:
                 couleur = c["selection"]
             self._dessiner_cote(co, couleur, c)
@@ -405,6 +418,85 @@ class VueEsquisse(QGraphicsView):
         pts[0] = (d.z, d.x)
         pts[-1] = (f.z, f.x)
         return pts
+
+    def contours_fermes(self) -> List[List[Tuple[int, bool]]]:
+        """Chaînes fermées de lignes et d'arcs, chaque sommet reliant exactement deux éléments.
+
+        Chaque chaîne est une liste de (élément, parcouru à l'envers). Les boucles passant par un sommet
+        à trois branches ou plus ne sont pas reconnues : il faudra un vrai parcours de faces plus tard.
+        """
+        e = self.esquisse
+        elements = list(e.lignes) + list(e.arcs)
+        incidences: Dict[int, List[int]] = {}
+        for ident in elements:
+            for p in e.extremites(ident):
+                incidences.setdefault(p, []).append(ident)
+
+        def avancer(courant: int, inverse: bool, chaine: List[Tuple[int, bool]], vus: set) -> Optional[int]:
+            """Prolonge la chaîne depuis la sortie de `courant` tant que les sommets relient deux éléments.
+            Renvoie le point d'arrêt, ou None si la chaîne se referme sur son premier élément."""
+            while True:
+                a, b = e.extremites(courant)
+                fin = a if inverse else b
+                autour = incidences.get(fin, [])
+                if len(autour) != 2:
+                    return fin
+                suivant = autour[0] if autour[1] == courant else autour[1]
+                if suivant == chaine[0][0]:
+                    return None
+                if suivant in vus:
+                    return fin
+                na, nb = e.extremites(suivant)
+                inverse = (nb == fin)
+                chaine.append((suivant, inverse))
+                vus.add(suivant)
+                courant = suivant
+
+        def sur_axe(pid: int) -> bool:
+            return abs(e.points[pid].x) < 1e-9
+
+        vus: set = set()
+        contours = []
+        for depart in elements:
+            if depart in vus:
+                continue
+            avant: List[Tuple[int, bool]] = [(depart, False)]
+            vus.add(depart)
+            fin_avant = avancer(depart, False, avant, vus)
+            if fin_avant is None:
+                chaine = avant                                   # refermée sur elle-même
+            else:
+                arriere: List[Tuple[int, bool]] = [(depart, True)]
+                fin_arriere = avancer(depart, True, arriere, vus)
+                chaine = [(i, not inv) for i, inv in reversed(arriere[1:])] + avant
+                # un profil dont les deux bouts touchent l'axe est fermé par l'axe de révolution
+                if fin_arriere is None or not (sur_axe(fin_avant) and sur_axe(fin_arriere)) or fin_avant == fin_arriere:
+                    continue
+                if all(sur_axe(p) for i, _ in chaine for p in e.extremites(i)):
+                    continue                                     # tout est sur l'axe : pas de surface
+            if len(chaine) >= 3 or any(e.genre(i) == "arc" for i, _ in chaine) or fin_avant is not None:
+                contours.append(chaine)
+        return contours
+
+    def _chemin_contour(self, chaine: List[Tuple[int, bool]]) -> QPainterPath:
+        e = self.esquisse
+        path = QPainterPath()
+        premier = True
+        for ident, inverse in chaine:
+            if e.genre(ident) == "ligne":
+                a, b = (e.points[i] for i in e.extremites(ident))
+                pts = [(a.z, a.x), (b.z, b.x)]
+            else:
+                pts = self._points_arc(ident, 32)
+            if inverse:
+                pts = pts[::-1]
+            if premier:
+                path.moveTo(*pts[0])
+                premier = False
+            for q in pts[1:]:
+                path.lineTo(*q)
+        path.closeSubpath()
+        return path
 
     def _milieu(self, ident: int) -> Tuple[float, float]:
         e = self.esquisse
@@ -526,6 +618,24 @@ class VueEsquisse(QGraphicsView):
             path.lineTo(mz, mx)
             self._fleche(path, (mz, mx), (mz - ce.z, mx - ce.x))
             pos = (mz + dz, mx + dx)
+        elif co.type == TypeCote.ECART:
+            # segment perpendiculaire entre les deux lignes, glissé le long de la première selon le décalage
+            l1, l2 = (e.lignes[i] for i in co.elements)
+            a, b = e.points[l1.p1], e.points[l1.p2]
+            uz, ux = b.z - a.z, b.x - a.x
+            n = math.hypot(uz, ux) or 1.0
+            uz, ux = uz / n, ux / n
+            glisse = dz * uz + dx * ux
+            az, ax = (a.z + b.z) / 2 + uz * glisse, (a.x + b.x) / 2 + ux * glisse
+            c1, c2 = e.points[l2.p1], e.points[l2.p2]
+            t = geo.parametre(geo.ligne((c1.z, c1.x), (c2.z, c2.x)), (az, ax))
+            bz, bx = geo.position(geo.ligne((c1.z, c1.x), (c2.z, c2.x)), t)
+            path.moveTo(az, ax)
+            path.lineTo(bz, bx)
+            if math.hypot(bz - az, bx - ax) > 1e-9:
+                self._fleche(path, (az, ax), (az - bz, ax - bx))
+                self._fleche(path, (bz, bx), (bz - az, bx - ax))
+            pos = ((az + bz) / 2, (ax + bx) / 2)
         else:  # angle
             if len(co.elements) == 1:
                 mz, mx = self._milieu(co.elements[0])
@@ -720,15 +830,20 @@ class VueEsquisse(QGraphicsView):
         acc.sur_axe = abs(acc.x) < 1e-9 if acc.point is None else abs(e.points[acc.point].x) < 1e-9
         return acc
 
-    def element_sous(self, pos) -> Optional[Tuple[str, int]]:
-        """(genre, identifiant) de l'élément sous le curseur, les points d'abord."""
+    def element_sous(self, pos, genres=None) -> Optional[Tuple[str, int]]:
+        """(genre, identifiant) de l'élément sous le curseur, les points d'abord.
+
+        `genres` restreint la recherche, par exemple à la géométrie seule pour ignorer les étiquettes de cotes.
+        Les textes (symboles de relations, valeurs de cotes) ne répondent qu'à un clic exactement dessus.
+        """
         t = TOLERANCE_PX
         for it in self.items(pos):
-            if isinstance(it, Etiquette) and it.data(ROLE_GENRE):
+            if isinstance(it, Etiquette) and it.data(ROLE_GENRE) and (genres is None or it.data(ROLE_GENRE) in genres):
                 return it.data(ROLE_GENRE), it.data(ROLE_ID)
         rect = QRect(pos.x() - t, pos.y() - t, 2 * t + 1, 2 * t + 1)
         candidats = [(it.data(ROLE_GENRE), it.data(ROLE_ID)) for it in self.items(rect)
-                     if it.data(ROLE_GENRE) and not isinstance(it, Etiquette)]
+                     if it.data(ROLE_GENRE) and not isinstance(it, Etiquette)
+                     and (genres is None or it.data(ROLE_GENRE) in genres)]
         if not candidats:
             return None
         ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4}
@@ -1021,8 +1136,13 @@ class VueEsquisse(QGraphicsView):
                 return TypeCote.LONGUEUR_Z, pts, dec
             a1 = e.angle_ligne(l1.id) % 180.0
             a2 = e.angle_ligne(l2.id) % 180.0
-            if abs(a1 - a2) < 1e-6 or abs(abs(a1 - a2) - 180.0) < 1e-6:
-                return None                      # parallèles : pas de cote entre deux lignes parallèles pour l'instant
+            paralleles = (self.est_horizontale(l1.id) and self.est_horizontale(l2.id)) \
+                or abs(a1 - a2) < 1e-6 or abs(abs(a1 - a2) - 180.0) < 1e-6
+            if paralleles:
+                # écart entre deux lignes parallèles (profondeur de gorge, épaulement…), glissé le long de la première
+                m = self._milieu(l1.id)
+                dec = (0.0, 0.0) if z is None else (z - m[0], x - m[1])
+                return TypeCote.ECART, elements, dec
             commun = {l1.p1, l1.p2} & {l2.p1, l2.p2}
             if commun:
                 p = e.points[commun.pop()]
@@ -1042,8 +1162,9 @@ class VueEsquisse(QGraphicsView):
         return None
 
     def _presser_cote(self, pos) -> None:
-        el = self.element_sous(pos)
-        if el is not None and el[0] in ("point", "ligne", "arc") and el[1] not in self._cote_elements:
+        # la géométrie seule : une étiquette de cote déjà posée ne doit pas cacher la ligne que l'on vise
+        el = self.element_sous(pos, genres=("point", "ligne", "arc"))
+        if el is not None and el[1] not in self._cote_elements:
             if len(self._cote_elements) >= 2:
                 self.message.emit("Cote : deux éléments au plus. Cliquez où poser la cote, ou Échap.")
                 return

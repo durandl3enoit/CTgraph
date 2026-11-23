@@ -13,7 +13,9 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
   Puis : symboles « -z- » et x barré pour horizontal et vertical, icônes dessinées sur les boutons d'outils,
   clic droit maintenu + molette pour changer d'outil (bulle sous le curseur), clic semi-long + glisser pour élaguer
   depuis n'importe quel outil. Les cinq boutons de cotes sont remplacés par un outil Cote unique qui déduit le type
-  de l'élément cliqué et de l'endroit où la cote est posée, avec aperçu sous le curseur.
+  de l'élément cliqué et de l'endroit où la cote est posée, avec aperçu sous le curseur. Une cote qui sur-contraint
+  devient automatiquement pilotée (grisée, entre parenthèses, mesurée par le solveur), réversible par le menu.
+  Les contours fermés sont remplis d'une teinte discrète.
 - **Module d'esquisse paramétrique, version 0.1, fonctionnel** :
   - `ctgraph/esquisse/modele.py` : points, lignes, arcs, dix relations, cinq cotes, validation des genres,
     suppression en cascade, mesures, JSON (`.ctg`).

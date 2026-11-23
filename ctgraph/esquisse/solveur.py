@@ -192,26 +192,38 @@ class AdaptateurSolveur:
             return math.radians(c.valeur)
         return c.valeur
 
+    @staticmethod
+    def _valeur_depuis_param(c: Cote, v: float) -> float:
+        if c.type == TypeCote.DIAMETRE:
+            return 2.0 * v
+        if c.type == TypeCote.ANGLE:
+            return math.degrees(v)
+        return v
+
     def _traduire_cote(self, c: Cote):
+        """Une cote pilotante fixe son paramètre ; une cote pilotée le laisse libre et le solveur le mesure."""
         s, e, els = self._s, self.esquisse, c.elements
-        param = s.add_fixed_param(self._valeur_param(c))
+        pilote = not c.pilotee
+        param = s.add_param(self._valeur_param(c), fixed=pilote)
         self._params_cotes[c.id] = param
         if c.type == TypeCote.LONGUEUR_Z:
             a, b = self._points_cote(els)
-            return s.difference(self._params_pts[a][0], self._params_pts[b][0], param)   # z(b) - z(a) = L
+            return s.difference(self._params_pts[a][0], self._params_pts[b][0], param, driving=pilote)  # z(b) - z(a)
         if c.type == TypeCote.DISTANCE:
             a, b = self._points_cote(els)
-            return s.p2p_distance(self._pts[a], self._pts[b], param)
+            return s.p2p_distance(self._pts[a], self._pts[b], param, driving=pilote)
         if c.type == TypeCote.DIAMETRE:
             pid = els[0] if e.genre(els[0]) == "point" else e.lignes[els[0]].p1
-            return s.coordinate_y(self._pts[pid], param)
+            return s.coordinate_y(self._pts[pid], param, driving=pilote)
         if c.type == TypeCote.RAYON:
-            return s.arc_radius(self._arcs[els[0]], param)
+            return s.arc_radius(self._arcs[els[0]], param, driving=pilote)
+        if c.type == TypeCote.ECART:
+            return s.p2l_distance(self._pts[e.lignes[els[0]].p1], self._lignes[els[1]], param, driving=pilote)
         if c.type == TypeCote.ANGLE:
             if len(els) == 1:
                 li = e.lignes[els[0]]
-                return s.p2p_angle(self._pts[li.p1], self._pts[li.p2], param)
-            return s.l2l_angle(self._lignes[els[0]], self._lignes[els[1]], param)
+                return s.p2p_angle(self._pts[li.p1], self._pts[li.p2], param, driving=pilote)
+            return s.l2l_angle(self._lignes[els[0]], self._lignes[els[1]], param, driving=pilote)
         raise ValueError(f"cote inconnue : {c.type}")
 
     # -- résolution ------------------------------------------------------------------
@@ -228,6 +240,12 @@ class AdaptateurSolveur:
             z, x = self._s.get_point(sid)
             p = self.esquisse.points[pid]
             p.z, p.x = float(z), float(x)
+        for cid, param in self._params_cotes.items():
+            c = self.esquisse.cotes.get(cid)
+            if c is not None and c.pilotee:
+                c.valeur = self._valeur_depuis_param(c, float(self._s.get_param(param)))
+                if c.type != TypeCote.ANGLE:
+                    c.valeur = abs(c.valeur)
 
     def resoudre(self, diagnostiquer: bool = True) -> Resultat:
         """Résout le système. En cas d'échec, les positions précédentes sont conservées."""
@@ -250,7 +268,8 @@ class AdaptateurSolveur:
             return res
         res.dof = int(d.dof)
         res.conflits = sorted({self._tags[int(t)] for t in d.conflicting if int(t) in self._tags})
-        res.redondants = sorted({self._tags[int(t)] for t in d.redundant if int(t) in self._tags})
+        redondants = list(d.redundant) + list(getattr(d, "partially_redundant", []))
+        res.redondants = sorted({self._tags[int(t)] for t in redondants if int(t) in self._tags})
         for ident in self.erreurs:
             if ident not in res.conflits:
                 res.conflits.append(ident)
@@ -259,6 +278,8 @@ class AdaptateurSolveur:
     def modifier_cote(self, cote_id: int, valeur: float) -> Resultat:
         """Change la valeur d'une cote et résout. Revient à l'ancienne valeur en cas d'échec."""
         c = self.esquisse.cotes[cote_id]
+        if c.pilotee:
+            return Resultat(False, "pilotee")      # une cote pilotée se lit, elle ne se règle pas
         ancienne = c.valeur
         c.valeur = float(valeur)
         param = self._params_cotes.get(cote_id)

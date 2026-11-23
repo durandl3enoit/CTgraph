@@ -325,11 +325,103 @@ def test_outil_cote_deduit_le_type(fenetre):
     clic(vue, 40, 30)
     c = list(e.cotes.values())[-1]
     assert c.type == TypeCote.RAYON and c.valeur == pytest.approx(10.0, abs=0.3)
+    # deux lignes horizontales : écart (profondeur de gorge)
+    win.choisir_outil("ligne")
+    clic(vue, -30, 35)
+    clic(vue, -10, 35)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    win.choisir_outil("cote")
+    clic(vue, -20, 20)
+    assert vue._cote_elements == [haut.id]
+    clic(vue, -25, 35)
+    assert len(vue._cote_elements) == 2
+    clic(vue, -28, 27)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.ECART and c.valeur == pytest.approx(15.0, abs=0.3)
+    assert win.resultat.succes
     # Échap abandonne une cote commencée
     clic(vue, -20, 20)
     QTest.keyClick(vue, Qt.Key.Key_Escape)
     assert vue._cote_elements == []
     ecran(win, "outil_cote")
+
+
+def test_contour_ferme_detecte(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win.choisir_outil("ligne")
+    clic(vue, 10, 30)                   # chaîne ouverte, loin de l'axe : rien
+    clic(vue, 30, 30)
+    clic(vue, 30, 40)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    assert vue.contours_fermes() == []
+    rectangle(win, fermer=False)        # trois côtés dont les bouts touchent l'axe : fermé par l'axe
+    contours = vue.contours_fermes()
+    assert len(contours) == 1 and len(contours[0]) == 3
+    win.choisir_outil("ligne")
+    clic(vue, -40, 0)
+    clic(vue, 0, 0)                     # referme sur l'origine
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    contours = vue.contours_fermes()
+    assert len(contours) == 1 and len(contours[0]) == 4
+    # un arc remplace un côté : le contour reste fermé
+    e = win.esquisse
+    haut = next(li for li in e.lignes.values()
+                if all(e.points[p].x > 10 and e.points[p].z <= 1e-6 for p in (li.p1, li.p2)))
+    p1, p2 = haut.p1, haut.p2
+    avant = e.to_dict()
+
+    def action_ratee():
+        e.supprimer(haut.id)
+        e.ajouter_ligne(p1, 9999)          # échoue après avoir modifié le modèle
+
+    assert not win._modifier(action_ratee)
+    assert win.esquisse.to_dict() == avant     # le modèle est restauré tel quel
+    e = win.esquisse
+
+    def action():
+        c = e.ajouter_point(-20, 20)
+        e.ajouter_arc(c.id, p1, p2, horaire=e.points[p1].z > e.points[p2].z)
+        e.supprimer(haut.id)
+
+    assert win._modifier(action)
+    contours = vue.contours_fermes()
+    assert len(contours) == 1 and any(e.genre(i) == "arc" for i, _ in contours[0])
+    ecran(win, "contour_ferme")
+
+
+def test_cote_surcontrainte_devient_pilotee(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (defaut, True)
+    rectangle(win)
+    e = win.esquisse
+    origine = next(p for p in e.points.values() if abs(p.z) < 1e-6 and abs(p.x) < 1e-6)
+    vue.selection = [origine.id]
+    win.appliquer_relation(TypeRelation.FIXE)
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    face = next(li for li in e.lignes.values() if all(abs(e.points[p].z) < 1e-6 for p in (li.p1, li.p2)))
+    fond = next(li for li in e.lignes.values() if all(e.points[p].z < -30 for p in (li.p1, li.p2)))
+    win.poser_cote(TypeCote.LONGUEUR_Z, (haut.id,), (0.0, 8.0))
+    win.poser_cote(TypeCote.DIAMETRE, (haut.id,), (6.0, 0.0))
+    assert win.resultat.entierement_contraint
+    # une troisième cote, redondante avec la longueur : elle devient pilotée au lieu de sur-contraindre
+    win.poser_cote(TypeCote.LONGUEUR_Z, (face.p1, fond.p1), (0.0, -8.0))
+    c = list(e.cotes.values())[-1]
+    assert c.pilotee and c.valeur == pytest.approx(40.0, abs=0.2)
+    assert win.resultat.entierement_contraint and not win.resultat.conflits
+    assert e.texte_cote(c).startswith("(")
+    # elle suit la cote pilotante
+    longueur = next(co for co in e.cotes.values() if co.type == TypeCote.LONGUEUR_Z and not co.pilotee)
+    win._appliquer_resultat(win.solveur.modifier_cote(longueur.id, 55.0))
+    assert c.valeur == pytest.approx(55.0, abs=1e-6)
+    # la rendre pilotante est refusé tant que l'autre longueur existe
+    assert not win.basculer_pilotee(c.id)
+    assert c.pilotee
+    # une fois l'autre longueur supprimée, elle peut piloter
+    vue.selection = [longueur.id]
+    win.supprimer_selection()
+    assert win.basculer_pilotee(c.id)
+    assert not c.pilotee and win.resultat.entierement_contraint
+    ecran(win, "cote_pilotee")
 
 
 def test_clic_semi_long_puis_glisser_elague(fenetre):

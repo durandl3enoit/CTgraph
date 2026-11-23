@@ -252,6 +252,11 @@ class FenetrePrincipale(QMainWindow):
             if deduction is not None:
                 menu.addAction(f"Coter la sélection ({LIBELLES_COTE[deduction[0]]})", self.coter_selection)
                 possibles = True
+            cotes_sel = [self.esquisse.cotes[i] for i in sel if i in self.esquisse.cotes]
+            for co in cotes_sel:
+                texte = "Rendre la cote pilotante" if co.pilotee else "Rendre la cote pilotée (mesurée)"
+                menu.addAction(f"{texte} : {self.esquisse.texte_cote(co)}", lambda cid=co.id: self.basculer_pilotee(cid))
+                possibles = True
             if not possibles:
                 act = menu.addAction("Aucune relation ni cote pour cette sélection")
                 act.setEnabled(False)
@@ -305,10 +310,13 @@ class FenetrePrincipale(QMainWindow):
             self.liste.addItem(it)
         for c in e.cotes.values():
             cible = ", ".join(f"{e.genre(i)} {i}" for i in c.elements)
-            it = QListWidgetItem(f"{LIBELLES_COTE[c.type]} {e.texte_cote(c)} : {cible}")
+            suffixe = " — pilotée" if c.pilotee else ""
+            it = QListWidgetItem(f"{LIBELLES_COTE[c.type]} {e.texte_cote(c)} : {cible}{suffixe}")
             it.setData(Qt.ItemDataRole.UserRole, c.id)
             if c.id in conflits:
                 it.setForeground(Qt.GlobalColor.red)
+            elif c.pilotee:
+                it.setForeground(Qt.GlobalColor.gray)
             self.liste.addItem(it)
         for i in range(self.liste.count()):
             it = self.liste.item(i)
@@ -373,6 +381,8 @@ class FenetrePrincipale(QMainWindow):
             action()
         except ErreurEsquisse as exc:
             self.statusBar().showMessage(str(exc), 6000)
+            self._charger_json(avant)          # l'action a pu modifier le modèle avant d'échouer : on le restaure
+            self._appliquer_resultat(self.solveur.resoudre())
             return False
         res = self._resoudre_apres_construction()
         self._pousser_annulation(avant)
@@ -484,6 +494,14 @@ class FenetrePrincipale(QMainWindow):
         if c is None:
             return
         libelle = LIBELLES_COTE[c.type]
+        if c.pilotee:
+            rep = QMessageBox.question(self, libelle, f"Cette cote est pilotée : elle mesure {self.esquisse.texte_cote(c)} "
+                                       "et suit la géométrie.\nLa rendre pilotante avec cette valeur ?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                       QMessageBox.StandardButton.No)
+            if rep == QMessageBox.StandardButton.Yes:
+                self.basculer_pilotee(cote_id)
+            return
         unite = "°" if c.type == TypeCote.ANGLE else "mm"
         mini = -360.0 if c.type == TypeCote.ANGLE else 0.0
         valeur, ok = QInputDialog.getDouble(self, libelle, f"{libelle} ({unite}) :", c.valeur, mini, 1e6, 3)
@@ -562,15 +580,35 @@ class FenetrePrincipale(QMainWindow):
             nouvelle.append(c.id)
 
         if self._modifier(action):
-            if nouvelle and nouvelle[0] in self.resultat.conflits:
-                self.statusBar().showMessage(f"{libelle} : cote en conflit avec les autres contraintes. "
-                                             "Annulez (Ctrl+Z) ou supprimez-la.", 8000)
-            elif not self.resultat.succes:
-                self.statusBar().showMessage(f"{libelle} = {valeur:g} : la géométrie ne peut pas suivre.", 8000)
-            else:
-                self.vue.selection = []
-                self.vue.reconstruire()
-                self._selection_changee()
+            if nouvelle and (nouvelle[0] in self.resultat.conflits or nouvelle[0] in self.resultat.redondants
+                             or not self.resultat.succes):
+                # la cote sur-contraint (conflit ou redondance) ou n'est pas atteignable : elle devient pilotée,
+                # grisée, et mesure la géométrie
+                e.cotes[nouvelle[0]].pilotee = True
+                self._appliquer_resultat(self._resoudre_apres_construction())
+                self.statusBar().showMessage(f"{libelle} : la géométrie était déjà déterminée. "
+                                             "Cote passée en cote pilotée (grisée, entre parenthèses).", 8000)
+            self.vue.selection = []
+            self.vue.reconstruire()
+            self._selection_changee()
+
+    def basculer_pilotee(self, cote_id: int) -> bool:
+        """Passe une cote de pilotante à pilotée ou l'inverse. Une cote qui sur-contraindrait reste pilotée."""
+        c = self.esquisse.cotes.get(cote_id)
+        if c is None:
+            return False
+        avant = self.esquisse.to_json()
+        c.pilotee = not c.pilotee
+        res = self._resoudre_apres_construction()
+        if not c.pilotee and (not res.succes or c.id in res.conflits or c.id in res.redondants):
+            c.pilotee = True
+            self._appliquer_resultat(self._resoudre_apres_construction())
+            self.statusBar().showMessage("Cette cote sur-contraindrait l'esquisse : elle reste pilotée. "
+                                         "Supprimez d'abord une autre contrainte.", 8000)
+            return False
+        self._pousser_annulation(avant)
+        self._appliquer_resultat(res)
+        return True
 
     def supprimer_selection(self) -> None:
         sel = list(self.vue.selection)

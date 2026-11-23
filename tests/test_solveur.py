@@ -158,6 +158,43 @@ def test_arc_tangent_et_rayon():
     assert e.points[c.id].x == pytest.approx(18.0, abs=1e-6)
 
 
+def test_ecart_entre_deux_lignes_paralleles():
+    e, n = arbre_contraint()
+    AdaptateurSolveur(e).resoudre()
+    # écart entre le petit et le grand diamètre : (50 - 30) / 2 = 10, mesuré
+    assert e.mesurer(TypeCote.ECART, (n["petit"].id, n["grand"].id)) == pytest.approx(10.0, abs=1e-6)
+    # on remplace le grand diamètre par un écart de 12 : le grand diamètre devient 54
+    e.supprimer(n["d_grand"].id)
+    e.ajouter_cote(TypeCote.ECART, (n["petit"].id, n["grand"].id), 12.0)
+    s = AdaptateurSolveur(e)
+    res = s.resoudre()
+    assert res.succes and res.dof == 0 and not res.conflits, res
+    assert 2 * e.points[n["p3"].id].x == pytest.approx(54.0, abs=1e-6)
+
+
+def test_cote_pilotee_mesure_sans_contraindre():
+    e, n = arbre_contraint()
+    # une seconde longueur totale, pilotée : elle ne sur-contraint pas et prend la mesure
+    c = e.ajouter_cote(TypeCote.LONGUEUR_Z, (n["p5"].id, n["p0"].id), 12.0)
+    c.pilotee = True
+    d = e.ajouter_cote(TypeCote.DIAMETRE, (n["p4"].id,), 1.0)
+    d.pilotee = True
+    s = AdaptateurSolveur(e)
+    res = s.resoudre()
+    assert res.succes and res.dof == 0 and not res.conflits and not res.redondants, res
+    assert c.valeur == pytest.approx(80.0, abs=1e-6)
+    assert d.valeur == pytest.approx(50.0, abs=1e-6)
+    assert e.texte_cote(c) == "(80)"
+    # elle suit les modifications des cotes pilotantes
+    assert s.modifier_cote(n["l_total"].id, 95.0).succes
+    assert c.valeur == pytest.approx(95.0, abs=1e-6)
+    assert s.modifier_cote(n["d_grand"].id, 44.0).succes
+    assert d.valeur == pytest.approx(44.0, abs=1e-6)
+    # on ne règle pas une cote pilotée
+    assert not s.modifier_cote(c.id, 10.0).succes
+    assert c.valeur == pytest.approx(95.0, abs=1e-6)
+
+
 def test_relations_diverses():
     e = Esquisse()
     a = e.ajouter_point(0, 0)
