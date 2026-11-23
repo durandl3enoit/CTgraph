@@ -29,9 +29,8 @@ MAX_ANNULATION = 200
 ORDRE_RELATIONS = [TypeRelation.HORIZONTAL, TypeRelation.VERTICAL, TypeRelation.COINCIDENT,
                    TypeRelation.POINT_SUR_LIGNE, TypeRelation.PARALLELE, TypeRelation.PERPENDICULAIRE,
                    TypeRelation.TANGENT, TypeRelation.EGAL, TypeRelation.SUR_AXE, TypeRelation.FIXE]
-ORDRE_COTES = [TypeCote.LONGUEUR_Z, TypeCote.DIAMETRE, TypeCote.RAYON, TypeCote.ANGLE, TypeCote.DISTANCE]
 OUTILS = (("selection", "Sélection", "S"), ("ligne", "Ligne", "L"), ("arc", "Arc 3 points", "A"),
-          ("elaguer", "Élaguer", "E"))
+          ("cote", "Cote", "C"), ("elaguer", "Élaguer", "E"))
 
 
 class FenetrePrincipale(QMainWindow):
@@ -110,8 +109,8 @@ class FenetrePrincipale(QMainWindow):
         self.combo_elagage.setCurrentIndex(list(elagage.MODES).index(self.vue.mode_elagage))
         self.combo_elagage.setToolTip("Ce que retire l'outil Élaguer autour du point traversé par le trait")
         self.combo_elagage.currentIndexChanged.connect(self._changer_mode_elagage)
-        grille.addWidget(QLabel("Mode d'élagage :"), 2, 0, 1, 2)
-        grille.addWidget(self.combo_elagage, 3, 0, 1, 2)
+        grille.addWidget(QLabel("Mode d'élagage :"), 3, 0, 1, 2)
+        grille.addWidget(self.combo_elagage, 4, 0, 1, 2)
         vbox.addWidget(g_outils)
 
         # Relations
@@ -125,18 +124,6 @@ class FenetrePrincipale(QMainWindow):
             grille.addWidget(b, i // 2, i % 2)
             self.boutons_relations[t] = b
         vbox.addWidget(g_rel)
-
-        # Cotes
-        g_cotes = QGroupBox("Cotes")
-        grille = QGridLayout(g_cotes)
-        grille.setSpacing(4)
-        self.boutons_cotes = {}
-        for i, t in enumerate(ORDRE_COTES):
-            b = QPushButton(LIBELLES_COTE[t])
-            b.clicked.connect(lambda _=False, tt=t: self.appliquer_cote(tt))
-            grille.addWidget(b, i // 2, i % 2)
-            self.boutons_cotes[t] = b
-        vbox.addWidget(g_cotes)
 
         # État et liste des relations et cotes
         g_etat = QGroupBox("État")
@@ -228,9 +215,7 @@ class FenetrePrincipale(QMainWindow):
         m_rel = m_esquisse.addMenu("&Relations")
         for t, b in self.boutons_relations.items():
             self._action(m_rel, LIBELLES_RELATION[t], None, b.click)
-        m_cot = m_esquisse.addMenu("&Cotes")
-        for t, b in self.boutons_cotes.items():
-            self._action(m_cot, LIBELLES_COTE[t], None, b.click)
+        self._action(m_esquisse, "&Coter la sélection", QKeySequence("Ctrl+K"), self.coter_selection)
 
         m_aff = barre.addMenu("&Affichage")
         self._action(m_aff, "&Tout voir", QKeySequence("F"), self.vue.tout_voir)
@@ -263,10 +248,10 @@ class FenetrePrincipale(QMainWindow):
                     possibles = True
             if possibles:
                 menu.addSeparator()
-            for t in ORDRE_COTES:
-                if self.esquisse.cote_possible(t, sel):
-                    menu.addAction("Cote : " + LIBELLES_COTE[t], lambda tt=t: self.appliquer_cote(tt))
-                    possibles = True
+            deduction = self.vue.deduire_cote(sel)
+            if deduction is not None:
+                menu.addAction(f"Coter la sélection ({LIBELLES_COTE[deduction[0]]})", self.coter_selection)
+                possibles = True
             if not possibles:
                 act = menu.addAction("Aucune relation ni cote pour cette sélection")
                 act.setEnabled(False)
@@ -538,12 +523,26 @@ class FenetrePrincipale(QMainWindow):
                 self.vue.reconstruire()
                 self._selection_changee()
 
-    def appliquer_cote(self, type_: TypeCote) -> None:
+    def _demander_valeur(self, libelle: str, unite: str, defaut: float, mini: float) -> Tuple[float, bool]:
+        """Boîte de saisie d'une valeur de cote. Isolée pour pouvoir être remplacée dans les tests."""
+        return QInputDialog.getDouble(self, libelle, f"{libelle} ({unite}) :", defaut, mini, 1e6, 3)
+
+    def coter_selection(self) -> None:
+        """Pose la cote déduite de la sélection courante, au placement par défaut."""
         sel = tuple(self.vue.selection)
         if not sel:
-            self.statusBar().showMessage("Sélectionnez d'abord les éléments à coter.", 5000)
+            self.statusBar().showMessage("Sélectionnez d'abord les éléments à coter, ou prenez l'outil Cote.", 5000)
             return
+        deduction = self.vue.deduire_cote(sel)
+        if deduction is None:
+            self.statusBar().showMessage("Pas de cote pour cette sélection.", 5000)
+            return
+        self.poser_cote(*deduction)
+
+    def poser_cote(self, type_: TypeCote, elements: Tuple[int, ...], decalage: Tuple[float, float]) -> None:
+        """Demande la valeur, puis ajoute la cote. Appelé par l'outil Cote et par « Coter la sélection »."""
         e = self.esquisse
+        sel = tuple(elements)
         try:
             e.verifier_cote(type_, sel)
             mesure = e.mesurer(type_, sel)
@@ -553,11 +552,9 @@ class FenetrePrincipale(QMainWindow):
         libelle = LIBELLES_COTE[type_]
         unite = "°" if type_ == TypeCote.ANGLE else "mm"
         mini = -360.0 if type_ == TypeCote.ANGLE else 0.0
-        valeur, ok = QInputDialog.getDouble(self, libelle, f"{libelle} ({unite}) :", abs(mesure) if mini == 0 else mesure,
-                                            mini, 1e6, 3)
+        valeur, ok = self._demander_valeur(libelle, unite, abs(mesure) if mini == 0 else mesure, mini)
         if not ok:
             return
-        decalage = self.vue.decalage_par_defaut(type_, sel)
         nouvelle = []
 
         def action():

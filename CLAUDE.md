@@ -53,6 +53,10 @@ vérification par relecture du G-code généré, réception des programmes depui
   l'outil d'avant revient au relâchement.
 - **Symboles des relations** : horizontal = « -z- », vertical = x coupant une barre verticale ; dessinés dans
   `Etiquette`, pas des lettres H et V.
+- **Les cotes sont un seul outil** (`Cote`, touche C), pas cinq boutons : le type se déduit des éléments cliqués et de
+  l'endroit où la cote est posée (`VueEsquisse.deduire_cote`). Point → diamètre ; arc → rayon ; ligne → longueur Z
+  si posée au-dessus ou au-dessous, sinon diamètre (horizontale), angle (inclinée) ou distance (verticale) ;
+  deux lignes → angle, ou longueur Z entre deux verticales ; deux points → longueur Z (distance si même z).
 - **Élaguer** : un trait tiré au travers des objets ; quatre modes qui ne changent que les bornes de la portion retirée
   (croisements avec les autres objets, points d'esquisse sur l'objet, extrémité la plus proche, objet entier).
   Les points de coupe reçoivent « point sur » l'objet croisé ; une ligne scindée garde horizontal/vertical/parallèle/

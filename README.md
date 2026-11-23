@@ -17,10 +17,14 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   qui suit est un trait d'élagage ; l'outil d'avant revient au relâchement.
 * **Symboles des relations** : « -z- » pour horizontal (le long de l'axe Z), un x coupant une barre verticale
   pour vertical, puis ∥, ⊥, T, =, ●, axe, F.
-* **Colonne de gauche** : les outils de tracé (Sélection, Ligne, Arc 3 points, Élaguer et son mode), les relations
+* **Colonne de gauche** : les outils (Sélection, Ligne, Arc 3 points, Cote, Élaguer et son mode), les relations
   (horizontal, vertical, coïncident, point sur ligne ou sur arc, parallèle, perpendiculaire, tangent, égal, sur l'axe,
-  fixe), les cotes (longueur Z, diamètre, rayon, angle, distance), l'état du solveur avec la liste des relations
-  et des cotes, l'affichage et l'aimantation.
+  fixe), l'état du solveur avec la liste des relations et des cotes, l'affichage et l'aimantation.
+* **Cote** (`C`) : un seul outil, le type se déduit. Cliquez un point : diamètre. Un arc : rayon. Une ligne, puis
+  l'endroit où poser la cote : au-dessus ou au-dessous, c'est la longueur Z ; à côté, c'est le diamètre d'une ligne
+  horizontale, l'angle d'une ligne inclinée, la hauteur d'une ligne verticale. Deux lignes : angle entre elles, ou
+  longueur Z entre deux faces verticales. Deux points : longueur Z. La cote suit le curseur en aperçu, le clic la pose
+  et demande sa valeur, proposée à la mesure actuelle. `Ctrl+K` ou le menu du clic droit cotent la sélection.
 * **À droite** : le dessin. Molette pour zoomer autour du curseur, bouton du milieu pour déplacer la vue, `F` pour tout voir.
 * **Ligne** (`L`) : cliquez le départ puis chaque sommet ; la chaîne continue jusqu'au clic droit ou `Échap`.
 * **Arc 3 points** (`A`) : départ, arrivée, puis un point par où passe l'arc.
@@ -38,9 +42,8 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   pour changer sa valeur. `Suppr` supprime la sélection.
 * **Clic droit** : menu contextuel avec les relations et cotes possibles pour la sélection, la suppression, les outils
   et « Tout voir ». Pendant un tracé, le clic droit termine la chaîne.
-* **Relations et cotes** : sélectionnez les éléments concernés puis cliquez le bouton (ou le menu du clic droit).
-  La cote propose la mesure actuelle. Une relation ou une cote en conflit est affichée en rouge, une relation
-  redondante en jaune.
+* **Relations** : sélectionnez les éléments concernés puis cliquez le bouton (ou le menu du clic droit).
+  Une relation ou une cote en conflit est affichée en rouge, une relation redondante en jaune.
 * **État** : « sous-contraint » avec le nombre de degrés de liberté, « entièrement contraint » (profil en vert),
   ou « sur-contraint » avec les relations en cause.
 * **Fichiers** : les esquisses sont enregistrées en `.ctg` (JSON lisible). `Ctrl+Z` / `Ctrl+Y` annulent et rétablissent.

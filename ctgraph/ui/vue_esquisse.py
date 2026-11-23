@@ -50,8 +50,9 @@ TOLERANCE_PX = 9          # rayon d'accrochage et de sélection, en pixels
 ANGLE_AUTO_DEG = 4.0      # en deçà, un trait reçoit la relation horizontal ou vertical, ou s'aligne à 45°
 AIMANTS_DEFAUT = {"ortho": True, "diag": True, "objets": True, "axe": True}
 LIBELLES_AIMANTS = {"ortho": "Horizontal / vertical", "diag": "45°", "objets": "Objets proches", "axe": "Axe Z"}
-OUTILS_RAPIDES = ("selection", "ligne", "arc", "elaguer")      # clic droit maintenu + molette
-LIBELLES_OUTILS = {"selection": "Sélection", "ligne": "Ligne", "arc": "Arc 3 points", "elaguer": "Élaguer"}
+OUTILS_RAPIDES = ("selection", "ligne", "arc", "cote", "elaguer")      # clic droit maintenu + molette
+LIBELLES_OUTILS = {"selection": "Sélection", "ligne": "Ligne", "arc": "Arc 3 points", "cote": "Cote",
+                   "elaguer": "Élaguer"}
 DELAI_GESTE_MS = 350      # clic semi-long : au-delà, glisser élague au lieu de sélectionner ou de tracer
 SEUIL_GESTE_PX = 4        # bouger plus que cela avant le délai annule le geste
 
@@ -125,7 +126,7 @@ class VueEsquisse(QGraphicsView):
     message = Signal(str)                    # aide contextuelle pour la barre d'état
     selection_changee = Signal()
 
-    OUTILS = ("selection", "ligne", "arc", "elaguer")
+    OUTILS = ("selection", "ligne", "arc", "cote", "elaguer")
 
     def __init__(self, controleur, parent=None):
         super().__init__(parent)
@@ -158,6 +159,7 @@ class VueEsquisse(QGraphicsView):
         self._debut: Optional[Accroche] = None          # premier point d'une ligne ou d'un arc
         self._arc_fin: Optional[Accroche] = None        # deuxième point d'un arc
         self._trait: List[Tuple[float, float]] = []     # trait d'élagage en cours
+        self._cote_elements: List[int] = []             # éléments cliqués avec l'outil Cote, avant la pose
         self._apercu: List[QGraphicsItem] = []
         self._glisse_point: Optional[int] = None
         self._glisse_cote: Optional[int] = None
@@ -458,7 +460,7 @@ class VueEsquisse(QGraphicsView):
         path.moveTo(pz, px)
         path.lineTo(bz - wz, bx - wx)
 
-    def _dessiner_cote(self, co: Cote, couleur: QColor, c: Dict[str, QColor]) -> None:
+    def _dessiner_cote(self, co: Cote, couleur: QColor, c: Dict[str, QColor], apercu: bool = False) -> None:
         e = self.esquisse
         path = QPainterPath()
         dz, dx = co.decalage
@@ -533,14 +535,18 @@ class VueEsquisse(QGraphicsView):
             path.lineTo(mz + dz, mx + dx)
             pos = (mz + dz, mx + dx)
         it = QGraphicsPathItem(path)
-        pen = QPen(couleur, 1)
+        pen = QPen(couleur, 1, Qt.PenStyle.DashLine if apercu else Qt.PenStyle.SolidLine)
         pen.setCosmetic(True)
         it.setPen(pen)
-        it.setZValue(3)
-        self._enregistrer(it, "cote", co.id)
         et = Etiquette(texte, couleur, c["fond"], gras=True)
         et.setPos(*pos)
-        self._enregistrer(et, "cote", co.id)
+        if apercu:
+            self._ajouter_apercu(it, 3)
+            self._ajouter_apercu(et, 20)
+        else:
+            it.setZValue(3)
+            self._enregistrer(it, "cote", co.id)
+            self._enregistrer(et, "cote", co.id)
 
     # -- aperçu pendant le tracé ---------------------------------------------------------
 
@@ -563,6 +569,8 @@ class VueEsquisse(QGraphicsView):
             pen.setCosmetic(True)
             it.setPen(pen)
             self._ajouter_apercu(it, 25)
+        if self.outil == "cote" and self._cote_elements:
+            self._apercu_cote(curseur, c)
         if curseur is None:
             return
         pen = QPen(c["survol"], 1, Qt.PenStyle.DashLine)
@@ -753,12 +761,13 @@ class VueEsquisse(QGraphicsView):
         self._debut = None
         self._arc_fin = None
         self._trait = []
+        self._cote_elements = []
         self._timer_geste.stop()
         self._dessiner_apercu(None)
         self._aide()
 
     def en_cours(self) -> bool:
-        return self._debut is not None or bool(self._trait)
+        return self._debut is not None or bool(self._trait) or bool(self._cote_elements)
 
     # -- geste d'élagage et cycle d'outils -------------------------------------------------
 
@@ -829,6 +838,12 @@ class VueEsquisse(QGraphicsView):
                 self.message.emit("Arc : cliquez un point par où passe l'arc.")
         elif self.outil == "elaguer":
             self.message.emit("Élaguer : tirez un trait au travers des lignes ou des arcs à couper.")
+        elif self.outil == "cote":
+            if not self._cote_elements:
+                self.message.emit("Cote : cliquez un point (diamètre), un arc (rayon), une ligne, ou deux éléments.")
+            else:
+                self.message.emit("Cote : cliquez où la poser. Le type suit l'endroit : au-dessus = longueur Z, "
+                                  "à côté = diamètre ou angle. Un second élément : angle ou longueur entre deux faces.")
         else:
             self.message.emit("Sélection : les clics s'ajoutent, clic dans le vide pour tout désélectionner. "
                               "Tirez un point, double-cliquez une cote. Clic semi-long + glisser : élaguer. "
@@ -851,7 +866,7 @@ class VueEsquisse(QGraphicsView):
         self._geste = False
         if self.outil == "selection":
             self._presser_selection(pos)
-        elif self.outil in ("ligne", "arc"):
+        elif self.outil in ("ligne", "arc", "cote"):
             if not self.en_cours():
                 self._timer_geste.start(DELAI_GESTE_MS)
         elif self.outil == "elaguer":
@@ -916,6 +931,175 @@ class VueEsquisse(QGraphicsView):
             self._dessiner_apercu(None)
         self._aide()
 
+    # -- outil Cote : le type se déduit des éléments cliqués et de l'endroit où l'on pose la cote ----------
+
+    def est_horizontale(self, ligne_id: int) -> bool:
+        e = self.esquisse
+        if any(r.type == TypeRelation.HORIZONTAL for r in e.relations_de(ligne_id)):
+            return True
+        a, b = (e.points[i] for i in e.extremites(ligne_id))
+        return abs(a.x - b.x) < 1e-6
+
+    def est_verticale(self, ligne_id: int) -> bool:
+        e = self.esquisse
+        if any(r.type == TypeRelation.VERTICAL for r in e.relations_de(ligne_id)):
+            return True
+        a, b = (e.points[i] for i in e.extremites(ligne_id))
+        return abs(a.z - b.z) < 1e-6
+
+    def _decalage_normal(self, a, b, z: float, x: float) -> Tuple[float, float]:
+        """Décalage d'une cote de distance : projection du curseur sur la normale (même convention que le dessin)."""
+        vz, vx = b.z - a.z, b.x - a.x
+        n = math.hypot(vz, vx) or 1.0
+        nz, nx = -vx / n, vz / n
+        if nx < 0:
+            nz, nx = -nz, -nx
+        mz, mx = (a.z + b.z) / 2, (a.x + b.x) / 2
+        return (0.0, (z - mz) * nz + (x - mx) * nx)
+
+    def deduire_cote(self, elements, pos=None) -> Optional[Tuple[TypeCote, Tuple[int, ...], Tuple[float, float]]]:
+        """(type, éléments, décalage) de la cote que poseraient ces éléments, le curseur en `pos`.
+
+        Sans `pos`, placement par défaut. None si la combinaison n'a pas de cote.
+        """
+        e = self.esquisse
+        elements = tuple(elements)
+        genres = [e.genre(i) for i in elements]
+        if pos is None:
+            z = x = None
+        else:
+            z, x = self.position_scene(pos)
+        d = self.px_en_mm(34)
+
+        if genres == ["arc"]:
+            mz, mx = self._points_arc(elements[0], 2)[1]
+            dec = (d * 0.6, d * 0.6) if z is None else (z - mz, x - mx)
+            return TypeCote.RAYON, elements, dec
+        if genres == ["point"]:
+            p = e.points[elements[0]]
+            dec = (d, 0.0) if z is None else (z - p.z, x - p.x / 2)
+            return TypeCote.DIAMETRE, elements, dec
+        if genres == ["ligne"]:
+            li = e.lignes[elements[0]]
+            a, b = e.points[li.p1], e.points[li.p2]
+            horizontale, verticale = self.est_horizontale(li.id), self.est_verticale(li.id)
+            if z is None:
+                famille = "cote" if verticale else "dessus"
+            else:
+                zmin, zmax = sorted((a.z, b.z))
+                xmin, xmax = sorted((a.x, b.x))
+                dz_hors = max(0.0, zmin - z, z - zmax)
+                dx_hors = max(0.0, xmin - x, x - xmax)
+                famille = "cote" if (verticale or dz_hors > dx_hors) else "dessus"
+            if famille == "dessus":
+                dec = (0.0, d) if z is None else (z - (a.z + b.z) / 2, x - max(a.x, b.x))
+                return TypeCote.LONGUEUR_Z, elements, dec
+            if horizontale:
+                dec = (d, 0.0) if z is None else (z - a.z, x - a.x / 2)
+                return TypeCote.DIAMETRE, elements, dec
+            if verticale:
+                dec = (0.0, d) if z is None else self._decalage_normal(a, b, z, x)
+                return TypeCote.DISTANCE, elements, dec
+            mz, mx = (a.z + b.z) / 2, (a.x + b.x) / 2
+            dec = (d * 0.6, d * 0.6) if z is None else (z - mz, x - mx)
+            return TypeCote.ANGLE, elements, dec
+        if genres == ["ligne", "ligne"]:
+            l1, l2 = (e.lignes[i] for i in elements)
+            if self.est_verticale(l1.id) and self.est_verticale(l2.id):
+                p, q = e.points[l1.p1], e.points[l2.p1]
+                if abs(p.z - q.z) < 1e-9:
+                    return None
+                pts = (l1.p1, l2.p1)
+                dec = (0.0, d) if z is None else (z - (p.z + q.z) / 2, x - max(p.x, q.x))
+                return TypeCote.LONGUEUR_Z, pts, dec
+            a1 = e.angle_ligne(l1.id) % 180.0
+            a2 = e.angle_ligne(l2.id) % 180.0
+            if abs(a1 - a2) < 1e-6 or abs(abs(a1 - a2) - 180.0) < 1e-6:
+                return None                      # parallèles : pas de cote entre deux lignes parallèles pour l'instant
+            commun = {l1.p1, l1.p2} & {l2.p1, l2.p2}
+            if commun:
+                p = e.points[commun.pop()]
+                mz, mx = p.z, p.x
+            else:
+                m1, m2 = self._milieu(l1.id), self._milieu(l2.id)
+                mz, mx = (m1[0] + m2[0]) / 2, (m1[1] + m2[1]) / 2
+            dec = (d * 0.6, d * 0.6) if z is None else (z - mz, x - mx)
+            return TypeCote.ANGLE, elements, dec
+        if genres == ["point", "point"]:
+            p, q = (e.points[i] for i in elements)
+            if abs(p.z - q.z) < 1e-9:
+                dec = (0.0, d) if z is None else self._decalage_normal(p, q, z, x)
+                return TypeCote.DISTANCE, elements, dec
+            dec = (0.0, d) if z is None else (z - (p.z + q.z) / 2, x - max(p.x, q.x))
+            return TypeCote.LONGUEUR_Z, elements, dec
+        return None
+
+    def _presser_cote(self, pos) -> None:
+        el = self.element_sous(pos)
+        if el is not None and el[0] in ("point", "ligne", "arc") and el[1] not in self._cote_elements:
+            if len(self._cote_elements) >= 2:
+                self.message.emit("Cote : deux éléments au plus. Cliquez où poser la cote, ou Échap.")
+                return
+            candidats = self._cote_elements + [el[1]]
+            if len(candidats) == 2 and self.deduire_cote(candidats, pos) is None:
+                self.message.emit("Cote : pas de cote entre ces deux éléments. Cliquez où poser la cote du premier.")
+                return
+            self._cote_elements = candidats
+            self._aide()
+            self._dessiner_apercu(Accroche(*self.position_scene(pos)))
+            return
+        if not self._cote_elements:
+            return
+        deduction = self.deduire_cote(self._cote_elements, pos)
+        if deduction is None:
+            self.message.emit("Cote : combinaison sans cote. Échap pour recommencer.")
+            return
+        type_, elements, decalage = deduction
+        self._cote_elements = []
+        self._dessiner_apercu(None)
+        self.controleur.poser_cote(type_, elements, decalage)
+        self._aide()
+
+    def _apercu_cote(self, curseur: Optional[Accroche], c: Dict[str, QColor]) -> None:
+        e = self.esquisse
+        surbrillance = QPen(QColor(c["selection"].red(), c["selection"].green(), c["selection"].blue(), 120), 7)
+        surbrillance.setCosmetic(True)
+        surbrillance.setCapStyle(Qt.PenCapStyle.RoundCap)
+        for ident in self._cote_elements:
+            g = e.genre(ident)
+            if g == "ligne":
+                a, b = (e.points[i] for i in e.extremites(ident))
+                it = QGraphicsLineItem(a.z, a.x, b.z, b.x)
+            elif g == "arc":
+                path = QPainterPath()
+                pts = self._points_arc(ident, 48)
+                path.moveTo(*pts[0])
+                for z, x in pts[1:]:
+                    path.lineTo(z, x)
+                it = QGraphicsPathItem(path)
+            elif g == "point":
+                p = e.points[ident]
+                it = QGraphicsEllipseItem(-6, -6, 12, 12)
+                it.setPos(p.z, p.x)
+                it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+            else:
+                continue
+            it.setPen(surbrillance)
+            self._ajouter_apercu(it, 2)
+        if curseur is None:
+            return
+        pos = self.mapFromScene(QPointF(curseur.z, curseur.x))
+        deduction = self.deduire_cote(self._cote_elements, pos)
+        if deduction is None:
+            return
+        type_, elements, decalage = deduction
+        try:
+            valeur = e.mesurer(type_, elements)
+        except Exception:
+            return
+        provisoire = Cote(-1, type_, elements, valeur, decalage)
+        self._dessiner_cote(provisoire, c["cote"], c, apercu=True)
+
     def mouseMoveEvent(self, event) -> None:
         pos = event.position().toPoint()
         z, x = self.position_scene(pos)
@@ -956,6 +1140,8 @@ class VueEsquisse(QGraphicsView):
         if self.outil in ("ligne", "arc"):
             depuis = self._debut if (self.outil == "ligne" and self._debut is not None) else None
             self._dessiner_apercu(self.accrocher(pos, depuis))
+        elif self.outil == "cote":
+            self._dessiner_apercu(Accroche(z, x))
 
     def mouseReleaseEvent(self, event) -> None:
         pos = event.position().toPoint()
@@ -986,6 +1172,8 @@ class VueEsquisse(QGraphicsView):
             self._presser_ligne(pos)
         elif self.outil == "arc" and not self._a_bouge(pos):
             self._presser_arc(pos)
+        elif self.outil == "cote" and not self._a_bouge(pos):
+            self._presser_cote(pos)
         self._press_pos = None
         if self._glisse_point is not None:
             if self._glisse_actif:

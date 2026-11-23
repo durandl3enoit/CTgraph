@@ -186,7 +186,7 @@ def test_menu_contextuel_propose_les_relations_possibles(fenetre):
     clic(vue, 0, 10)           # deux lignes perpendiculaires
     textes = [a.text() for a in win.construire_menu_contextuel().actions()]
     assert "Perpendiculaire" in textes and "Parallèle" in textes and "Égal" in textes
-    assert "Cote : Angle" in textes
+    assert "Coter la sélection (Angle)" in textes
     assert "Horizontal" not in textes          # pas pour deux lignes
     assert "Supprimer la sélection" in textes
     # une ligne et un point : point sur ligne
@@ -271,6 +271,65 @@ def test_elaguer_par_un_trait(fenetre):
     ecran(win, "elagage")
     win.annuler()
     assert verticale.id in win.esquisse.lignes
+
+
+def test_outil_cote_deduit_le_type(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (defaut, True)   # pas de boîte de dialogue
+    rectangle(win)
+    e = win.esquisse
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    face = next(li for li in e.lignes.values() if all(abs(e.points[p].z) < 1e-6 for p in (li.p1, li.p2)))
+    fond = next(li for li in e.lignes.values() if all(e.points[p].z < -30 for p in (li.p1, li.p2)))
+    win.choisir_outil("cote")
+    # ligne horizontale, cote posée au-dessus : longueur Z
+    clic(vue, -20, 20)
+    assert vue._cote_elements == [haut.id]
+    clic(vue, -20, 30)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.LONGUEUR_Z and c.elements == (haut.id,) and c.valeur == pytest.approx(40.0, abs=0.2)
+    assert c.decalage[1] == pytest.approx(10.0, abs=0.2)
+    # la même ligne, cote posée à côté : diamètre
+    clic(vue, -20, 20)
+    clic(vue, 15, 10)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.DIAMETRE and c.valeur == pytest.approx(40.0, abs=0.2)
+    # un point : diamètre
+    clic(vue, -40, 20)
+    clic(vue, -55, 10)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.DIAMETRE and e.genre(c.elements[0]) == "point"
+    # deux faces verticales : longueur Z entre elles
+    clic(vue, 0, 10)
+    clic(vue, -40, 10)
+    assert vue._cote_elements == [face.id, fond.id]
+    clic(vue, -20, -8)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.LONGUEUR_Z and c.valeur == pytest.approx(40.0, abs=0.2)
+    assert all(e.genre(i) == "point" for i in c.elements)
+    # deux lignes perpendiculaires : angle
+    clic(vue, 0, 10)
+    clic(vue, -20, 20)
+    clic(vue, -5, 15)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.ANGLE and abs(c.valeur) == pytest.approx(90.0, abs=0.5)
+    # un arc : rayon
+    win.choisir_outil("arc")
+    clic(vue, 20, 10)
+    clic(vue, 30, 20)
+    clic(vue, 27.07, 12.93)
+    win.choisir_outil("cote")
+    arc = next(iter(e.arcs.values()))
+    clic(vue, 27.07, 12.93)
+    assert vue._cote_elements == [arc.id]
+    clic(vue, 40, 30)
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.RAYON and c.valeur == pytest.approx(10.0, abs=0.3)
+    # Échap abandonne une cote commencée
+    clic(vue, -20, 20)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    assert vue._cote_elements == []
+    ecran(win, "outil_cote")
 
 
 def test_clic_semi_long_puis_glisser_elague(fenetre):

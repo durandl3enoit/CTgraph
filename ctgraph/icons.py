@@ -91,10 +91,30 @@ def icone_elaguer(encre: QColor, fond: QColor) -> QIcon:
     return _fabriquer(dessin)
 
 
+def icone_cote(encre: QColor, fond: QColor) -> QIcon:
+    """Une cote : lignes d'attache, ligne de cote fléchée, valeur en bleu."""
+    def dessin(p: QPainter):
+        p.setPen(_stylo(encre, 1.6))
+        p.drawLine(QPointF(4, 10), QPointF(4, 21))
+        p.drawLine(QPointF(20, 10), QPointF(20, 21))
+        p.setPen(_stylo(BLEU, 1.8))
+        p.drawLine(QPointF(4, 17), QPointF(20, 17))
+        p.drawPolyline(QPolygonF([QPointF(7.5, 14.5), QPointF(4, 17), QPointF(7.5, 19.5)]))
+        p.drawPolyline(QPolygonF([QPointF(16.5, 14.5), QPointF(20, 17), QPointF(16.5, 19.5)]))
+        p.setPen(_stylo(BLEU, 1.0))
+        p.setBrush(QBrush(fond))
+        p.drawRoundedRect(QRectF(7, 3, 10, 8), 2, 2)
+        p.setPen(_stylo(BLEU, 1.4))
+        p.drawEllipse(QRectF(9.5, 4.5, 5, 5))
+        p.drawLine(QPointF(9, 10.2), QPointF(15, 3.8))
+    return _fabriquer(dessin)
+
+
 ICONES_OUTILS = {
     "selection": icone_selection,
     "ligne": icone_ligne,
     "arc": icone_arc,
+    "cote": icone_cote,
     "elaguer": icone_elaguer,
 }
 
