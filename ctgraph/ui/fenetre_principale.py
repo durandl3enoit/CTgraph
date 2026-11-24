@@ -28,6 +28,7 @@ from ..montage import Montage, Piece
 from ..settings import Settings
 from .dialogue_montage import DialogueMontage
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
+from ..tourelle import Tourelle
 from .zone_atelier import ZoneAtelier
 from .zone_repliable import ZoneRepliable
 
@@ -225,6 +226,15 @@ class FenetrePrincipale(QMainWindow):
             stock = self.reglages.get(cle + ".stock", []) or []
             zone.definir_stock([stock] if isinstance(stock, str) else stock)
             zone.stock_change.connect(lambda s, c=cle: self.reglages.set(c + ".stock", sorted(s)))
+        # garniture de la tourelle : propre à la machine, mémorisée avec les préférences
+        garniture = str(self.reglages.get("tourelle", "") or "")
+        if garniture:
+            try:
+                self.zone_tourelle.definir_tourelle(Tourelle.from_dict(json.loads(garniture)))
+            except (ValueError, TypeError):
+                pass
+        self.zone_tourelle.tourelle_changee.connect(
+            lambda t: self.reglages.set("tourelle", json.dumps(t.to_dict(), ensure_ascii=False)))
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.zone_atelier)
         self.resizeDocks([self.zone_atelier], [self.zone_atelier.largeur_souhaitee()], Qt.Orientation.Horizontal)
         self.zone_atelier.setVisible(self.reglages.get_bool("atelier.visible", True))

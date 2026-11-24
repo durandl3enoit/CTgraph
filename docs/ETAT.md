@@ -69,11 +69,14 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   et ISO 6261. Zone ancrée à droite (touche `O`) : filtre, colonnes désignation / plaquette / attaque / queue /
   fixation, icône de la forme de la plaquette, infobulle d'usage, case « en stock » mémorisée.
 - **Atelier : trois volets repliables latéralement** (`ui/zone_atelier.py`, `ui/volet_lateral.py`), ancrés à
-  droite, touche `O` : **Tourelle** (douze postes VDI 30 vus de face, poste en travail au clic),
-  **Stock d'outils**, **Plaquettes** (catalogue ISO 1832 de 50 tailles, avec le dessin coté de la plaquette
-  choisie : contour, becs arrondis, cercle inscrit, épaisseur et dépouille). Seul le stock d'outils est
-  déplié au premier lancement. Point 1 du périmètre bien engagé ; restent les porte-outils VDI eux-mêmes,
-  l'affectation des outils aux postes et les jauges.
+  droite, touche `O` : **Tourelle**, **Stock d'outils**, **Plaquettes** (catalogue ISO 1832 de 50 tailles,
+  avec le dessin coté de la plaquette choisie : contour, becs arrondis, cercle inscrit, épaisseur et
+  dépouille). Seul le stock d'outils est déplié au premier lancement.
+- **Tourelle garnie** : douze postes VDI 30 vus de face, implantation transversale en périphérie ou axiale
+  (alternées, réglables poste par poste), liste des postes avec le porte-plaquette et la plaquette montés,
+  et le correcteur à appliquer (numéro, X, Z, rayon de bec, orientation). Garniture mémorisée avec les
+  préférences. Point 1 du périmètre bien engagé ; restent les porte-outils VDI eux-mêmes et la fiche de
+  réglage.
 
 ## En cours
 
@@ -98,6 +101,9 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
 
 ## Questions en attente
 
+- Géométrie exacte de la tourelle du CT200 : diamètre du disque, rayon d'implantation, et surtout quels
+  postes sont en périphérie et lesquels sur la face. Le logiciel les alterne par défaut, six et six.
+- Codes d'orientation du nez d'outil sur NUM 750 T, et comptage de la correction X (au rayon ou au diamètre).
 - Signification exacte des adresses de `G33` (Q, P, F, S, R, EB, EA) et de `G83` (P, Q, ER) : manuel NUM 750 T.
 - Règle du sens de broche (M3 outils à droite, M4 outils à gauche d'après les programmes Go2CAM) : à confirmer.
 - Ordre de réalisation des modules restants.

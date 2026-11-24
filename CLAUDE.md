@@ -192,8 +192,18 @@ vérification par relecture du G-code généré, réception des programmes depui
   les clics simulés.
 - **Tourelle** (`ctgraph/tourelle.py`, `ui/zone_tourelle.py`) : douze postes **VDI 30** (DIN 69880), queue
   Ø 30 mm fixée par la norme (c'est elle qui borne `outils.QUEUE_MAXI` à 20 mm). Poste 1 en haut,
-  numérotation horaire vue de face ; clic sur un logement pour le mettre en travail. Diamètre du disque et
-  rayon d'implantation à relever sur le CT200.
+  numérotation horaire vue de face ; clic sur un logement ou sur sa ligne pour le mettre en travail.
+  **Implantation** (`IMPLANTATIONS`, relevé le 24 novembre 2026) : un porte-outil VDI se monte sur la
+  circonférence de la tourelle ou sur sa face. Sur le CT200, la moitié des outils sont montés
+  *transversalement en périphérie* (tournage extérieur, queue carrée), l'autre moitié est *axiale* (barres,
+  forets, queue cylindrique) ; les postes alternent par défaut et chacun se règle à part. L'implantation
+  borne les porte-plaquettes proposés (queue carrée ou cylindrique).
+  Chaque `Poste` porte son porte-plaquette, sa plaquette et son `Correcteur` (numéro sur la CN, corrections
+  X et Z, rayon de bec repris de la plaquette, code d'orientation). La garniture appartient à la machine,
+  pas à la pièce : elle est mémorisée dans la préférence `tourelle` (JSON), pas dans le fichier `.ctg`.
+  Diamètre du disque et rayon d'implantation à relever sur le CT200 ; **la convention des codes
+  d'orientation et le comptage de la correction X sont à vérifier dans le manuel NUM 750 T**, rien n'est
+  écrit de mémoire.
 - **Plaquettes** (`ctgraph/plaquettes.py`, `ui/zone_plaquettes.py`) : catalogue **ISO 1832** des tailles qui
   garnissent les porte-plaquettes, quatre familles (négatives, positives, filetage, gorge). `Plaquette.base`
   (« CNMG 1204 ») relie la plaquette au champ `plaquette` du catalogue des outils ; `pour_base` accepte la

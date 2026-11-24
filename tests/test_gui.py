@@ -43,6 +43,8 @@ def fenetre(app):
         win.cases_aimants[cle].setChecked(True)
     win.act_voir_montage.setChecked(False)     # le montage élargit la vue : les clics simulés perdraient en précision
     win.act_zone_atelier.setChecked(False)     # les volets de l'atelier rétrécissent la vue : même raison
+    for volet in win.zone_atelier.volets.values():
+        volet.definir_deploye(False)           # quel que soit l'état laissé par une autre séance
     win.vue.tout_voir()
     QTest.qWait(30)
     yield win
@@ -1289,17 +1291,76 @@ def test_zone_tourelle(fenetre):
     win.actions_volets["tourelle"].setChecked(True)
     QTest.qWait(20)
     zone = win.zone_tourelle
+    from ctgraph.tourelle import Tourelle
+    zone.definir_tourelle(Tourelle())          # pas la garniture laissée par une autre séance
     t = zone.tourelle
     assert t.nb_postes == 12 and t.diametre_queue == 30.0
+    # la moitié des postes sont transversaux en périphérie, l'autre moitié axiale, alternés
+    assert [t.poste(n).implantation for n in (1, 2, 3, 4)] == ["transversal", "axial"] * 2
+    assert sum(1 for n in t.postes() if t.poste(n).implantation == "transversal") == 6
     zone.definir_poste(1)
-    assert "Poste en travail : 1" in zone.lbl_poste.text()
+    assert "Poste en travail : 1" in zone.lbl_etat.text()
     # cliquer sur le logement du poste 4 (à 90°, donc à droite) le met en travail
     x, y = t.position_poste(4)
     cible = zone.vue._en_pixels(x, y)
     QTest.mouseClick(zone.vue, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                      QPoint(int(cible.x()), int(cible.y())))
     QTest.qWait(10)
-    assert t.poste_en_travail == 4 and "Poste en travail : 4" in zone.lbl_poste.text()
+    assert t.poste_en_travail == 4 and "Poste en travail : 4" in zone.lbl_etat.text()
+    # la liste montre les douze postes, le poste en travail en gras et sélectionné
+    assert zone.liste.topLevelItemCount() == 12
+    assert zone.liste.currentItem().text(0) == "4" and zone.liste.currentItem().font(0).bold()
+    win.actions_volets["tourelle"].setChecked(False)
+
+
+def test_garnir_un_poste_et_ses_corrections(fenetre):
+    from ctgraph.tourelle import Tourelle
+    win = fenetre
+    win.act_zone_atelier.setChecked(True)
+    win.actions_volets["tourelle"].setChecked(True)
+    QTest.qWait(20)
+    zone = win.zone_tourelle
+    zone.definir_tourelle(Tourelle())
+    t = zone.tourelle
+    # poste 1, transversal : le choix des porte-plaquettes se borne aux queues carrées
+    zone.definir_poste(1)
+    choix = [zone.porte_plaquette.itemData(i) for i in range(zone.porte_plaquette.count())]
+    assert "SCLCR 2020 K09" in choix and "S16Q-SCLCR 09" not in choix
+    zone.porte_plaquette.setCurrentIndex(zone.porte_plaquette.findData("SCLCR 2020 K09"))
+    zone.plaquette.setCurrentIndex(zone.plaquette.findData("CCMT 09T308"))
+    poste = t.poste(1)
+    assert poste.est_garni() and poste.libelle() == "SCLCR 2020 K09 + CCMT 09T308"
+    assert poste.correcteur.rayon_bec == 0.8          # le rayon de bec suit la plaquette montée
+    # les corrections se saisissent et se lisent dans la liste
+    zone.correcteur.setValue(1)
+    zone.corr_x.setValue(-12.345)
+    zone.corr_z.setValue(84.5)
+    zone.orientation.setCurrentIndex(zone.orientation.findData(3))
+    c = poste.correcteur
+    assert (c.numero, c.x, c.z, c.orientation) == (1, -12.345, 84.5, 3)
+    assert "D1" in c.texte() and "X -12.345" in c.texte() and "C3" in c.texte()
+    ligne = next(zone.liste.topLevelItem(i) for i in range(12) if zone.liste.topLevelItem(i).text(0) == "1")
+    assert ligne.text(2) == "SCLCR 2020 K09" and ligne.text(3) == "CCMT 09T308" and "D1" in ligne.text(4)
+    # un poste axial n'accepte que les queues cylindriques
+    zone.definir_poste(2)
+    assert t.poste(2).implantation == "axial"
+    choix = [zone.porte_plaquette.itemData(i) for i in range(zone.porte_plaquette.count())]
+    assert "S16Q-SCLCR 09" in choix and "SCLCR 2020 K09" not in choix
+    # changer l'implantation d'un poste change ce qu'il peut recevoir
+    zone.implantation.setCurrentIndex(zone.implantation.findData("transversal"))
+    assert t.poste(2).implantation == "transversal"
+    assert "SCLCR 2020 K09" in [zone.porte_plaquette.itemData(i) for i in range(zone.porte_plaquette.count())]
+    # la garniture est mémorisée et se relit
+    import json
+    relu = Tourelle.from_dict(json.loads(str(win.reglages.get("tourelle"))))
+    assert relu.poste(1).porte_plaquette == "SCLCR 2020 K09" and relu.poste(1).correcteur.numero == 1
+    assert relu.poste(2).implantation == "transversal"
+    # vider rend le poste libre
+    zone.definir_poste(1)
+    zone._vider()
+    assert not t.poste(1).est_garni() and t.poste(1).libelle() == "libre"
+    assert t.poste(1).correcteur.texte() == "—"
+    zone.definir_tourelle(Tourelle())
     win.actions_volets["tourelle"].setChecked(False)
 
 

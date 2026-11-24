@@ -146,8 +146,25 @@ ouvrir les deux autres.
 
 La tourelle du tour vue de face : un disque à **douze postes VDI 30** (DIN 69880), chacun recevant la queue
 cylindrique de Ø 30 mm d'un porte-outil. Le poste 1 est en haut, la numérotation tourne dans le sens horaire.
-Cliquez un poste pour le mettre en travail ; la flèche le désigne. Le diamètre du disque et le rayon
-d'implantation sont des ordres de grandeur, à relever sur le CT200 ; le Ø 30 de la queue vient de la norme.
+Cliquez un poste, dans le dessin ou dans la liste, pour le mettre en travail ; la flèche le désigne.
+
+Un porte-outil VDI se monte soit sur la circonférence de la tourelle, soit sur sa face. Sur le CT200, la
+moitié des outils sont montés **transversalement en périphérie** : les outils de tournage extérieur, à queue
+carrée, dont l'arête attaque le diamètre. L'autre moitié travaille **dans l'axe** : barres d'alésage, forets,
+filetage intérieur, à queue cylindrique. Les postes alternent les deux implantations, et chaque poste se
+règle à part. Le dessin le montre : un trait transversal en périphérie, un trait vers l'axe pour un outil
+axial ; les postes garnis sont en vert.
+
+Sous le dessin, la liste des douze postes donne pour chacun ce qui y est monté, **le porte-plaquette et sa
+plaquette**, et son correcteur. Le formulaire du poste choisi permet de le garnir : le choix des
+porte-plaquettes se borne à ce que l'implantation accepte, queue carrée en transversal, cylindrique en axial.
+On y note aussi **les corrections à appliquer** : le numéro de correcteur sur la commande numérique, les
+corrections en X et en Z, le rayon de bec, qui suit la plaquette montée, et le code d'orientation du nez
+d'outil. La garniture est mémorisée avec les préférences : elle appartient à la machine, pas à la pièce.
+
+Le diamètre du disque et le rayon d'implantation sont des ordres de grandeur, à relever sur le CT200 ; le
+Ø 30 de la queue vient de la norme. La convention des codes d'orientation et la façon dont la correction X
+se compte sont à vérifier dans le manuel NUM 750 T avant d'écrire le post-processeur.
 
 ### Stock d'outils
 
