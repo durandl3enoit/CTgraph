@@ -396,7 +396,7 @@ class FenetrePrincipale(QMainWindow):
             self.liste.addItem(it)
         for c in e.cotes.values():
             cible = ", ".join(f"{e.genre(i)} {i}" for i in c.elements)
-            suffixe = " — pilotée" if c.pilotee else ""
+            suffixe = " — pilotée" if c.pilotee else (" — égale à une autre cote" if e.cote_maitresse(c.id) else "")
             valeur = e.texte_cote(c) + (f" ({e.texte_rayon(c)})" if c.type == TypeCote.DIAMETRE else "")
             it = QListWidgetItem(f"{LIBELLES_COTE[c.type]} {valeur} : {cible}{suffixe}")
             it.setData(Qt.ItemDataRole.UserRole, c.id)
@@ -591,6 +591,11 @@ class FenetrePrincipale(QMainWindow):
         facteur = 1.0
         if c.type == TypeCote.DIAMETRE and variante == "rayon":
             libelle, facteur = "Rayon", 2.0
+        maitresse = self.esquisse.cote_maitresse(cote_id)
+        if maitresse is not None:
+            self.statusBar().showMessage(f"Cette cote suit la cote {self.esquisse.texte_cote(self.esquisse.cotes[maitresse])} "
+                                         "par une relation « égal » : réglez celle-là, ou supprimez la relation.", 8000)
+            return
         if c.pilotee:
             rep = QMessageBox.question(self, libelle, f"Cette cote est pilotée : elle mesure {self.esquisse.texte_cote(c)} "
                                        "et suit la géométrie.\nLa rendre pilotante avec cette valeur ?",
@@ -656,7 +661,8 @@ class FenetrePrincipale(QMainWindow):
         self.poser_cote(*deduction)
 
     def poser_cote(self, type_: TypeCote, elements: Tuple[int, ...], decalage: Tuple[float, float]) -> None:
-        """Demande la valeur, puis ajoute la cote. Appelé par l'outil Cote et par « Coter la sélection »."""
+        """Ajoute la cote à la mesure actuelle ; si elle sur-contraint, elle devient pilotée sans rien demander ;
+        sinon la valeur est demandée. Appelé par l'outil Cote et par « Coter : … »."""
         e = self.esquisse
         sel = tuple(elements)
         try:
@@ -666,29 +672,41 @@ class FenetrePrincipale(QMainWindow):
             self.statusBar().showMessage(str(exc), 6000)
             return
         libelle = LIBELLES_COTE[type_]
-        unite = "°" if type_ == TypeCote.ANGLE else "mm"
-        mini = -360.0 if type_ == TypeCote.ANGLE else (-1e6 if type_ == TypeCote.POSITION_Z else 0.0)
-        valeur, ok = self._demander_valeur(libelle, unite, abs(mesure) if mini == 0 else mesure, mini)
-        if not ok:
+        avant = e.to_json()
+        try:
+            c = e.ajouter_cote(type_, sel, mesure, decalage)
+        except ErreurEsquisse as exc:
+            self.statusBar().showMessage(str(exc), 6000)
             return
-        nouvelle = []
-
-        def action():
-            c = e.ajouter_cote(type_, sel, valeur, decalage)
-            nouvelle.append(c.id)
-
-        if self._modifier(action):
-            if nouvelle and (nouvelle[0] in self.resultat.conflits or nouvelle[0] in self.resultat.redondants
-                             or not self.resultat.succes):
-                # la cote sur-contraint (conflit ou redondance) ou n'est pas atteignable : elle devient pilotée,
-                # grisée, et mesure la géométrie
-                e.cotes[nouvelle[0]].pilotee = True
-                self._appliquer_resultat(self._resoudre_apres_construction())
-                self.statusBar().showMessage(f"{libelle} : la géométrie était déjà déterminée. "
-                                             "Cote passée en cote pilotée (grisée, entre parenthèses).", 8000)
-            self.vue.selection = []
-            self.vue.reconstruire()
-            self._selection_changee()
+        res = self._resoudre_apres_construction()
+        if c.id in res.conflits or c.id in res.redondants or not res.succes:
+            # la géométrie est déjà déterminée : cote pilotée, grisée, qui mesure ; sa valeur ne se demande pas
+            c.pilotee = True
+            res = self._resoudre_apres_construction()
+            self._pousser_annulation(avant)
+            self._appliquer_resultat(res)
+            self.statusBar().showMessage(f"{libelle} : la géométrie était déjà déterminée. "
+                                         "Cote posée en cote pilotée (grisée, entre parenthèses).", 8000)
+        else:
+            unite = "°" if type_ == TypeCote.ANGLE else "mm"
+            mini = -360.0 if type_ == TypeCote.ANGLE else (-1e6 if type_ == TypeCote.POSITION_Z else 0.0)
+            valeur, ok = self._demander_valeur(libelle, unite, abs(mesure) if mini == 0 else mesure, mini)
+            if not ok:
+                self._charger_json(avant)                      # abandon : la cote n'est pas posée
+                self._appliquer_resultat(self.solveur.resoudre())
+                return
+            if abs(valeur - c.valeur) > 1e-12:
+                res2 = self.solveur.modifier_cote(c.id, valeur)
+                if res2.succes:
+                    res = res2
+                else:
+                    self.statusBar().showMessage(f"{libelle} = {valeur:g} : la géométrie ne peut pas suivre, "
+                                                 f"cote posée à {c.valeur:g}.", 8000)
+            self._pousser_annulation(avant)
+            self._appliquer_resultat(res)
+        self.vue.selection = []
+        self.vue.reconstruire()
+        self._selection_changee()
 
     def ajuster_cote(self, cote_id: int, sens: int, variante: Optional[str], fin: bool) -> Optional[str]:
         """Molette sur une étiquette : la cote monte ou descend d'un pas. Renvoie le texte à afficher, ou None."""
@@ -697,6 +715,9 @@ class FenetrePrincipale(QMainWindow):
             return None
         if c.pilotee:
             self.statusBar().showMessage("Cote pilotée : elle mesure, elle ne se règle pas.", 4000)
+            return None
+        if self.esquisse.cote_maitresse(cote_id) is not None:
+            self.statusBar().showMessage("Cette cote en suit une autre par « égal » : réglez celle-là.", 4000)
             return None
         pas = PAS_MOLETTE / 10.0 if fin else PAS_MOLETTE
         if c.type == TypeCote.DIAMETRE and variante == "rayon":

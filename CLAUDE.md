@@ -79,6 +79,11 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Modifier une cote ne déplace pas le dessin** : après la résolution, `AdaptateurSolveur._compenser_derive`
   annule la translation d'ensemble (déplacement médian des points étrangers à la cote) que PlaneGCS choisit
   arbitrairement quand l'esquisse n'est pas ancrée, puis résout à nouveau ; une référence absolue reprend le dessus.
+- **Pose d'une cote** : ajoutée d'abord à la mesure, puis diagnostic ; si elle sur-contraint elle devient pilotée sans
+  demander de valeur ; sinon la valeur est demandée et appliquée par `modifier_cote` (abandon = pas de cote).
+- **Égal entre deux cotes** (`EGAL`, forme (cote, cote), même type, la seconde suit la première) : la suiveuse garde
+  une contrainte pilotante mais un paramètre libre égalé à celui de la maîtresse (`s.equal`) ; les cotes sont
+  traduites avant les relations. Elle ne se règle pas (`cote_maitresse`), sa valeur est relue après résolution.
 - **Cote sur-contrainte = cote pilotée** : une cote posée qui entre en conflit, est redondante ou n'est pas atteignable passe
   automatiquement en cote pilotée (`Cote.pilotee`, paramètre libre et `driving=False` pour PlaneGCS), grisée et
   entre parenthèses ; le solveur y écrit la mesure après chaque résolution. Elle redevient pilotante à la demande

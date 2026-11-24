@@ -236,6 +236,7 @@ class VueEsquisse(QGraphicsView):
         self._glisse_actif = False
         self._pan_dernier = None
         self._items: List[QGraphicsItem] = []
+        self._pos_cotes: Dict[int, Tuple[float, float]] = {}
 
         # clic semi-long + glisser : élagage, quel que soit l'outil
         self._press_pos: Optional[QPoint] = None
@@ -431,6 +432,17 @@ class VueEsquisse(QGraphicsView):
             it.setZValue(10)
             self._enregistrer(it, "point", p.id)
 
+        # cotes avant les symboles de relations : une relation « égal » entre cotes s'ancre sur leurs étiquettes
+        self._pos_cotes: Dict[int, Tuple[float, float]] = {}
+        for co in e.cotes.values():
+            if co.pilotee:
+                couleur = c["pilotee"]
+            else:
+                couleur = c["conflit"] if co.id in conflits else (c["redondant"] if co.id in redondants else c["cote"])
+            if co.id in sel:
+                couleur = c["selection"]
+            self._dessiner_cote(co, couleur, c)
+
         occupation: Dict[int, int] = {}
         for r in e.relations.values():
             couleur = c["conflit"] if r.id in conflits else (c["redondant"] if r.id in redondants else c["relation"])
@@ -443,15 +455,6 @@ class VueEsquisse(QGraphicsView):
                 et.setPos(dz, dx)
                 et.moveBy(self.px_en_mm(22) * (n % 3), self.px_en_mm(16) * (n // 3))
                 self._enregistrer(et, "relation", r.id)
-
-        for co in e.cotes.values():
-            if co.pilotee:
-                couleur = c["pilotee"]
-            else:
-                couleur = c["conflit"] if co.id in conflits else (c["redondant"] if co.id in redondants else c["cote"])
-            if co.id in sel:
-                couleur = c["selection"]
-            self._dessiner_cote(co, couleur, c)
 
         self._dessiner_apercu()
 
@@ -600,6 +603,8 @@ class VueEsquisse(QGraphicsView):
         if g == "point":
             p = e.points[ident]
             return p.z, p.x
+        if g == "cote":
+            return self._pos_cotes.get(ident, (0.0, 0.0))
         if g == "arc":
             return self._points_arc(ident, 2)[1]
         a, b = (e.points[i] for i in e.extremites(ident))
@@ -615,6 +620,8 @@ class VueEsquisse(QGraphicsView):
             mz, mx = self._milieu(ident)
             if g == "point":
                 ancres.append((ident, mz + decal * 0.8, mx + decal * 0.8))
+            elif g == "cote":
+                ancres.append((ident, mz + decal * 1.6, mx))           # à droite de l'étiquette
             elif g == "ligne":
                 a, b = (e.points[i] for i in e.extremites(ident))
                 dz, dx = b.z - a.z, b.x - a.x
@@ -771,6 +778,8 @@ class VueEsquisse(QGraphicsView):
         pen = QPen(couleur, 1, Qt.PenStyle.DashLine if apercu else Qt.PenStyle.SolidLine)
         pen.setCosmetic(True)
         it.setPen(pen)
+        if not apercu:
+            self._pos_cotes[co.id] = pos
         etiquettes = [(Etiquette(texte, couleur, c["fond"], gras=True), pos, None)]
         if co.type == TypeCote.DIAMETRE:
             # le rayon accompagne le diamètre : même grandeur lue depuis l'axe, éditable aussi

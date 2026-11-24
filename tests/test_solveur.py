@@ -222,6 +222,39 @@ def test_cote_pilotee_mesure_sans_contraindre():
     assert c.valeur == pytest.approx(95.0, abs=1e-6)
 
 
+def test_egal_entre_deux_cotes():
+    e, n = arbre_contraint()
+    s = AdaptateurSolveur(e)
+    assert s.resoudre().entierement_contraint
+    # le grand diamètre suit le petit : il passe à 30, la géométrie reste entièrement contrainte
+    r = e.ajouter_relation(TypeRelation.EGAL, (n["d_petit"].id, n["d_grand"].id))
+    s.construire()
+    res = s.resoudre()
+    assert res.succes and res.dof == 0 and not res.conflits and not res.redondants, res
+    assert n["d_grand"].valeur == pytest.approx(30.0, abs=1e-6)
+    assert 2 * e.points[n["p3"].id].x == pytest.approx(30.0, abs=1e-6)
+    assert e.cote_maitresse(n["d_grand"].id) == n["d_petit"].id
+    # régler la maîtresse entraîne la suiveuse ; la suiveuse ne se règle pas
+    assert s.modifier_cote(n["d_petit"].id, 44.0).succes
+    assert n["d_grand"].valeur == pytest.approx(44.0, abs=1e-6)
+    assert 2 * e.points[n["p4"].id].x == pytest.approx(44.0, abs=1e-6)
+    assert not s.modifier_cote(n["d_grand"].id, 50.0).succes
+    # supprimer la relation rend la suiveuse indépendante, avec sa valeur du moment
+    e.supprimer(r.id)
+    s.construire()
+    assert s.resoudre().entierement_contraint
+    assert s.modifier_cote(n["d_grand"].id, 60.0).succes
+    assert 2 * e.points[n["p3"].id].x == pytest.approx(60.0, abs=1e-6)
+
+
+def test_egal_entre_cotes_refuse_les_types_differents_et_les_chaines():
+    e, n = arbre_contraint()
+    assert not e.relation_possible(TypeRelation.EGAL, (n["d_petit"].id, n["l_total"].id))
+    e.ajouter_relation(TypeRelation.EGAL, (n["l_petit"].id, n["l_total"].id))
+    assert not e.relation_possible(TypeRelation.EGAL, (n["d_grand"].id, n["l_total"].id))   # suit déjà
+    assert not e.relation_possible(TypeRelation.EGAL, (n["l_total"].id, n["l_petit"].id))   # boucle
+
+
 def test_relations_diverses():
     e = Esquisse()
     a = e.ajouter_point(0, 0)

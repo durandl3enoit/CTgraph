@@ -76,7 +76,7 @@ _FORMES_RELATION: Dict[TypeRelation, List[Tuple[str, ...]]] = {
     TypeRelation.PARALLELE: [("ligne", "ligne")],
     TypeRelation.PERPENDICULAIRE: [("ligne", "ligne")],
     TypeRelation.TANGENT: [("ligne", "arc"), ("arc", "ligne"), ("arc", "arc")],
-    TypeRelation.EGAL: [("ligne", "ligne"), ("arc", "arc")],
+    TypeRelation.EGAL: [("ligne", "ligne"), ("arc", "arc"), ("cote", "cote")],   # deux cotes : la seconde suit la première
     TypeRelation.POINT_SUR_LIGNE: [("point", "ligne"), ("ligne", "point")],
     TypeRelation.POINT_SUR_ARC: [("point", "arc"), ("arc", "point")],
     TypeRelation.SUR_AXE: [("point",)],
@@ -222,14 +222,37 @@ class Esquisse:
         if type_ in (TypeRelation.TANGENT, TypeRelation.POINT_SUR_LIGNE, TypeRelation.POINT_SUR_ARC):
             ordre = {"point": 0, "ligne": 1, "arc": 2}
             elements = tuple(sorted(elements, key=lambda e: ordre[self.genre(e)]))
+        if type_ == TypeRelation.EGAL and self.genre(elements[0]) == "cote":
+            self._verifier_egalite_cotes(elements[0], elements[1])
         r = Relation(self._nouvel_id(), type_, elements)
         self.relations[r.id] = r
         return r
 
+    def _verifier_egalite_cotes(self, maitre: int, suiveuse: int) -> None:
+        a, b = self.cotes[maitre], self.cotes[suiveuse]
+        if a.type != b.type:
+            raise ErreurEsquisse(f"Égal : deux cotes de même type attendues ({LIBELLES_COTE[a.type]} et "
+                                 f"{LIBELLES_COTE[b.type]})")
+        if self.cote_maitresse(suiveuse) is not None:
+            raise ErreurEsquisse("Égal : cette cote suit déjà une autre cote")
+        if self.cote_maitresse(maitre) == suiveuse:
+            raise ErreurEsquisse("Égal : ces deux cotes se suivraient l'une l'autre")
+
+    def cote_maitresse(self, cote_id: int) -> Optional[int]:
+        """La cote dont `cote_id` prend la valeur par une relation « égal », sinon None."""
+        for r in self.relations.values():
+            if r.type == TypeRelation.EGAL and len(r.elements) == 2 and r.elements[1] == cote_id \
+                    and self.genre(r.elements[0]) == "cote":
+                return r.elements[0]
+        return None
+
     def relation_possible(self, type_: TypeRelation, elements: Iterable[int]) -> bool:
         """Vrai si ces éléments peuvent porter une relation de ce type (sans l'ajouter)."""
+        elements = tuple(int(e) for e in elements)
         try:
-            self._verifier_forme(_FORMES_RELATION[TypeRelation(type_)], tuple(int(e) for e in elements), "")
+            self._verifier_forme(_FORMES_RELATION[TypeRelation(type_)], elements, "")
+            if TypeRelation(type_) == TypeRelation.EGAL and self.genre(elements[0]) == "cote":
+                self._verifier_egalite_cotes(elements[0], elements[1])
         except ErreurEsquisse:
             return False
         return True

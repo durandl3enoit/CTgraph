@@ -525,6 +525,35 @@ def test_outil_cote_deplace_une_cote(fenetre):
     assert len(e.cotes) == 1
 
 
+def test_egal_entre_deux_cotes_depuis_l_interface(fenetre):
+    from ctgraph.ui.vue_esquisse import Etiquette
+    win, vue = fenetre, fenetre.vue
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (defaut, True)
+    rectangle(win)
+    e = win.esquisse
+    coin_arriere = next(p for p in e.points.values() if p.z < -30 and p.x > 10)
+    coin_avant = next(p for p in e.points.values() if abs(p.z) < 1e-6 and p.x > 10)
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (3.0, True)
+    win.choisir_outil("arrondi")
+    clic(vue, coin_arriere.z, coin_arriere.x)
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (5.0, True)
+    clic(vue, coin_avant.z, coin_avant.x)
+    rayons = [c for c in e.cotes.values() if c.type == TypeCote.RAYON]
+    assert len(rayons) == 2 and sorted(c.valeur for c in rayons) == [3.0, 5.0]
+    # les deux cotes de rayon sélectionnées : « égal » est proposé, et la seconde suit la première
+    vue.selection = [rayons[0].id, rayons[1].id]
+    assert TypeRelation.EGAL in win.construire_menu_contextuel().relations_proposees
+    win.appliquer_relation(TypeRelation.EGAL)
+    assert rayons[1].valeur == pytest.approx(rayons[0].valeur)
+    assert win.resultat.succes and not win.resultat.conflits
+    assert e.cote_maitresse(rayons[1].id) == rayons[0].id
+    assert any(isinstance(it, Etiquette) and it.texte == "=" for it in vue._items)   # symbole sur l'étiquette
+    # régler la première par la molette entraîne la seconde
+    assert win.ajuster_cote(rayons[0].id, 1, None, False)
+    assert rayons[1].valeur == pytest.approx(rayons[0].valeur)
+    assert win.ajuster_cote(rayons[1].id, 1, None, False) is None     # la suiveuse ne se règle pas
+
+
 def test_diametre_accompagne_de_son_rayon(fenetre):
     from ctgraph.ui.vue_esquisse import ROLE_ID, ROLE_VARIANTE, Etiquette
     win, vue = fenetre, fenetre.vue
@@ -600,9 +629,15 @@ def test_contour_ferme_detecte(fenetre):
     ecran(win, "contour_ferme")
 
 
-def test_cote_surcontrainte_devient_pilotee(fenetre):
+def test_cote_surcontrainte_devient_pilotee_sans_demander_de_valeur(fenetre):
     win, vue = fenetre, fenetre.vue
-    win._demander_valeur = lambda libelle, unite, defaut, mini: (defaut, True)
+    demandes = []
+
+    def demander(libelle, unite, defaut, mini):
+        demandes.append(libelle)
+        return (defaut, True)
+
+    win._demander_valeur = demander
     rectangle(win)
     e = win.esquisse
     origine = next(p for p in e.points.values() if abs(p.z) < 1e-6 and abs(p.x) < 1e-6)
@@ -614,10 +649,27 @@ def test_cote_surcontrainte_devient_pilotee(fenetre):
     win.poser_cote(TypeCote.LONGUEUR_Z, (haut.id,), (0.0, 8.0))
     win.poser_cote(TypeCote.DIAMETRE, (haut.id,), (6.0, 0.0))
     assert win.resultat.entierement_contraint
-    # une troisième cote, redondante avec la longueur : elle devient pilotée au lieu de sur-contraindre
+    assert demandes == ["Longueur Z", "Diamètre"]
+    # une troisième cote, redondante avec la longueur : elle devient pilotée, et aucune valeur n'est demandée
     win.poser_cote(TypeCote.LONGUEUR_Z, (face.p1, fond.p1), (0.0, -8.0))
     c = list(e.cotes.values())[-1]
     assert c.pilotee and c.valeur == pytest.approx(40.0, abs=0.2)
+    assert demandes == ["Longueur Z", "Diamètre"]
+    # abandonner la saisie ne pose pas de cote : sur une ligne libre, la cote piloterait, la valeur est demandée
+    win.choisir_outil("ligne")
+    clic(vue, 20, 30)
+    clic(vue, 40, 42)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    libre = next(li for li in e.lignes.values() if e.points[li.p1].z > 10)
+    n_cotes = len(e.cotes)
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (defaut, False)
+    win.poser_cote(TypeCote.DISTANCE, (libre.id,), (0.0, 6.0))
+    assert len(win.esquisse.cotes) == n_cotes
+    win.vue.selection = [libre.id]
+    win.supprimer_selection()                   # la ligne libre repart : l'esquisse redevient entièrement contrainte
+    e = win.esquisse
+    c = e.cotes[c.id]
+    win._demander_valeur = demander
     assert win.resultat.entierement_contraint and not win.resultat.conflits
     assert e.texte_cote(c).startswith("(")
     # elle suit la cote pilotante

@@ -36,8 +36,11 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   Une cote de diamètre affiche aussi le rayon équivalent sous elle ; double-cliquez l'une ou l'autre valeur pour
   l'éditer, l'autre suit.
   Une cote qui sur-contraindrait l'esquisse devient aussitôt une **cote pilotée** : grisée, entre parenthèses,
-  elle mesure la géométrie et la suit. Le menu du clic droit, ou un double-clic, la rend pilotante quand
-  c'est possible, et inversement.
+  elle mesure la géométrie et la suit ; aucune valeur n'est demandée dans ce cas. Le menu du clic droit, ou un
+  double-clic, la rend pilotante quand c'est possible, et inversement.
+* **Égal entre deux cotes** : sélectionnez deux cotes de même type (deux rayons, deux chanfreins, deux diamètres)
+  et posez « Égal » : la seconde prend la valeur de la première et la suit ; on règle la première. Supprimer la
+  relation rend la seconde indépendante.
 * **À droite** : le dessin. Molette pour zoomer autour du curseur, bouton du milieu pour déplacer la vue, `F` pour tout voir.
 * **Ligne** (`L`) : cliquez le départ puis chaque sommet ; la chaîne continue jusqu'au clic droit ou `Échap`.
 * **Arc 3 points** (`A`) : départ, arrivée, puis un point par où passe l'arc.

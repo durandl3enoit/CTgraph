@@ -108,7 +108,15 @@ class AdaptateurSolveur:
             self._params += [pr, pa0, pa1]
             self._arcs[a.id] = s.add_arc(self._pts[a.centre], self._pts[a.debut], self._pts[a.fin], pr, pa0, pa1)
 
+        # Ordre : relations, puis cotes, puis les « égal » entre cotes (qui ont besoin des paramètres des cotes).
+        # PlaneGCS signale comme redondante la contrainte arrivée en dernier : une cote nouvelle doit donc
+        # passer après les relations pour être celle que l'on désigne.
+        self._liees = {c for c in e.cotes if e.cote_maitresse(c) is not None}
+        entre_cotes = [r for r in e.relations.values()
+                       if r.type == TypeRelation.EGAL and e.genre(r.elements[0]) == "cote"]
         for r in e.relations.values():
+            if r in entre_cotes:
+                continue
             try:
                 for t in self._traduire_relation(r):
                     self._tags[int(t)] = r.id
@@ -120,6 +128,13 @@ class AdaptateurSolveur:
                 self._tags[int(self._traduire_cote(c))] = c.id
             except Exception as exc:
                 self.erreurs[c.id] = str(exc)
+
+        for r in entre_cotes:
+            try:
+                for t in self._traduire_relation(r):
+                    self._tags[int(t)] = r.id
+            except Exception as exc:
+                self.erreurs[r.id] = str(exc)
 
         # paramètres réutilisés par le glissement (évite d'en allouer à chaque mouvement de souris)
         self._glisse_z = s.add_fixed_param(0.0)
@@ -160,6 +175,9 @@ class AdaptateurSolveur:
         if r.type == T.EGAL:
             if genres == ["ligne", "ligne"]:
                 return [s.equal_length(self._lignes[els[0]], self._lignes[els[1]])]
+            if genres == ["cote", "cote"]:
+                # la seconde cote prend la valeur de la première : son paramètre, laissé libre, lui est égalé
+                return [s.equal(self._params_cotes[els[0]], self._params_cotes[els[1]])]
             return [s.equal_radius_aa(self._arcs[els[0]], self._arcs[els[1]])]
         if r.type == T.POINT_SUR_LIGNE:
             return [s.point_on_line(self._pts[els[0]], self._lignes[els[1]])]
@@ -207,10 +225,11 @@ class AdaptateurSolveur:
         return v
 
     def _traduire_cote(self, c: Cote):
-        """Une cote pilotante fixe son paramètre ; une cote pilotée le laisse libre et le solveur le mesure."""
+        """Une cote pilotante fixe son paramètre ; une cote pilotée le laisse libre et le solveur le mesure.
+        Une cote qui en suit une autre (« égal ») pilote la géométrie avec un paramètre libre, égalé à l'autre."""
         s, e, els = self._s, self.esquisse, c.elements
         pilote = not c.pilotee
-        param = s.add_param(self._valeur_param(c), fixed=pilote)
+        param = s.add_param(self._valeur_param(c), fixed=pilote and c.id not in self._liees)
         self._params_cotes[c.id] = param
         if c.type == TypeCote.LONGUEUR_Z:
             a, b = self._points_cote(els)
@@ -250,7 +269,7 @@ class AdaptateurSolveur:
             p.z, p.x = float(z), float(x)
         for cid, param in self._params_cotes.items():
             c = self.esquisse.cotes.get(cid)
-            if c is not None and c.pilotee:
+            if c is not None and (c.pilotee or cid in self._liees):
                 c.valeur = self._valeur_depuis_param(c, float(self._s.get_param(param)))
                 if c.type not in (TypeCote.ANGLE, TypeCote.POSITION_Z):
                     c.valeur = abs(c.valeur)
@@ -292,6 +311,8 @@ class AdaptateurSolveur:
         c = self.esquisse.cotes[cote_id]
         if c.pilotee:
             return Resultat(False, "pilotee")      # une cote pilotée se lit, elle ne se règle pas
+        if cote_id in self._liees:
+            return Resultat(False, "liee")         # elle suit une autre cote : c'est celle-là qu'on règle
         ancienne = c.valeur
         c.valeur = float(valeur)
         positions = {pid: (p.z, p.x) for pid, p in self.esquisse.points.items()}
