@@ -57,6 +57,7 @@ OUTILS_RAPIDES = ("selection", "ligne", "arc", "cote", "arrondi", "chanfrein", "
 LIBELLES_OUTILS = {"selection": "Sélection", "ligne": "Ligne", "arc": "Arc 3 points", "cote": "Cote",
                    "arrondi": "Arrondi", "chanfrein": "Chanfrein", "elaguer": "Élaguer"}
 DELAI_GESTE_MS = 350      # clic semi-long : au-delà, glisser élague au lieu de sélectionner ou de tracer
+PIXELS_PAR_PAS = 8        # clic droit maintenu sur une étiquette + glisser vertical : un pas de cote par tranche
 SEUIL_GESTE_PX = 4        # bouger plus que cela avant le délai annule le geste
 
 
@@ -130,6 +131,36 @@ class Etiquette(QGraphicsItem):
             demi = encre.height() / 2 + 2.5
             painter.drawLine(QPointF(0, self._rect.top() + 3), QPointF(0, -demi))
             painter.drawLine(QPointF(0, demi), QPointF(0, self._rect.bottom() - 3))
+
+
+class Inscription(QGraphicsItem):
+    """Petit texte discret à taille fixe, centré sur sa position, sans cadre : références gravées du montage."""
+
+    def __init__(self, texte: str, couleur: QColor, fond: QColor, parent=None):
+        super().__init__(parent)
+        self.texte = texte
+        self.couleur = couleur
+        self.fond = QColor(fond.red(), fond.green(), fond.blue(), 150)
+        self.police = QFont()
+        self.police.setPointSizeF(7.5)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.setZValue(1)
+        fm = QFontMetricsF(self.police)
+        w, h = fm.horizontalAdvance(texte) + 6, fm.height() + 2
+        self._rect = QRectF(-w / 2, -h / 2, w, h)
+
+    def boundingRect(self) -> QRectF:
+        return self._rect
+
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget = None) -> None:
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(self.fond))
+        painter.drawRect(self._rect)
+        painter.setPen(QPen(self.couleur, 1))
+        painter.setFont(self.police)
+        painter.drawText(self._rect, Qt.AlignmentFlag.AlignCenter, self.texte)
 
 
 class BulleOutils(QWidget):
@@ -249,9 +280,11 @@ class VueEsquisse(QGraphicsView):
         self._timer_geste.timeout.connect(self._declencher_geste)
 
         # clic droit maintenu + molette : changement d'outil (bande d'icônes), ou réglage d'une cote si le
-        # bouton a été enfoncé sur son étiquette
+        # bouton a été enfoncé sur son étiquette ; clic droit maintenu + glisser vertical : même réglage
         self._droit_molette = False
         self._droit_cote: Optional[Tuple[int, Optional[str]]] = None
+        self._droit_dernier: Optional[QPoint] = None
+        self._droit_reste = 0.0                 # pixels de glisser vertical pas encore convertis en pas
         self._bulle: Optional[BulleOutils] = None
         self._bulle_texte: Optional[QLabel] = None
         self._timer_bulle = QTimer(self)
@@ -506,10 +539,22 @@ class VueEsquisse(QGraphicsView):
         ajouter(mors)
         # corps du mandrin : de l'alésage au diamètre extérieur, derrière les mors
         za = m.z_arriere_mandrin()
-        corps = QGraphicsPathItem(self._rect_path(za, m.mandrin.alesage / 2.0, zf, m.mandrin.diametre / 2.0))
+        ra, rm = m.mandrin.alesage / 2.0, m.mandrin.diametre / 2.0
+        corps = QGraphicsPathItem(self._rect_path(za, ra, zf, rm))
         corps.setPen(plein)
         corps.setBrush(QBrush(QColor(muet.red(), muet.green(), muet.blue(), 30)))
         ajouter(corps)
+        # références gravées, rappelées discrètement : sur le corps du mandrin (et son passage de barre),
+        # sur l'étage du fond du mors
+        grave = QColor(c["texte"].red(), c["texte"].green(), c["texte"].blue(), 120)
+        if m.mandrin.reference:
+            ajouter(self._inscrire(m.mandrin.reference, ((za + zf) / 2.0, (ra + rm) / 2.0), grave, c), 1.0)
+        ajouter(self._inscrire(f"passage Ø {m.mandrin.alesage:g}", ((za + zf) / 2.0, ra + self.px_en_mm(9)), grave, c),
+                1.0)
+        blocs = m.blocs_mors()
+        if m.mandrin.mors_reference and blocs:
+            bz1, bz2, br1, br2 = blocs[-1]
+            ajouter(self._inscrire(m.mandrin.mors_reference, ((bz1 + bz2) / 2.0, (br1 + br2) / 2.0), grave, c), 1.0)
         # les trois valeurs du brut, toujours affichées et éditables : Ø, longueur, marge en bout
         d = self.px_en_mm(30)
         ambre = QColor(205, 175, 95)
@@ -567,6 +612,12 @@ class VueEsquisse(QGraphicsView):
         et.setData(ROLE_ID, cle)
         self._scene.addItem(et)
         self._items.append(et)
+
+    @staticmethod
+    def _inscrire(texte: str, pos, couleur: QColor, c: Dict[str, QColor]) -> Inscription:
+        it = Inscription(texte, couleur, c["fond"])
+        it.setPos(*pos)
+        return it
 
     @staticmethod
     def _rect_path(z1: float, x1: float, z2: float, x2: float) -> QPainterPath:
@@ -1291,6 +1342,8 @@ class VueEsquisse(QGraphicsView):
         if event.button() == Qt.MouseButton.RightButton:
             self._droit_molette = False        # l'action du clic droit est décidée au relâchement
             self._droit_cote = self.etiquette_et_variante(pos)   # sur une étiquette : la molette règle la cote
+            self._droit_dernier = pos
+            self._droit_reste = 0.0
             return
         if event.button() != Qt.MouseButton.LeftButton:
             return
@@ -1614,6 +1667,19 @@ class VueEsquisse(QGraphicsView):
             self._pan_dernier = pos
             self.translate(delta.x() / self.echelle(), -delta.y() / self.echelle())
             return
+        if (event.buttons() & Qt.MouseButton.RightButton) and self._droit_cote is not None \
+                and self._droit_dernier is not None:
+            # clic droit maintenu sur une étiquette + glisser vertical : la cote monte ou descend, un pas par
+            # tranche de PIXELS_PAR_PAS (comme la molette ; un dixième avec Maj)
+            self._droit_reste += self._droit_dernier.y() - pos.y()
+            self._droit_dernier = pos
+            pas = int(self._droit_reste / PIXELS_PAR_PAS)
+            if pas:
+                self._droit_reste -= pas * PIXELS_PAR_PAS
+                self._droit_molette = True
+                self._regler_cote_droite(1 if pas > 0 else -1, abs(pas),
+                                         bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier), pos)
+            return
         gauche = bool(event.buttons() & Qt.MouseButton.LeftButton)
         if self._geste and gauche:
             self._trait.append((z, x))
@@ -1745,20 +1811,31 @@ class VueEsquisse(QGraphicsView):
             pos = event.position().toPoint()
             if self._droit_cote is not None:
                 # clic droit maintenu sur une étiquette de cote + molette : la valeur monte ou descend
-                cote_id, variante = self._droit_cote
-                fin = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-                if variante == "brut":
-                    texte = self.controleur.ajuster_brut(cote_id, 1 if delta > 0 else -1, fin)
-                else:
-                    texte = self.controleur.ajuster_cote(cote_id, 1 if delta > 0 else -1, variante, fin)
-                if texte:
-                    self._montrer_texte(texte, pos)
+                self._regler_cote_droite(1 if delta > 0 else -1, 1,
+                                         bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier), pos)
             else:
                 # sinon, cycle des outils : Sélection -> Ligne -> Arc -> Cote -> Arrondi -> Chanfrein -> Élaguer
                 self.cycler_outil(1 if delta < 0 else -1, pos)
             event.accept()
             return
         self.zoomer(1.15 ** (delta / 120.0), event.position().toPoint())
+
+    def _regler_cote_droite(self, sens: int, nb_pas: int, fin: bool, pos) -> None:
+        """Molette ou glisser vertical, bouton droit enfoncé sur une étiquette : `nb_pas` pas dans le sens donné."""
+        if self._droit_cote is None:
+            return
+        cote_id, variante = self._droit_cote
+        texte = None
+        for _ in range(nb_pas):
+            if variante == "brut":
+                t = self.controleur.ajuster_brut(cote_id, sens, fin)
+            else:
+                t = self.controleur.ajuster_cote(cote_id, sens, variante, fin)
+            if t is None:
+                break
+            texte = t
+        if texte:
+            self._montrer_texte(texte, pos)
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:

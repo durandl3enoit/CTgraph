@@ -66,7 +66,8 @@ vérification par relecture du G-code généré, réception des programmes depui
   garde la flèche. L'outil Cote déplace aussi les cotes posées et les édite au double-clic.
 - **Cycle d'outils à la molette** : bande d'icônes (`BulleOutils`) tournée pour garder l'outil actif au centre.
   Si le bouton droit a été enfoncé sur l'étiquette d'une cote, la molette règle la cote (1 par cran, 0,1 avec Maj,
-  rayon sur le « R » d'un diamètre), une seule étape d'annulation au relâchement.
+  rayon sur le « R » d'un diamètre), et le glisser vertical aussi (un pas par `PIXELS_PAR_PAS`, vers le haut =
+  plus) ; une seule étape d'annulation au relâchement, qui n'ouvre pas le menu.
 - **Arrondi et chanfrein** (`ctgraph/esquisse/coins.py`) : outils sur un sommet entre deux lignes. Le sommet devient
   un **point de construction** (`Point.construction`, coin théorique, croix diagonale) tenu par « point sur ligne »
   sur les deux lignes ; il échappe au balayage des orphelins. Les cotes de longueur portées par les lignes passent
@@ -113,7 +114,10 @@ vérification par relecture du G-code généré, réception des programmes depui
   les cotes de longueur disparaissent.
 
 - **Machine et montage** (`ctgraph/montage.py`, validé par l'utilisateur le 24 novembre 2026) : CT200 avec mandrin à mors
-  **SMW-Autoblok BH-M 210**, mors **SMW-Autoblok 474**, contre-pointe possible, brut rond plein par défaut, tube possible.
+  **SMW-Autoblok 210 BH-FC** (référence gravée « 210 BH-FC », passage de barre **42 mm** : constante
+  `PASSAGE_MANDRIN`, affichée, ni réglable ni enregistrée), mors **SMW-Autoblok 474** (référence gravée
+  « 12082030 (1/16"x90°) »), contre-pointe possible, brut rond plein par défaut, tube possible. Les références
+  gravées sont inscrites discrètement sur le dessin (`Inscription`, sans cadre ni interaction).
   Repère pièce : Z = 0 face avant finie, Z négatif vers le mandrin ; prise décrite par dépassement (face des mors →
   face finie), surépaisseur de face, serrage extérieur ou intérieur (tube), mors retournés ou non, et **appui**
   de l'arrière du brut : face du mandrin (0) ou épaulement derrière l'étage k ; la longueur engagée en découle.

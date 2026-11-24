@@ -56,17 +56,26 @@ def _etages_par_defaut() -> List[Etage]:
     return [Etage(20.0, 8.0), Etage(20.0, 8.0), Etage(30.0, 0.0)]     # à vérifier sur les mors 474
 
 
+PASSAGE_MANDRIN = 42.0   # passage de barre du 210 BH-FC, relevé par l'utilisateur : une caractéristique, pas un réglage
+
+
 @dataclass
 class Mandrin:
-    modele: str = "SMW-Autoblok BH-M 210"
+    modele: str = "SMW-Autoblok 210 BH-FC"
+    reference: str = "210 BH-FC"                   # gravée sur le mandrin, rappelée sur le dessin
     mors_modele: str = "SMW-Autoblok 474"
+    mors_reference: str = "12082030 (1/16\"x90°)"  # gravée sur les mors (dentelure 1/16\" × 90°)
     diametre: float = 210.0
     longueur_corps: float = 90.0     # à vérifier
-    alesage: float = 52.0            # passage de barre, à vérifier
     nb_mors: int = 3
     largeur_mors: float = 30.0       # à vérifier
     epaisseur_mors: float = 40.0     # épaisseur radiale du mors au fond, à vérifier
     etages: List[Etage] = field(default_factory=_etages_par_defaut)   # depuis le bout
+
+    @property
+    def alesage(self) -> float:
+        """Passage de barre : fixé par le mandrin, affiché mais pas réglable."""
+        return PASSAGE_MANDRIN
 
     def nb_etages(self) -> int:
         return len(self.etages)

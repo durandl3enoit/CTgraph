@@ -144,3 +144,15 @@ def test_cles_inconnues_ignorees():
     d["brut"]["inconnue"] = 1
     m = Montage.from_dict(d)
     assert m.brut.diametre == 60.0
+
+
+def test_references_et_passage_du_mandrin():
+    from ctgraph.montage import PASSAGE_MANDRIN
+    m = Montage()
+    assert m.mandrin.reference == "210 BH-FC" and m.mandrin.mors_reference.startswith("12082030")
+    # le passage de barre est une caractéristique du mandrin : ni réglable, ni enregistré, ni relu d'un fichier
+    assert m.mandrin.alesage == PASSAGE_MANDRIN == 42.0
+    d = m.to_dict()
+    assert "alesage" not in d["mandrin"]
+    d["mandrin"]["alesage"] = 52.0
+    assert Montage.from_dict(d).mandrin.alesage == 42.0

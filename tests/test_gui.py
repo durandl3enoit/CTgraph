@@ -443,6 +443,21 @@ def test_molette_sur_une_etiquette_regle_la_cote(fenetre):
     assert max(pt.x for pt in e.points.values()) == pytest.approx(20.95, abs=1e-6)
     assert vue._bulle_texte is not None and vue._bulle_texte.isVisible() and "41.9" in vue._bulle_texte.text()
     assert vue.outil == "selection"                     # pas de changement d'outil
+    # clic droit maintenu + glisser vertical : même réglage, un pas par tranche de pixels, vers le haut = plus
+    from PySide6.QtGui import QMouseEvent
+    from ctgraph.ui.vue_esquisse import PIXELS_PAR_PAS
+
+    def glisser_droit(dy):
+        q = p + QPoint(0, dy)
+        ev = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(q), QPointF(vue.viewport().mapToGlobal(q)),
+                         Qt.MouseButton.NoButton, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier)
+        vue.mouseMoveEvent(ev)
+
+    glisser_droit(-3 * PIXELS_PAR_PAS)
+    assert diam.valeur == pytest.approx(44.9)
+    glisser_droit(-3 * PIXELS_PAR_PAS + 2 * PIXELS_PAR_PAS)     # deux tranches vers le bas
+    assert diam.valeur == pytest.approx(42.9)
+    assert vue._droit_molette                            # le relâchement n'ouvrira pas le menu
     assert len(win._annuler) == n_annulations           # l'annulation n'est poussée qu'au relâchement
     QTest.mouseRelease(vue.viewport(), Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, p)
     assert len(win._annuler) == n_annulations + 1
@@ -858,18 +873,24 @@ def test_dialogue_montage_et_dessin(fenetre):
     n_sans = len(vue._items)                   # montage masqué par la fixture : esquisse vide, rien à dessiner
     assert not win.vue.montage_visible and n_sans == 0
     win.act_voir_montage.setChecked(True)
-    assert len(vue._items) == 3 + 6            # brut, mors, corps du mandrin, et trois cotes du brut (trait + étiquette)
+    # brut, mors, corps du mandrin, trois cotes du brut (trait + étiquette), trois inscriptions gravées
+    assert len(vue._items) == 3 + 6 + 3
     dlg = DialogueMontage(win.montage, win)
     dlg.brut_diametre.setValue(70.0)
     dlg.depassement.setValue(120.0)
     dlg.cp_presente.setChecked(True)
     m = dlg.montage_resultat()
     assert m.brut.diametre == 70.0 and m.prise.depassement == 120.0 and m.contre_pointe.presente
-    assert m.mandrin.mors_modele == "SMW-Autoblok 474"
+    assert m.mandrin.mors_modele == "SMW-Autoblok 474" and m.mandrin.reference == "210 BH-FC"
+    assert "42" in dlg.alesage.text()                   # passage de barre affiché, pas réglable
+    # les références gravées sont inscrites sur le dessin du montage
+    from ctgraph.ui.vue_esquisse import Inscription
+    textes = {it.texte for it in vue._items if isinstance(it, Inscription)}
+    assert textes == {"210 BH-FC", "passage Ø 42", "12082030 (1/16\"x90°)"}
     win.definir_montage(m)
     assert win.montage.z_face_mors() == -120.0 and win._modifie
-    # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés, plus les trois cotes du brut
-    assert len(vue._items) == 4 + 6
+    # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés, plus les cotes et inscriptions
+    assert len(vue._items) == 4 + 6 + 3
     win.act_voir_montage.setChecked(False)
     assert not vue.montage_visible and len(vue._items) == 0
     # les étages se saisissent dans le dialogue : deux étages de 25 et 45, un seul épaulement

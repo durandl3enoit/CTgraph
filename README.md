@@ -49,8 +49,9 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   hors profil tenue sur le prolongement des deux lignes : les cotes de longueur voisines s'y rattachent, et changer
   le rayon ou le chanfrein ne déplace rien d'autre. L'arrondi est tangent aux deux lignes et porte sa cote de rayon ;
   le chanfrein porte sa longueur depuis le coin théorique et son angle, à lire « 1 × 45° ».
-* **Régler une cote à la molette** : clic droit maintenu sur la valeur d'une cote, puis molette : un millimètre ou
-  un degré par cran, un dixième avec `Maj`. Sur le « R » d'un diamètre, c'est le rayon qui change. Le relâchement
+* **Régler une cote à la molette ou en glissant** : clic droit maintenu sur la valeur d'une cote, puis molette, ou
+  glisser verticalement (vers le haut pour augmenter) : un millimètre ou un degré par cran ou par tranche de
+  quelques pixels, un dixième avec `Maj`. Sur le « R » d'un diamètre, c'est le rayon qui change. Le relâchement
   du bouton n'ouvre pas le menu et ne fait qu'une étape d'annulation.
 * **Élaguer** (`E`) : tirez un trait au travers des lignes ou des arcs à couper. La portion retirée va jusqu'aux
   croisements voisins avec les autres objets, ou jusqu'au bout s'il n'y en a pas ; un objet sans croisement
@@ -86,7 +87,9 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
 ## Machine et montage
 
 Menu *Pièce → Machine et montage…* (`Ctrl+M`) : la machine (courses, broche, position de changement d'outil,
-à relever sur le CT200), le mandrin SMW-Autoblok BH-M 210 et ses mors 474 (dimensions à vérifier sur le mandrin),
+à relever sur le CT200), le mandrin SMW-Autoblok 210 BH-FC et ses mors 474 (dimensions à vérifier sur le mandrin ;
+le passage de barre de 42 mm est une caractéristique du mandrin, affichée mais pas réglable ; les références
+gravées « 210 BH-FC » et « 12082030 (1/16"x90°) » sont rappelées discrètement sur le dessin),
 le brut (rond plein ou tube, diamètre, matière), la prise de pièce (serrage, mors retournés ou non, appui du
 brut, dépassement de la face des mors à la face finie, surépaisseur de la face avant) et la contre-pointe.
 

@@ -53,7 +53,8 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   longueur et épaulement, mors le plus épais au fond), serrage extérieur ou intérieur, appui du brut sur un
   épaulement ou sur la face du mandrin, réglés directement sur le mors dessiné (double-clic : retourner ; clic
   droit : serrage et appui), en 2D comme en 3D. Boutons de vues typiques sur la 3D : côté, face, biais réglable.
-  95 tests.
+  Réglage des cotes aussi par clic droit + glisser vertical. Références gravées (« 210 BH-FC », mors
+  « 12082030 (1/16"x90°) ») inscrites sur le dessin ; passage de barre 42 mm fixe. 96 tests.
 
 ## En cours
 
