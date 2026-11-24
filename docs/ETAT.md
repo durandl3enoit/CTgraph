@@ -45,9 +45,13 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
   possibles et Arrondi/Chanfrein sur un coin, cote pilotée posée sans demander de valeur, « égal » entre deux
   cotes, contour fermé par une relation coïncidente, icône de l'application sur la grille. 83 tests.
 
+- **Module machine et montage, première version** (`ctgraph/montage.py`, `ui/dialogue_montage.py`) : machine, mandrin
+  BH-M 210 et mors 474, brut rond ou tube, prise de pièce, contre-pointe ; dialogue *Pièce → Machine et montage*,
+  dessin en retrait dans l'esquisse et dans la vue 3D (brut translucide), enregistré avec la pièce (`Piece`).
+
 ## En cours
 
-- Rien d'ouvert : la séance s'est terminée sur un état propre.
+- Les dimensions du mandrin et de la machine sont des ordres de grandeur : à relever et à saisir dans le dialogue.
 
 ## Prochaines étapes
 

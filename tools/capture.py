@@ -30,6 +30,10 @@ def main() -> None:
     else:
         win._charger_json(arbre_epaule().to_json())
         win._appliquer_resultat(win.solveur.resoudre())
+        win.montage.brut.diametre = 56.0
+        win.montage.prise.depassement = 95.0
+        win.montage.contre_pointe.presente = True
+        win.definir_montage(win.montage)
         win.vue.tout_voir()
 
     def capturer():

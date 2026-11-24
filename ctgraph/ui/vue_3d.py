@@ -22,6 +22,11 @@ from PySide6.QtWidgets import QFrame, QLabel, QWidget
 GL_LINES = 0x0001
 GL_TRIANGLES = 0x0004
 GL_DEPTH_BUFFER_BIT = 0x0100
+GL_SRC_ALPHA = 0x0302
+GL_ONE_MINUS_SRC_ALPHA = 0x0303
+GL_BACK = 0x0405
+GL_CULL_FACE = 0x0B44
+GL_BLEND = 0x0BE2
 GL_FLOAT = 0x1406
 GL_DEPTH_TEST = 0x0B71
 GL_COLOR_BUFFER_BIT = 0x4000
@@ -51,10 +56,11 @@ varying vec3 v_nrm;
 uniform vec3 u_couleur;
 uniform vec3 u_lumiere;
 uniform float u_plat;
+uniform float u_alpha;
 void main() {
     float d = abs(dot(normalize(v_nrm), normalize(u_lumiere)));
     vec3 c = mix(u_couleur * (0.30 + 0.70 * d), u_couleur, u_plat);
-    gl_FragColor = vec4(c, 1.0);
+    gl_FragColor = vec4(c, u_alpha);
 }
 """
 
@@ -136,13 +142,94 @@ def maillage_revolution(contours: Sequence[Sequence[Point2]], segments: int = SE
                 c = ((z2, x2 * c1, x2 * s1), (nz2, nx2 * c1, nx2 * s1))
                 d = ((z1, x1 * c1, x1 * s1), (nz1, nx1 * c1, nx1 * s1))
                 for tri in ((a, b, c), (a, c, d)):
-                    (p, _), (q, _), (r, _) = tri
-                    if _norme(_croix(_sous(q, p), _sous(r, p))) is None:
+                    (p, np_), (q, _), (r, _) = tri
+                    g = _norme(_croix(_sous(q, p), _sous(r, p)))
+                    if g is None:
                         continue                      # triangle écrasé sur l'axe
+                    if g[0] * np_[0] + g[1] * np_[1] + g[2] * np_[2] < 0.0:
+                        tri = (tri[0], tri[2], tri[1])   # sens de parcours accordé à la normale (élimination des faces arrière)
                     for pos, nrm in tri:
                         data.extend((pos[0], pos[1], pos[2], nrm[0], nrm[1], nrm[2]))
                     nb += 3
     return data, nb
+
+
+def maillage_boite_radiale(z1: float, z2: float, r1: float, r2: float, demi_largeur: float,
+                           angle: float) -> Tuple[array, int]:
+    """Un bloc entre deux rayons, de z1 à z2, de largeur tangentielle 2·demi_largeur, tourné de `angle`
+    radians autour de l'axe Z de la pièce : un mors de mandrin. Normales à facettes."""
+    c, s = math.cos(angle), math.sin(angle)
+
+    def tourner(z, r, t):
+        # repère local : r le long du rayon, t tangentiel ; puis rotation dans le plan (Y, Z) du monde
+        return (z, r * c - t * s, r * s + t * c)
+
+    coins = {
+        (i, j, k): tourner(z1 if i == 0 else z2, r1 if j == 0 else r2, -demi_largeur if k == 0 else demi_largeur)
+        for i in (0, 1) for j in (0, 1) for k in (0, 1)
+    }
+    faces = [
+        ((0, 0, 0), (0, 1, 0), (0, 1, 1), (0, 0, 1)),   # z1
+        ((1, 0, 0), (1, 0, 1), (1, 1, 1), (1, 1, 0)),   # z2
+        ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)),   # -t
+        ((0, 0, 1), (0, 1, 1), (1, 1, 1), (1, 0, 1)),   # +t
+        ((0, 0, 0), (0, 0, 1), (1, 0, 1), (1, 0, 0)),   # r1
+        ((0, 1, 0), (1, 1, 0), (1, 1, 1), (0, 1, 1)),   # r2
+    ]
+    centre = tuple(sum(c[i] for c in coins.values()) / 8.0 for i in range(3))
+    data = array("f")
+    nb = 0
+    for face in faces:
+        p, q, r, s4 = (coins[k] for k in face)
+        n = _norme(_croix(_sous(q, p), _sous(r, p)))
+        if n is None:
+            continue
+        milieu = tuple((p[i] + r[i]) / 2.0 for i in range(3))
+        if sum(n[i] * (milieu[i] - centre[i]) for i in range(3)) < 0.0:
+            n = (-n[0], -n[1], -n[2])                   # normale sortante et parcours accordé
+            p, q, r, s4 = p, s4, r, q
+        for tri in ((p, q, r), (p, r, s4)):
+            for v in tri:
+                data.extend((v[0], v[1], v[2], n[0], n[1], n[2]))
+            nb += 3
+    return data, nb
+
+
+def maillages_montage(montage) -> List[Tuple[array, int, Tuple[float, float, float, float]]]:
+    """Mandrin, mors, brut et contre-pointe en maillages (données, nombre de sommets, couleur RGBA)."""
+    md, cp = montage.mandrin, montage.contre_pointe
+    out = []
+    # Les profils fermés sont parcourus dans le sens horaire (Z vers la droite, X vers le haut) : les normales
+    # de révolution pointent alors vers l'extérieur et les faces arrière peuvent être éliminées au rendu.
+    # corps du mandrin : tube de l'alésage au diamètre extérieur
+    za, zf = montage.z_arriere_mandrin(), montage.z_face_mandrin()
+    ri, re = md.alesage / 2.0, md.diametre / 2.0
+    corps = [(za, re), (za, ri), (zf, ri), (zf, re), (za, re)]
+    data, nb = maillage_revolution([corps], 96)
+    out.append((data, nb, (0.44, 0.45, 0.49, 1.0)))
+    # mors : blocs qui serrent le brut, répartis autour de l'axe
+    rb = montage.rayon_brut()
+    for k in range(max(md.nb_mors, 1)):
+        angle = math.pi / 2 + 2.0 * math.pi * k / max(md.nb_mors, 1)
+        data, nb = maillage_boite_radiale(montage.z_fond_mors(), montage.z_face_mors(), rb, rb + md.epaisseur_mors,
+                                          md.largeur_mors / 2.0, angle)
+        out.append((data, nb, (0.60, 0.61, 0.64, 1.0)))
+    # brut : cylindre ou tube translucide
+    zb1, zb2 = montage.z_brut_arriere(), montage.z_brut_avant()
+    rbi = montage.rayon_interieur_brut()
+    profil = [(zb1, rb), (zb1, rbi), (zb2, rbi), (zb2, rb), (zb1, rb)]
+    data, nb = maillage_revolution([profil], 96)
+    out.append((data, nb, (0.80, 0.72, 0.45, 0.22)))
+    # contre-pointe : cône dont la pointe touche la face avant du brut
+    if cp.presente:
+        demi = cp.diametre / 2.0
+        l_cone = demi / math.tan(math.radians(cp.angle / 2.0))
+        lg = max(cp.longueur, l_cone + 1.0)
+        zc = zb2
+        pointe = [(zc + lg, 0.0), (zc + lg, demi), (zc + l_cone, demi), (zc, 0.0), (zc + lg, 0.0)]
+        data, nb = maillage_revolution([pointe], 64)
+        out.append((data, nb, (0.52, 0.53, 0.57, 1.0)))
+    return out
 
 
 def _bornes(data: array, nb: int) -> Tuple[QVector3D, float]:
@@ -172,6 +259,9 @@ class Vue3D(QOpenGLWidget):
         self._donnees = array("f")
         self._nb = 0
         self._a_televerser = False
+        self._montage_maillages: List[Tuple[array, int, Tuple[float, float, float, float]]] = []
+        self._montage_gl: List[Tuple[QOpenGLVertexArrayObject, QOpenGLBuffer, int, Tuple[float, ...]]] = []
+        self._montage_a_televerser = False
         self._centre = QVector3D(0.0, 0.0, 0.0)
         self._rayon = 50.0
         self._jamais_cadre = True
@@ -200,6 +290,12 @@ class Vue3D(QOpenGLWidget):
         """Nouveaux contours fermés (z, x). Le maillage est refait un peu plus tard, pour grouper les changements."""
         self._contours = [list(c) for c in contours]
         self._timer.start(40)
+
+    def definir_montage(self, maillages: List[Tuple[array, int, Tuple[float, float, float, float]]]) -> None:
+        """Mandrin, mors, brut, contre-pointe (voir `maillages_montage`) ; liste vide pour ne rien montrer."""
+        self._montage_maillages = list(maillages)
+        self._montage_a_televerser = True
+        self.update()
 
     def _reconstruire_maillage(self) -> None:
         self._donnees, self._nb = maillage_revolution(self._contours)
@@ -238,7 +334,8 @@ class Vue3D(QOpenGLWidget):
                 self._rafraichir_message()
                 return
             # PySide6 n'adresse uniformes et attributs que par emplacement numérique
-            self._u = {n: self._prog.uniformLocation(n) for n in ("u_mvp", "u_nrm", "u_couleur", "u_lumiere", "u_plat")}
+            self._u = {n: self._prog.uniformLocation(n)
+                       for n in ("u_mvp", "u_nrm", "u_couleur", "u_lumiere", "u_plat", "u_alpha")}
             self._a_pos = self._prog.attributeLocation("a_pos")
             self._a_nrm = self._prog.attributeLocation("a_nrm")
             self._vao = QOpenGLVertexArrayObject()
@@ -277,6 +374,22 @@ class Vue3D(QOpenGLWidget):
         self._charger(self._vao_axe, self._vbo_axe, array("f", [cx - lg, 0, 0, 1, 0, 0, cx + lg, 0, 0, 1, 0, 0]))
         self._a_televerser = False
 
+    def _televerser_montage(self) -> None:
+        for vao, vbo, _, _ in self._montage_gl:
+            vbo.destroy()
+            vao.destroy()
+        self._montage_gl = []
+        for data, nb, couleur in self._montage_maillages:
+            if nb == 0:
+                continue
+            vao = QOpenGLVertexArrayObject()
+            vao.create()
+            vbo = QOpenGLBuffer(QOpenGLBuffer.Type.VertexBuffer)
+            vbo.create()
+            self._charger(vao, vbo, data)
+            self._montage_gl.append((vao, vbo, nb, couleur))
+        self._montage_a_televerser = False
+
     def _matrices(self) -> Tuple[QMatrix4x4, QMatrix4x4]:
         w, h = max(self.width(), 1), max(self.height(), 1)
         proj = QMatrix4x4()
@@ -301,30 +414,59 @@ class Vue3D(QOpenGLWidget):
         f.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if not self._gl_pret:
             return
+        self._prog.bind()
         if self._a_televerser:
-            self._prog.bind()
             self._televerser()
-            self._prog.release()
+        if self._montage_a_televerser:
+            self._televerser_montage()
         mvp, mv = self._matrices()
         inv, ok = mv.inverted()
         nrm = inv.transposed() if ok else QMatrix4x4()
         u = self._u
-        self._prog.bind()
         self._prog.setUniformValue(u["u_mvp"], mvp)
         self._prog.setUniformValue(u["u_nrm"], nrm)
         self._prog.setUniformValue(u["u_lumiere"], QVector3D(0.35, 0.55, 1.0))
+        self._prog.setUniformValue1f(u["u_alpha"], 1.0)   # flottant explicite : la surcharge générique peut partir sur l'entier
+        # d'abord l'opaque : mandrin, mors, contre-pointe (faces arrière éliminées : on voit au travers quand la
+        # caméra entre dans le mandrin), puis la pièce, enfin le brut translucide
+        translucides = []
+        self._prog.setUniformValue1f(u["u_plat"], 0.0)
+        f.glEnable(GL_CULL_FACE)
+        f.glCullFace(GL_BACK)
+        for vao, vbo, nb, couleur in self._montage_gl:
+            if couleur[3] < 1.0:
+                translucides.append((vao, nb, couleur))
+                continue
+            self._prog.setUniformValue(u["u_couleur"], QVector3D(*couleur[:3]))
+            vao.bind()
+            f.glDrawArrays(GL_TRIANGLES, 0, nb)
+            vao.release()
+        f.glDisable(GL_CULL_FACE)
         if self._nb:
-            self._prog.setUniformValue(u["u_plat"], 0.0)
             self._prog.setUniformValue(u["u_couleur"], QVector3D(0.62, 0.70, 0.80) if sombre
                                        else QVector3D(0.50, 0.60, 0.72))
             self._vao.bind()
             f.glDrawArrays(GL_TRIANGLES, 0, self._nb)
             self._vao.release()
-        self._prog.setUniformValue(u["u_plat"], 1.0)
+        self._prog.setUniformValue1f(u["u_plat"], 1.0)
         self._prog.setUniformValue(u["u_couleur"], QVector3D(0.6, 0.6, 0.6) if sombre else QVector3D(0.45, 0.45, 0.45))
         self._vao_axe.bind()
         f.glDrawArrays(GL_LINES, 0, 2)
         self._vao_axe.release()
+        if translucides:
+            f.glEnable(GL_BLEND)
+            # la couleur se mélange, mais l'opacité du tampon reste à 1 : sinon le fond de la fenêtre transparaîtrait
+            f.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, 0, 1)
+            f.glEnable(GL_CULL_FACE)                    # seule la paroi avant du brut se voit : un voile léger
+            self._prog.setUniformValue1f(u["u_plat"], 0.0)
+            for vao, nb, couleur in translucides:
+                self._prog.setUniformValue(u["u_couleur"], QVector3D(*couleur[:3]))
+                self._prog.setUniformValue1f(u["u_alpha"], float(couleur[3]))
+                vao.bind()
+                f.glDrawArrays(GL_TRIANGLES, 0, nb)
+                vao.release()
+            f.glDisable(GL_CULL_FACE)
+            f.glDisable(GL_BLEND)
         self._prog.release()
 
     # -- souris --------------------------------------------------------------------
@@ -425,6 +567,9 @@ class Incrustation3D(QFrame):
 
     def definir_contours(self, contours: List[List[Point2]]) -> None:
         self.vue.definir_contours(contours)
+
+    def definir_montage(self, maillages) -> None:
+        self.vue.definir_montage(maillages)
 
     def recadrer(self) -> None:
         self.vue.recadrer()

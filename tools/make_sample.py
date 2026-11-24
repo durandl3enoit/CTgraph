@@ -59,8 +59,10 @@ def main() -> None:
     dossier = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "exemples")
     os.makedirs(dossier, exist_ok=True)
     chemin = os.path.abspath(os.path.join(dossier, "arbre-epaule.ctg"))
+    from ctgraph.montage import Brut, Montage, Piece, PriseDePiece
+    piece = Piece(arbre_epaule(), Montage(brut=Brut(diametre=56.0), prise=PriseDePiece(depassement=95.0)))
     with open(chemin, "w", encoding="utf-8") as f:
-        f.write(arbre_epaule().to_json())
+        f.write(piece.to_json())
     print("Écrit :", chemin)
 
 

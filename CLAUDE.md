@@ -91,6 +91,9 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Vue 3D** (`ctgraph/ui/vue_3d.py`) : QOpenGLWidget incrusté en haut à droite de l'esquisse, nuanceurs GLSL 1.20,
   sans PyOpenGL. Révolution des contours fermés à 96 facettes, normales exactes de la surface de révolution
   lissées le long du profil sous un angle de pli de 30° (arcs lisses, épaulements nets), éclairage deux faces.
+  Le sens de parcours des triangles est accordé à la normale ; les maillages du montage, construits avec des
+  profils parcourus dans le sens horaire (normales sortantes), sont rendus avec élimination des faces arrière,
+  si bien que l'on voit au travers du mandrin quand la caméra y entre. Le brut est translucide.
   Repère : Z pièce = X monde. `CTGRAPH_SANS_3D=1` la désactive (tests hors écran). Le mandrin, le brut et
   l'outil viendront s'y ajouter.
 - **Contours fermés remplis** d'une teinte discrète (`VueEsquisse.contours_fermes`) : chaînes dont chaque sommet
@@ -107,6 +110,14 @@ vérification par relecture du G-code généré, réception des programmes depui
   Les points de coupe reçoivent « point sur » l'objet croisé ; une ligne scindée garde horizontal/vertical/parallèle/
   perpendiculaire sur ses deux morceaux, un arc scindé garde son centre et reçoit « égal » entre ses morceaux ;
   les cotes de longueur disparaissent.
+
+- **Machine et montage** (`ctgraph/montage.py`, validé par l'utilisateur le 24 novembre 2026) : CT200 avec mandrin à mors
+  **SMW-Autoblok BH-M 210**, mors **SMW-Autoblok 474**, contre-pointe possible, brut rond plein par défaut, tube possible.
+  Repère pièce : Z = 0 face avant finie, Z négatif vers le mandrin ; prise décrite par dépassement (face des mors →
+  face finie), longueur serrée, surépaisseur de face. Les dimensions du mandrin sont des ordres de grandeur à vérifier.
+  Le fichier `.ctg` est désormais une **pièce** (`Piece` : esquisse + montage, format `ctgraph-piece`) ; l'ancien
+  format esquisse seule se lit encore. Le dernier montage réglé est le défaut des nouvelles pièces (préférences).
+  Courses et broche de la machine : valeurs provisoires, à relever.
 
 ## Points ouverts
 

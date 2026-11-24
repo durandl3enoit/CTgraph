@@ -82,6 +82,16 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   `Ctrl+3` : recadrer. Le coin inférieur gauche la redimensionne.
 * **Fichiers** : les esquisses sont enregistrées en `.ctg` (JSON lisible). `Ctrl+Z` / `Ctrl+Y` annulent et rétablissent.
 
+## Machine et montage
+
+Menu *Pièce → Machine et montage…* (`Ctrl+M`) : la machine (courses, broche, position de changement d'outil,
+à relever sur le CT200), le mandrin SMW-Autoblok BH-M 210 et ses mors 474 (dimensions à vérifier sur le mandrin),
+le brut (rond plein ou tube, diamètre, matière), la prise de pièce (dépassement de la face des mors à la face
+finie, longueur serrée, surépaisseur de la face avant) et la contre-pointe. Le repère est celui de la pièce :
+Z = 0 sur la face avant finie, Z négatif vers le mandrin. Le montage est enregistré avec la pièce et le dernier
+réglé sert de défaut aux nouvelles pièces. Il se dessine en retrait dans l'esquisse, brut en pointillés et mors
+hachurés, et dans la vue 3D, brut translucide ; la touche `M` le masque.
+
 ## Lancer
 
 * **Depuis les sources** : `.venv\Scripts\python.exe run.py [fichier.ctg]`.

@@ -40,6 +40,7 @@ def fenetre(app):
     QTest.qWaitForWindowExposed(win)
     for cle in win.vue.aimants:
         win.cases_aimants[cle].setChecked(True)
+    win.act_voir_montage.setChecked(False)     # le montage élargit la vue : les clics simulés perdraient en précision
     win.vue.tout_voir()
     QTest.qWait(30)
     yield win
@@ -795,6 +796,8 @@ def test_arc_trois_points(fenetre):
 def test_enregistrer_et_rouvrir(fenetre, tmp_path):
     win, vue = fenetre, fenetre.vue
     rectangle(win, fermer=False)
+    win.montage.brut.diametre = 48.0
+    win.definir_montage(win.montage)
     chemin = str(tmp_path / "piece.ctg")
     assert win._ecrire(chemin)
     assert not win._modifie
@@ -803,7 +806,41 @@ def test_enregistrer_et_rouvrir(fenetre, tmp_path):
     assert win.esquisse.est_vide()
     assert win.ouvrir_fichier(chemin)
     assert win.esquisse.to_dict() == avant
+    assert win.montage.brut.diametre == 48.0 and win.vue.montage is win.montage
     assert os.path.basename(chemin) in win.windowTitle()
+    # un fichier de l'ancien format, l'esquisse seule, s'ouvre encore
+    ancien = str(tmp_path / "ancien.ctg")
+    with open(ancien, "w", encoding="utf-8") as f:
+        f.write(win.esquisse.to_json())
+    assert win.ouvrir_fichier(ancien)
+    assert win.esquisse.to_dict() == avant
+
+
+def test_dialogue_montage_et_dessin(fenetre):
+    from ctgraph.ui.dialogue_montage import DialogueMontage
+    win, vue = fenetre, fenetre.vue
+    n_sans = len(vue._items)                   # montage masqué par la fixture : esquisse vide, rien à dessiner
+    assert not win.vue.montage_visible and n_sans == 0
+    win.act_voir_montage.setChecked(True)
+    assert len(vue._items) == 3                # brut, mors, corps du mandrin
+    dlg = DialogueMontage(win.montage, win)
+    dlg.brut_diametre.setValue(70.0)
+    dlg.depassement.setValue(120.0)
+    dlg.cp_presente.setChecked(True)
+    m = dlg.montage_resultat()
+    assert m.brut.diametre == 70.0 and m.prise.depassement == 120.0 and m.contre_pointe.presente
+    assert m.mandrin.mors_modele == "SMW-Autoblok 474"
+    win.definir_montage(m)
+    assert win.montage.z_face_mors() == -120.0 and win._modifie
+    # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés
+    assert len(vue._items) == 4
+    win.act_voir_montage.setChecked(False)
+    assert not vue.montage_visible and len(vue._items) == 0
+    # une prise de pièce impossible est refusée
+    dlg.prise_mors.setValue(500.0)
+    from ctgraph.esquisse.modele import ErreurEsquisse
+    with pytest.raises(ErreurEsquisse):
+        dlg.montage_resultat()
 
 
 def test_suppression(fenetre):

@@ -74,6 +74,39 @@ def test_icones_toutes_dessinables():
         assert not icone_relation(t.value, encre, fond).isNull()
 
 
+def test_maillages_du_montage():
+    from ctgraph.montage import Montage
+    from ctgraph.ui.vue_3d import maillage_boite_radiale, maillages_montage
+    data, nb = maillage_boite_radiale(-10, 0, 20, 30, 10, 0.0)
+    assert nb == 12 * 3
+    for i in range(0, len(data), 6):
+        assert math.hypot(*data[i + 3:i + 6]) == pytest.approx(1.0, abs=1e-6)
+    m = Montage()
+    m.contre_pointe.presente = True
+    maillages = maillages_montage(m)
+    # corps, trois mors, brut translucide, contre-pointe
+    assert len(maillages) == 1 + 3 + 1 + 1
+    assert all(nb > 0 for _, nb, _ in maillages)
+    assert sum(1 for _, _, c in maillages if c[3] < 1.0) == 1
+    # le brut va de la surépaisseur à la prise dans les mors
+    brut = maillages[4][0]
+    zs = brut[0::6]
+    assert min(zs) == pytest.approx(m.z_brut_arriere()) and max(zs) == pytest.approx(m.z_brut_avant())
+    # normales sortantes et parcours accordé, pour l'élimination des faces arrière : sur le corps du mandrin,
+    # chaque triangle tourne dans le sens de sa normale, et la normale extérieure s'éloigne de l'axe
+    corps = maillages[0][0]
+    for i in range(0, len(corps), 18):
+        p, q, r = (corps[i + k * 6:i + k * 6 + 3] for k in range(3))
+        n = corps[i + 3:i + 6]
+        g = ((q[1] - p[1]) * (r[2] - p[2]) - (q[2] - p[2]) * (r[1] - p[1]),
+             (q[2] - p[2]) * (r[0] - p[0]) - (q[0] - p[0]) * (r[2] - p[2]),
+             (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
+        assert g[0] * n[0] + g[1] * n[1] + g[2] * n[2] > 0.0
+        rayon = math.hypot(p[1], p[2])
+        if abs(rayon - m.mandrin.diametre / 2.0) < 1e-6 and abs(n[0]) < 1e-6:
+            assert n[1] * p[1] + n[2] * p[2] > 0.0      # surface extérieure : normale vers le dehors
+
+
 def test_sans_contour_rien():
     data, nb = maillage_revolution([], segments=8)
     assert nb == 0 and len(data) == 0

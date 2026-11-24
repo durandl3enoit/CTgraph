@@ -207,6 +207,8 @@ class VueEsquisse(QGraphicsView):
         self.aimants: Dict[str, bool] = dict(AIMANTS_DEFAUT)
         self.mode_elagage = "croisement"
         self.vue3d = None                 # incrustation 3D en haut à droite, posée par la fenêtre
+        self.montage = None               # mandrin, brut, contre-pointe : dessinés en arrière-plan du profil
+        self.montage_visible = True
 
         self._scene = QGraphicsScene(self)
         self._scene.setSceneRect(-1e5, -1e5, 2e5, 2e5)
@@ -282,9 +284,12 @@ class VueEsquisse(QGraphicsView):
 
     def tout_voir(self) -> None:
         e = self.esquisse
-        if e.points:
-            zs = [p.z for p in e.points.values()]
-            xs = [p.x for p in e.points.values()] + [0.0]
+        zs = [p.z for p in e.points.values()]
+        xs = [p.x for p in e.points.values()] + [0.0]
+        if self.montage is not None and self.montage_visible:
+            zs += [self.montage.z_brut_arriere(), self.montage.z_brut_avant()]
+            xs += [self.montage.rayon_brut() + self.montage.mandrin.epaisseur_mors]
+        if zs:
             rect = QRectF(min(zs), min(xs), max(max(zs) - min(zs), 1e-3), max(max(xs) - min(xs), 1e-3))
         else:
             rect = QRectF(-120.0, -10.0, 140.0, 70.0)
@@ -381,6 +386,9 @@ class VueEsquisse(QGraphicsView):
         sel = set(self.selection)
         couleur_geom = c["geometrie"]
 
+        if self.montage is not None and self.montage_visible:
+            self._dessiner_montage(c)
+
         # contours fermés : un remplissage discret valide que le profil se referme, et la vue 3D les révolutionne
         contours = self.contours_fermes()
         for chaine in contours:
@@ -457,6 +465,61 @@ class VueEsquisse(QGraphicsView):
                 self._enregistrer(et, "relation", r.id)
 
         self._dessiner_apercu()
+
+    def _dessiner_montage(self, c: Dict[str, QColor]) -> None:
+        """Brut en pointillés, mors hachurés, face du mandrin, contre-pointe : au-dessus de l'axe, en retrait."""
+        m = self.montage
+        muet = QColor(c["texte"].red(), c["texte"].green(), c["texte"].blue(), 90)
+        stylo = QPen(muet, 1, Qt.PenStyle.DashLine)
+        stylo.setCosmetic(True)
+        plein = QPen(muet, 1)
+        plein.setCosmetic(True)
+
+        def ajouter(it: QGraphicsItem, z: float = 0.5) -> None:
+            it.setZValue(z)
+            self._scene.addItem(it)
+            self._items.append(it)
+
+        # brut
+        rb, rbi = m.rayon_brut(), m.rayon_interieur_brut()
+        z1, z2 = m.z_brut_arriere(), m.z_brut_avant()
+        rect = QGraphicsPathItem(self._rect_path(z1, rbi, z2, rb))
+        rect.setPen(stylo)
+        rect.setBrush(QBrush(QColor(200, 170, 90, 22)))
+        ajouter(rect)
+        # mors : bloc hachuré qui serre le brut, du fond des mors à leur face avant
+        zf, zm = m.z_fond_mors(), m.z_face_mors()
+        mors = QGraphicsPathItem(self._rect_path(zf, rb, zm, rb + m.mandrin.epaisseur_mors))
+        mors.setPen(plein)
+        mors.setBrush(QBrush(muet, Qt.BrushStyle.BDiagPattern))
+        ajouter(mors)
+        # corps du mandrin : de l'alésage au diamètre extérieur, derrière les mors
+        za = m.z_arriere_mandrin()
+        corps = QGraphicsPathItem(self._rect_path(za, m.mandrin.alesage / 2.0, zf, m.mandrin.diametre / 2.0))
+        corps.setPen(plein)
+        corps.setBrush(QBrush(QColor(muet.red(), muet.green(), muet.blue(), 30)))
+        ajouter(corps)
+        # contre-pointe
+        cp = m.contre_pointe
+        if cp.presente:
+            demi = cp.diametre / 2.0
+            lg_cone = demi / math.tan(math.radians(cp.angle / 2.0))
+            path = QPainterPath()
+            path.moveTo(z2, 0.0)
+            path.lineTo(z2 + lg_cone, demi)
+            path.lineTo(z2 + max(cp.longueur, lg_cone + 1.0), demi)
+            path.lineTo(z2 + max(cp.longueur, lg_cone + 1.0), 0.0)
+            path.closeSubpath()
+            pointe = QGraphicsPathItem(path)
+            pointe.setPen(plein)
+            pointe.setBrush(QBrush(muet, Qt.BrushStyle.FDiagPattern))
+            ajouter(pointe)
+
+    @staticmethod
+    def _rect_path(z1: float, x1: float, z2: float, x2: float) -> QPainterPath:
+        path = QPainterPath()
+        path.addRect(QRectF(min(z1, z2), min(x1, x2), abs(z2 - z1), abs(x2 - x1)))
+        return path
 
     def _enregistrer(self, it: QGraphicsItem, genre: str, ident: int) -> None:
         it.setData(ROLE_GENRE, genre)

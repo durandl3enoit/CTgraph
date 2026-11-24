@@ -5,6 +5,7 @@ solveur, et est enregistrée dans la pile d'annulation.
 """
 from __future__ import annotations
 
+import json
 import os
 from typing import Callable, List, Optional, Tuple
 
@@ -21,7 +22,9 @@ from ..esquisse.modele import (LIBELLES_COTE, LIBELLES_RELATION, ErreurEsquisse,
 from ..esquisse.solveur import AdaptateurSolveur, Resultat
 from ..icons import icone_action, icone_outil, icone_relation
 from ..log import get as get_log
+from ..montage import Montage, Piece
 from ..settings import Settings
+from .dialogue_montage import DialogueMontage
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
 from .zone_repliable import ZoneRepliable
 
@@ -45,6 +48,7 @@ class FenetrePrincipale(QMainWindow):
         self.premier_lancement = self.reglages.get("geometrie") is None
 
         self.esquisse = Esquisse()
+        self.montage = self._montage_par_defaut()
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.resultat = Resultat(True, "ok", 0)
         self.chemin: Optional[str] = None
@@ -72,6 +76,8 @@ class FenetrePrincipale(QMainWindow):
         disposition.setSpacing(0)
 
         self.vue = VueEsquisse(self)
+        self.vue.montage = self.montage
+        self.vue.montage_visible = self.reglages.get_bool("montage.visible", True)
         self.vue.coordonnees.connect(self._afficher_coordonnees)
         self.vue.message.connect(self._afficher_aide)
         self.vue.selection_changee.connect(self._selection_changee)
@@ -94,6 +100,7 @@ class FenetrePrincipale(QMainWindow):
             self.vue3d.setVisible(self.reglages.get_bool("vue3d.visible", True))
             self.vue.vue3d = self.vue3d
             self.vue.placer_superposition()
+            self._pousser_montage_3d()
 
         colonne = QWidget()
         colonne.setFixedWidth(240)
@@ -240,7 +247,15 @@ class FenetrePrincipale(QMainWindow):
         self.act_coter = self._action(m_esquisse, "&Coter la sélection", QKeySequence("Ctrl+K"), self.coter_selection)
         self.act_coter.setIcon(self.actions_outils["cote"].icon())
 
+        m_piece = barre.addMenu("&Pièce")
+        self.act_montage = self._action(m_piece, "&Machine et montage…", QKeySequence("Ctrl+M"), self.regler_montage)
+
         m_aff = barre.addMenu("&Affichage")
+        self.act_voir_montage = QAction("&Montage (mandrin, brut)", self, checkable=True)
+        self.act_voir_montage.setShortcut(QKeySequence("M"))
+        self.act_voir_montage.setChecked(self.vue.montage_visible)
+        self.act_voir_montage.toggled.connect(self._basculer_montage)
+        m_aff.addAction(self.act_voir_montage)
         self.act_tout_voir = self._action(m_aff, "&Tout voir", QKeySequence("F"), self.vue.tout_voir)
         self.act_tout_voir.setIcon(icone_action("tout_voir", self._encre, self._fond_icone))
         self._action(m_aff, "Zoom &avant", QKeySequence.StandardKey.ZoomIn, lambda: self.vue.zoomer(1.25))
@@ -431,6 +446,44 @@ class FenetrePrincipale(QMainWindow):
         self.vue.grille_visible = actif
         self.reglages.set("grille", actif)
         self.vue.viewport().update()
+
+    # -- machine et montage -------------------------------------------------------------------
+
+    def _montage_par_defaut(self) -> Montage:
+        """Le dernier montage utilisé, mémorisé dans les préférences, sinon les valeurs du CT200."""
+        brut = self.reglages.get("montage.defaut", "")
+        if brut:
+            try:
+                return Montage.from_dict(json.loads(str(brut)))
+            except (ValueError, ErreurEsquisse):
+                pass
+        return Montage()
+
+    def _pousser_montage_3d(self) -> None:
+        if self.vue3d is None:
+            return
+        from .vue_3d import maillages_montage
+        self.vue3d.definir_montage(maillages_montage(self.montage) if self.vue.montage_visible else [])
+
+    def definir_montage(self, montage: Montage) -> None:
+        self.montage = montage
+        self.vue.montage = montage
+        self.reglages.set("montage.defaut", json.dumps(montage.to_dict(), ensure_ascii=False))
+        self._marquer_modifie(True)
+        self.vue.reconstruire()
+        self._pousser_montage_3d()
+
+    def regler_montage(self) -> None:
+        dlg = DialogueMontage(self.montage, self)
+        if dlg.exec() == DialogueMontage.DialogCode.Accepted:
+            self.definir_montage(dlg.montage_resultat())
+            self.statusBar().showMessage("Machine et montage mis à jour.", 4000)
+
+    def _basculer_montage(self, actif: bool) -> None:
+        self.vue.montage_visible = actif
+        self.reglages.set("montage.visible", actif)
+        self.vue.reconstruire()
+        self._pousser_montage_3d()
 
     def _basculer_vue3d(self, actif: bool) -> None:
         if self.vue3d is None:
@@ -794,9 +847,19 @@ class FenetrePrincipale(QMainWindow):
     # -- annulation ------------------------------------------------------------------------
 
     def _charger_json(self, texte: str) -> None:
+        """Recharge l'esquisse seule (annulation) ; le montage ne fait pas partie de la pile d'annulation."""
         self.esquisse = Esquisse.from_json(texte)
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.vue.definir_esquisse(self.esquisse)
+
+    def _charger_piece(self, texte: str) -> None:
+        piece = Piece.from_json(texte)
+        self.esquisse = piece.esquisse
+        self.montage = piece.montage
+        self.solveur = AdaptateurSolveur(self.esquisse)
+        self.vue.montage = self.montage
+        self.vue.definir_esquisse(self.esquisse)
+        self._pousser_montage_3d()
 
     def annuler(self) -> None:
         if not self._annuler:
@@ -833,7 +896,7 @@ class FenetrePrincipale(QMainWindow):
     def nouveau(self) -> None:
         if not self._confirmer_abandon():
             return
-        self._charger_json(Esquisse().to_json())
+        self._charger_piece(Piece(Esquisse(), self._montage_par_defaut()).to_json())
         self.chemin = None
         self._annuler.clear()
         self._retablir.clear()
@@ -854,7 +917,7 @@ class FenetrePrincipale(QMainWindow):
         try:
             with open(chemin, "r", encoding="utf-8") as f:
                 texte = f.read()
-            self._charger_json(texte)
+            self._charger_piece(texte)
         except (OSError, ErreurEsquisse) as exc:
             QMessageBox.warning(self, APP_NAME, f"Impossible d'ouvrir le fichier :\n{chemin}\n\n{exc}")
             self.reglages.remove_recent(chemin)
@@ -889,7 +952,7 @@ class FenetrePrincipale(QMainWindow):
         try:
             tmp = chemin + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
-                f.write(self.esquisse.to_json())
+                f.write(Piece(self.esquisse, self.montage).to_json())
             os.replace(tmp, chemin)
         except OSError as exc:
             QMessageBox.warning(self, APP_NAME, f"Enregistrement impossible :\n{chemin}\n\n{exc}")
