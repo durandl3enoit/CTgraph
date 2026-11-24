@@ -58,6 +58,7 @@ LIBELLES_OUTILS = {"selection": "Sélection", "ligne": "Ligne", "arc": "Arc 3 po
                    "arrondi": "Arrondi", "chanfrein": "Chanfrein", "elaguer": "Élaguer"}
 DELAI_GESTE_MS = 350      # clic semi-long : au-delà, glisser élague au lieu de sélectionner ou de tracer
 PIXELS_PAR_PAS = 8        # clic droit maintenu sur une étiquette + glisser vertical : un pas de cote par tranche
+GENRES_SURVOL = ("point", "ligne", "arc", "cote", "relation")   # ce qui luit sous le curseur avant le clic
 SEUIL_GESTE_PX = 4        # bouger plus que cela avant le délai annule le geste
 
 
@@ -134,9 +135,13 @@ class Etiquette(QGraphicsItem):
 
 
 class Inscription(QGraphicsItem):
-    """Petit texte discret à taille fixe, centré sur sa position, sans cadre : références gravées du montage."""
+    """Petit texte discret à taille fixe, sans cadre : références gravées du montage.
 
-    def __init__(self, texte: str, couleur: QColor, fond: QColor, parent=None):
+    `ancre` : "centre" (texte centré sur sa position), "haut_gauche" (la position est le coin supérieur gauche
+    du texte, à l'écran) ou "bas_gauche".
+    """
+
+    def __init__(self, texte: str, couleur: QColor, fond: QColor, ancre: str = "centre", parent=None):
         super().__init__(parent)
         self.texte = texte
         self.couleur = couleur
@@ -148,7 +153,12 @@ class Inscription(QGraphicsItem):
         self.setZValue(1)
         fm = QFontMetricsF(self.police)
         w, h = fm.horizontalAdvance(texte) + 6, fm.height() + 2
-        self._rect = QRectF(-w / 2, -h / 2, w, h)
+        if ancre == "haut_gauche":
+            self._rect = QRectF(3, 3, w, h)
+        elif ancre == "bas_gauche":
+            self._rect = QRectF(3, -3 - h, w, h)
+        else:
+            self._rect = QRectF(-w / 2, -h / 2, w, h)
 
     def boundingRect(self) -> QRectF:
         return self._rect
@@ -240,6 +250,13 @@ class VueEsquisse(QGraphicsView):
         self.vue3d = None                 # incrustation 3D en haut à droite, posée par la fenêtre
         self.montage = None               # mandrin, brut, contre-pointe : dessinés en arrière-plan du profil
         self.montage_visible = True
+        # édition des cotes du mors : elles s'affichent et se règlent, tout le reste est grisé et inerte
+        self.mode_mors = False
+        self._items_mors: List[QGraphicsItem] = []
+        self._bandeau_mors: Optional[QWidget] = None
+        # élément sous le curseur, qui luit avant le clic, et l'aspect à lui rendre
+        self._survol: Optional[Tuple[str, int]] = None
+        self._survol_items: List[Tuple[QGraphicsItem, tuple]] = []
 
         self._scene = QGraphicsScene(self)
         self._scene.setSceneRect(-1e5, -1e5, 2e5, 2e5)
@@ -364,6 +381,7 @@ class VueEsquisse(QGraphicsView):
             "geometrie": QColor(46, 160, 67) if (self.resultat is not None and self.resultat.entierement_contraint) else texte,
             "selection": QColor(255, 140, 0),
             "survol": pal.color(pal.ColorRole.Highlight),
+            "lueur": QColor(235, 95, 215) if sombre else QColor(190, 40, 170),   # l'élément sous le curseur
             "cote": QColor(110, 170, 255) if sombre else QColor(25, 95, 190),
             "relation": QColor(170, 170, 170) if sombre else QColor(100, 100, 100),
             "conflit": QColor(230, 60, 50),
@@ -413,6 +431,9 @@ class VueEsquisse(QGraphicsView):
         for it in self._items:
             self._scene.removeItem(it)
         self._items = []
+        self._items_mors = []
+        self._survol = None
+        self._survol_items = []
         e, c = self.esquisse, self._couleurs()
         conflits = set(self.resultat.conflits) if self.resultat is not None else set()
         redondants = set(self.resultat.redondants) if self.resultat is not None else set()
@@ -497,6 +518,13 @@ class VueEsquisse(QGraphicsView):
                 et.moveBy(self.px_en_mm(22) * (n % 3), self.px_en_mm(16) * (n // 3))
                 self._enregistrer(et, "relation", r.id)
 
+        if self.mode_mors:
+            # édition des cotes du mors : tout le reste s'efface à demi
+            vifs = {id(it) for it in self._items_mors}
+            for it in self._items:
+                if id(it) not in vifs:
+                    it.setOpacity(0.28)
+        self._placer_bandeau_mors()
         self._dessiner_apercu()
 
     def _dessiner_montage(self, c: Dict[str, QColor]) -> None:
@@ -535,8 +563,10 @@ class VueEsquisse(QGraphicsView):
         mors.setData(ROLE_GENRE, "mors")
         mors.setData(ROLE_ID, 0)
         mors.setToolTip(f"Mors {m.mandrin.mors_modele} : {m.description_prise()}.\n"
-                        "Double-clic : retourner les mors. Clic droit : serrage et appui du brut.")
+                        "Double-clic : retourner les mors. Clic droit : serrage et appui du brut ; sur la "
+                        "référence : modifier les cotes du mors.")
         ajouter(mors)
+        self._items_mors = [mors]
         # corps du mandrin : de l'alésage au diamètre extérieur, derrière les mors
         za = m.z_arriere_mandrin()
         ra, rm = m.mandrin.alesage / 2.0, m.mandrin.diametre / 2.0
@@ -544,24 +574,29 @@ class VueEsquisse(QGraphicsView):
         corps.setPen(plein)
         corps.setBrush(QBrush(QColor(muet.red(), muet.green(), muet.blue(), 30)))
         ajouter(corps)
-        # références gravées, rappelées discrètement : sur le corps du mandrin (et son passage de barre),
-        # sur l'étage du fond du mors
+        # références gravées, rappelées discrètement en haut à gauche du corps du mandrin et du mors ;
+        # le passage de barre en bas à gauche du corps, le long de l'alésage
         grave = QColor(c["texte"].red(), c["texte"].green(), c["texte"].blue(), 120)
         if m.mandrin.reference:
-            ajouter(self._inscrire(m.mandrin.reference, ((za + zf) / 2.0, (ra + rm) / 2.0), grave, c), 1.0)
-        ajouter(self._inscrire(f"passage Ø {m.mandrin.alesage:g}", ((za + zf) / 2.0, ra + self.px_en_mm(9)), grave, c),
-                1.0)
+            ajouter(self._inscrire(m.mandrin.reference, (za, rm), grave, c, "haut_gauche"), 1.0)
+        ajouter(self._inscrire(f"passage Ø {m.mandrin.alesage:g}", (za, ra), grave, c, "bas_gauche"), 1.0)
         blocs = m.blocs_mors()
         if m.mandrin.mors_reference and blocs:
-            bz1, bz2, br1, br2 = blocs[-1]
-            ajouter(self._inscrire(m.mandrin.mors_reference, ((bz1 + bz2) / 2.0, (br1 + br2) / 2.0), grave, c), 1.0)
+            ref = self._inscrire(m.mandrin.mors_reference, (zf, max(b[3] for b in blocs)), grave, c, "haut_gauche")
+            ref.setData(ROLE_GENRE, "reference_mors")
+            ref.setData(ROLE_ID, 0)
+            ref.setToolTip("Clic droit : modifier les cotes du mors")
+            ajouter(ref, 1.0)
+            self._items_mors.append(ref)
+        if self.mode_mors:
+            self._dessiner_cotes_mors(blocs, c)
         # les trois valeurs du brut, toujours affichées et éditables : Ø, longueur, marge en bout
         d = self.px_en_mm(30)
         ambre = QColor(205, 175, 95)
         zl = z2 + d
         self._dessiner_cote_brut("diametre", [(zl, 0.0), (zl, rb)], [((z2, rb), (zl + self.px_en_mm(4), rb))],
                                  (zl, rb / 2.0), ambre, c, fleches=((zl, rb, (0.0, 1.0)), (zl, 0.0, (0.0, -1.0))))
-        xl = max(rb, max(b[3] for b in m.blocs_mors())) + d
+        xl = max(rb, max(b[3] for b in m.blocs_mors())) + d * (2.4 if self.mode_mors else 1.0)
         self._dessiner_cote_brut("longueur", [(z1, xl), (z2, xl)],
                                  [((z1, rb), (z1, xl + self.px_en_mm(4))), ((z2, rb), (z2, xl + self.px_en_mm(4)))],
                                  ((z1 + z2) / 2.0, xl), ambre, c,
@@ -589,7 +624,11 @@ class VueEsquisse(QGraphicsView):
 
     def _dessiner_cote_brut(self, cle: str, ligne, attaches, pos, couleur: QColor, c: Dict[str, QColor],
                             fleches=()) -> None:
-        """Une cote du brut : ligne de cote, lignes d'attache, flèches, étiquette éditable (genre « brut »)."""
+        self._dessiner_cote_montage("brut", cle, ligne, attaches, pos, couleur, c, fleches)
+
+    def _dessiner_cote_montage(self, genre: str, cle: str, ligne, attaches, pos, couleur: QColor,
+                               c: Dict[str, QColor], fleches=()) -> List[QGraphicsItem]:
+        """Une cote du montage (brut ou mors) : ligne de cote, lignes d'attache, flèches, étiquette éditable."""
         path = QPainterPath()
         (a, b) = ligne
         path.moveTo(*a)
@@ -606,16 +645,79 @@ class VueEsquisse(QGraphicsView):
         it.setZValue(2)
         self._scene.addItem(it)
         self._items.append(it)
-        et = Etiquette(self.montage.texte_brut(cle), couleur, c["fond"], gras=False)
+        et = Etiquette(self.montage.texte(cle), couleur, c["fond"], gras=False)
         et.setPos(*pos)
-        et.setData(ROLE_GENRE, "brut")
+        et.setData(ROLE_GENRE, genre)
         et.setData(ROLE_ID, cle)
         self._scene.addItem(et)
         self._items.append(et)
+        return [it, et]
+
+    def _dessiner_cotes_mors(self, blocs, c: Dict[str, QColor]) -> None:
+        """Les cotes éditables du mors : longueur de chaque étage (chaîne au-dessus du mors), épaulement
+        derrière chaque étage sauf le fond, épaisseur au fond (côté mandrin)."""
+        m = self.montage
+        if not blocs:
+            return
+        couleur = QColor(120, 200, 230)
+        d, petit, retrait = self.px_en_mm(30), self.px_en_mm(4), self.px_en_mm(16)
+        retourne = m.prise.mors_retournes
+        xl = max(b[3] for b in blocs) + d
+        for i, (z1, z2, r1, r2) in enumerate(blocs, start=1):
+            self._items_mors += self._dessiner_cote_montage(
+                "cote_mors", f"mors.etage{i}.longueur", [(z1, xl), (z2, xl)],
+                [((z1, r2), (z1, xl + petit)), ((z2, r2), (z2, xl + petit))], ((z1 + z2) / 2.0, xl), couleur, c,
+                fleches=((z1, xl, (-1.0, 0.0)), (z2, xl, (1.0, 0.0))))
+        for i in range(1, len(blocs)):
+            (z1, _, r1, r2), (_, _, s1, s2) = blocs[i - 1], blocs[i]
+            marche, suivante = (r2, s2) if retourne else (r1, s1)
+            bas, haut = min(marche, suivante), max(marche, suivante)
+            zc = z1 + retrait
+            self._items_mors += self._dessiner_cote_montage(
+                "cote_mors", f"mors.etage{i}.epaulement", [(zc, bas), (zc, haut)],
+                [((z1, bas), (zc + petit, bas)), ((z1, haut), (zc + petit, haut))], (zc, (bas + haut) / 2.0),
+                couleur, c, fleches=((zc, bas, (0.0, -1.0)), (zc, haut, (0.0, 1.0))))
+        z1, _, r1, r2 = blocs[-1]
+        zc = z1 - retrait
+        self._items_mors += self._dessiner_cote_montage(
+            "cote_mors", "mors.epaisseur", [(zc, r1), (zc, r2)],
+            [((z1, r1), (zc - petit, r1)), ((z1, r2), (zc - petit, r2))], (zc, (r1 + r2) / 2.0), couleur, c,
+            fleches=((zc, r1, (0.0, -1.0)), (zc, r2, (0.0, 1.0))))
+
+    def _placer_bandeau_mors(self) -> None:
+        """Bandeau de l'édition des cotes du mors, en haut au centre de la vue : légende, Valider, Annuler."""
+        if not self.mode_mors:
+            if self._bandeau_mors is not None:
+                self._bandeau_mors.hide()
+            return
+        if self._bandeau_mors is None:
+            from PySide6.QtWidgets import QHBoxLayout, QPushButton
+            b = QWidget(self.viewport())
+            b.setStyleSheet("QWidget { background: rgba(40, 40, 40, 225); color: white; border-radius: 5px; } "
+                            "QPushButton { background: rgba(255, 255, 255, 30); padding: 2px 10px; border: 1px solid "
+                            "rgba(255, 255, 255, 90); border-radius: 3px; } QPushButton:hover { background: "
+                            "rgba(255, 255, 255, 60); }")
+            h = QHBoxLayout(b)
+            h.setContentsMargins(10, 5, 10, 5)
+            h.setSpacing(8)
+            h.addWidget(QLabel("Cotes du mors : L longueur d'étage, h épaulement, E épaisseur au fond"))
+            valider = QPushButton("Valider")
+            valider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            valider.clicked.connect(lambda: self.controleur.valider_edition_mors())
+            annuler = QPushButton("Annuler")
+            annuler.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            annuler.clicked.connect(lambda: self.controleur.annuler_edition_mors())
+            h.addWidget(valider)
+            h.addWidget(annuler)
+            self._bandeau_mors = b
+        self._bandeau_mors.adjustSize()
+        self._bandeau_mors.move(12, 10)         # à gauche : l'incrustation 3D occupe le haut à droite
+        self._bandeau_mors.show()
+        self._bandeau_mors.raise_()
 
     @staticmethod
-    def _inscrire(texte: str, pos, couleur: QColor, c: Dict[str, QColor]) -> Inscription:
-        it = Inscription(texte, couleur, c["fond"])
+    def _inscrire(texte: str, pos, couleur: QColor, c: Dict[str, QColor], ancre: str = "centre") -> Inscription:
+        it = Inscription(texte, couleur, c["fond"], ancre)
         it.setPos(*pos)
         return it
 
@@ -1177,7 +1279,7 @@ class VueEsquisse(QGraphicsView):
                      and (genres is None or it.data(ROLE_GENRE) in genres)]
         if not candidats:
             return None
-        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "mors": 8}
+        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "reference_mors": 7, "mors": 8}
         candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
         return candidats[0]
 
@@ -1300,6 +1402,8 @@ class VueEsquisse(QGraphicsView):
                 return it.data(ROLE_ID), it.data(ROLE_VARIANTE) or None
             if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "brut":
                 return it.data(ROLE_ID), "brut"
+            if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_mors":
+                return it.data(ROLE_ID), "montage"
         return None
 
     def _aide(self) -> None:
@@ -1345,8 +1449,8 @@ class VueEsquisse(QGraphicsView):
             self._droit_dernier = pos
             self._droit_reste = 0.0
             return
-        if event.button() != Qt.MouseButton.LeftButton:
-            return
+        if event.button() != Qt.MouseButton.LeftButton or self.mode_mors:
+            return                              # pendant l'édition des cotes du mors, le reste est inerte
         self._press_pos = pos
         self._geste = False
         if self.outil == "selection":
@@ -1370,8 +1474,8 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
-        if genre in ("brut", "mors"):
-            return                              # cotes du brut et mors : pas de sélection, double-clic ou clic droit
+        if genre in ("brut", "mors", "cote_mors", "reference_mors"):
+            return                              # montage : pas de sélection, double-clic ou clic droit
         if genre == "point":
             self._glisse_point = ident          # sélection ou glissement : tranché au relâchement
             self._glisse_actif = False
@@ -1680,6 +1784,11 @@ class VueEsquisse(QGraphicsView):
                 self._regler_cote_droite(1 if pas > 0 else -1, abs(pas),
                                          bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier), pos)
             return
+        if self.mode_mors:
+            return
+        if not event.buttons():
+            # rien d'enfoncé : l'élément que le prochain clic prendrait luit d'une couleur à lui
+            self._survoler(self.element_sous(pos, GENRES_SURVOL))
         gauche = bool(event.buttons() & Qt.MouseButton.LeftButton)
         if self._geste and gauche:
             self._trait.append((z, x))
@@ -1726,19 +1835,22 @@ class VueEsquisse(QGraphicsView):
             if self._droit_molette:
                 self._droit_molette = False     # la molette a servi (outil ou cote) : pas de menu
                 return
+            if self.mode_mors:
+                self.controleur.menu_contextuel(event.globalPosition().toPoint(), montage="edition_mors")
+                return
             if self.en_cours():
                 self.annuler_outil()
                 return
             el = self.element_sous(pos)
-            if el is not None and el[0] in ("mors", "brut"):
-                # sur le mors ou une cote du brut : les réglages de la prise de pièce
+            if el is not None and el[0] in ("mors", "brut", "reference_mors"):
+                # sur le mors, sa référence ou une cote du brut : les réglages de la prise de pièce
                 self.controleur.menu_contextuel(event.globalPosition().toPoint(), montage=el[0])
                 return
             if el is not None and el[1] not in self.selection:
                 self.selectionner(el[1], ajouter=True)
             self.controleur.menu_contextuel(event.globalPosition().toPoint())
             return
-        if event.button() != Qt.MouseButton.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton or self.mode_mors:
             return
         self._timer_geste.stop()
         if self._geste:
@@ -1790,8 +1902,12 @@ class VueEsquisse(QGraphicsView):
             return
         pos = event.position().toPoint()
         el = self.element_sous(pos)
+        if self.mode_mors:
+            if el is not None and el[0] == "cote_mors":
+                self.controleur.editer_valeur_montage(el[1])
+            return
         if el is not None and el[0] == "brut":
-            self.controleur.editer_brut(el[1])
+            self.controleur.editer_valeur_montage(el[1])
             return
         if el is not None and el[0] == "mors":
             self.controleur.retourner_mors()
@@ -1827,8 +1943,8 @@ class VueEsquisse(QGraphicsView):
         cote_id, variante = self._droit_cote
         texte = None
         for _ in range(nb_pas):
-            if variante == "brut":
-                t = self.controleur.ajuster_brut(cote_id, sens, fin)
+            if variante in ("brut", "montage"):
+                t = self.controleur.ajuster_valeur_montage(cote_id, sens, fin)
             else:
                 t = self.controleur.ajuster_cote(cote_id, sens, variante, fin)
             if t is None:
@@ -1838,6 +1954,12 @@ class VueEsquisse(QGraphicsView):
             self._montrer_texte(texte, pos)
 
     def keyPressEvent(self, event) -> None:
+        if self.mode_mors:
+            if event.key() == Qt.Key.Key_Escape:
+                self.controleur.annuler_edition_mors()
+            elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self.controleur.valider_edition_mors()
+            return
         if event.key() == Qt.Key.Key_Escape:
             if self.en_cours():
                 self.annuler_outil()
@@ -1848,9 +1970,50 @@ class VueEsquisse(QGraphicsView):
 
     def leaveEvent(self, event) -> None:
         self._dessiner_apercu(None)
+        self._survoler(None)
         super().leaveEvent(event)
+
+    def _survoler(self, el: Optional[Tuple[str, int]]) -> None:
+        """Fait luire l'élément sous le curseur (point, ligne, arc, cote, relation) d'une couleur distincte de la
+        sélection, et rend son aspect au précédent. Un élément déjà sélectionné garde sa couleur de sélection."""
+        if el == self._survol:
+            return
+        for it, sauvegarde in self._survol_items:
+            if sauvegarde[0] == "etiquette":
+                it.couleur = sauvegarde[1]
+                it.update()
+            elif sauvegarde[0] == "ellipse":
+                it.setPen(sauvegarde[1])
+                it.setBrush(sauvegarde[2])
+                it.setRect(sauvegarde[3])
+            else:
+                it.setPen(sauvegarde[1])
+        self._survol_items = []
+        self._survol = el
+        if el is None or el[1] in self.selection:
+            return
+        genre, ident = el
+        lueur = self._couleurs()["lueur"]
+        for it in self._items:
+            if it.data(ROLE_GENRE) != genre or it.data(ROLE_ID) != ident:
+                continue
+            if isinstance(it, Etiquette):
+                self._survol_items.append((it, ("etiquette", it.couleur)))
+                it.couleur = lueur
+                it.update()
+            elif isinstance(it, QGraphicsEllipseItem):
+                self._survol_items.append((it, ("ellipse", it.pen(), it.brush(), it.rect())))
+                it.setBrush(QBrush(lueur))
+                it.setRect(-5.5, -5.5, 11.0, 11.0)
+            elif isinstance(it, (QGraphicsLineItem, QGraphicsPathItem)):
+                self._survol_items.append((it, ("stylo", it.pen())))
+                pen = QPen(lueur, 4)
+                pen.setCosmetic(True)
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                it.setPen(pen)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self.placer_superposition()
+        self._placer_bandeau_mors()
         self.reconstruire()

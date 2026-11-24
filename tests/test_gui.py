@@ -929,7 +929,7 @@ def test_reglages_directement_sur_le_mors(fenetre):
     menu = win.construire_menu_contextuel(montage="mors")
     assert menu.actions_montage["retourner"].isChecked()
     assert not menu.actions_montage["interieur"].isEnabled()         # pas de tube
-    assert set(menu.actions_montage) == {"retourner", "exterieur", "interieur", "appui0"}
+    assert set(menu.actions_montage) == {"cotes_mors", "retourner", "exterieur", "interieur", "appui0"}
     assert win.retourner_mors()
     menu = win.construire_menu_contextuel(montage="mors")
     assert {"appui0", "appui1", "appui2"} <= set(menu.actions_montage)
@@ -939,6 +939,83 @@ def test_reglages_directement_sur_le_mors(fenetre):
     # le serrage intérieur demande un tube
     assert not win.definir_serrage("interieur")
     win.act_voir_montage.setChecked(False)
+
+
+def test_edition_des_cotes_du_mors(fenetre):
+    from ctgraph.montage import Montage
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE, Etiquette, Inscription
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    win.definir_montage(Montage())
+    win.act_voir_montage.setChecked(True)
+    ref = next(it for it in vue._items if isinstance(it, Inscription) and it.data(ROLE_GENRE) == "reference_mors")
+    centre = ref.boundingRect().center()                 # en pixels : l'inscription ignore la transformation
+    sous_ref = vue.mapFromScene(ref.pos()) + QPoint(int(centre.x()), int(centre.y()))
+    assert vue.element_sous(sous_ref) == ("reference_mors", 0)
+    # le menu de la référence du mors propose d'en modifier les cotes
+    menu = win.construire_menu_contextuel(montage="reference_mors")
+    assert "cotes_mors" in menu.actions_montage
+    assert not any(isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_mors" for it in vue._items)
+    win.commencer_edition_mors()
+    assert vue.mode_mors and vue._bandeau_mors is not None and vue._bandeau_mors.isVisible()
+    cotes = {it.data(1): it for it in vue._items if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_mors"}
+    assert set(cotes) == set(win.montage.cles_mors()) and cotes["mors.epaisseur"].texte == "E 40"
+    # le mors et ses cotes restent vifs, tout le reste est grisé
+    assert all(it.opacity() == 1.0 for it in vue._items_mors)
+    assert all(it.opacity() < 1.0 for it in vue._items if it.data(ROLE_GENRE) == "ligne")
+    # pendant l'édition, un clic sur l'esquisse ne sélectionne rien, et le menu ne sert qu'à conclure
+    clic(vue, -20, 20)
+    assert vue.selection == []
+    assert "valider" in win.construire_menu_contextuel().actions_montage
+    # réglage par la molette et par la boîte de saisie
+    assert win.ajuster_valeur_montage("mors.epaisseur", 1, False) == "E 41"
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (25.0, True)
+    win.editer_valeur_montage("mors.etage1.longueur")
+    assert win.montage.mandrin.etages[0].longueur == 25.0 and win.montage.mandrin.epaisseur_mors == 41.0
+    # Échap : tout revient comme avant
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    assert not vue.mode_mors and not vue._bandeau_mors.isVisible()
+    assert win.montage.mandrin.etages[0].longueur == 20.0 and win.montage.mandrin.epaisseur_mors == 40.0
+    # Entrée : les réglages restent
+    win.commencer_edition_mors()
+    assert win.ajuster_valeur_montage("mors.etage1.epaulement", 1, False) == "h1 9"
+    QTest.keyClick(vue, Qt.Key.Key_Return)
+    assert not vue.mode_mors and win.montage.mandrin.etages[0].epaulement == 9.0
+    assert all(it.opacity() == 1.0 for it in vue._items)
+    win.act_voir_montage.setChecked(False)
+
+
+def test_survol_fait_luire_l_element(fenetre):
+    from PySide6.QtWidgets import QGraphicsLineItem
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE, ROLE_ID
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    item = next(it for it in vue._items if isinstance(it, QGraphicsLineItem) and it.data(ROLE_ID) == haut.id)
+    couleur_avant = item.pen().color()
+    lueur = vue._couleurs()["lueur"]
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    def survoler(z, x):
+        q = pos(vue, z, x)
+        ev = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(q), QPointF(vue.viewport().mapToGlobal(q)),
+                         Qt.MouseButton.NoButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
+        vue.mouseMoveEvent(ev)
+
+    survoler(-20, 20)                                       # sur la ligne du haut
+    assert vue._survol == ("ligne", haut.id) and item.pen().color() == lueur and item.pen().widthF() > 2
+    survoler(-20, 60)                                       # dans le vide : l'aspect revient
+    assert vue._survol is None and item.pen().color() == couleur_avant
+    # un élément sélectionné garde la couleur de sélection
+    clic(vue, -20, 20)
+    assert haut.id in vue.selection
+    item = next(it for it in vue._items if isinstance(it, QGraphicsLineItem) and it.data(ROLE_ID) == haut.id)
+    survoler(-20, 60)
+    survoler(-20, 20)
+    assert item.pen().color() == vue._couleurs()["selection"]
+    assert item.data(ROLE_GENRE) == "ligne"
 
 
 def test_suppression(fenetre):

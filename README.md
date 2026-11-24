@@ -66,6 +66,8 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   mandrin sera placé par rapport à elle dans le module machine. Un profil entièrement coté garde un degré de
   liberté tant que rien ne le tient en Z : posez « origine Z » sur un point (automatique si le tracé part de
   l'origine), ou une cote « position Z » sur une face, ou « fixe » sur un point.
+* **Survol** : l'élément que le prochain clic prendrait (point, ligne, arc, cote, relation) luit en magenta, une
+  couleur distincte de l'orange de la sélection, quel que soit l'outil.
 * **Sélection** (`S`) : les clics successifs s'ajoutent à la sélection, un second clic sur un élément le retire,
   un clic dans le vide vide la sélection. Tirez un point pour le faire glisser : le solveur recalcule tout le profil
   en continu en respectant relations et cotes. Tirez une valeur de cote pour déplacer son étiquette ; double-cliquez-la
@@ -100,7 +102,11 @@ du mandrin s'il traverse tous les étages. Mors retournés, la face étagée reg
 son alésage, avec les mêmes appuis ; la face plate, vers l'axe, serre un gros brut par l'extérieur avec appui
 sur le mandrin. Ces réglages se font **directement sur le mors dessiné** : double-clic pour retourner les mors,
 clic droit pour choisir le serrage et l'appui (la face du mandrin ou un épaulement). Quand un appui devient
-impossible, le premier réalisable est pris. Le repère est celui de la pièce :
+impossible, le premier réalisable est pris. Les références gravées sont rappelées en haut à gauche du corps du
+mandrin et du mors ; un **clic droit sur la référence du mors** ouvre l'édition de ses cotes : L longueur de
+chaque étage, h épaulement derrière lui, E épaisseur au fond, toutes réglables comme les cotes du brut, le
+reste du dessin grisé et inerte jusqu'à *Valider* (ou Entrée) ; *Annuler* (ou Échap) rend le mors d'avant.
+Le repère est celui de la pièce :
 Z = 0 sur la face avant finie, Z négatif vers le mandrin. Le montage est enregistré avec la pièce et le dernier
 réglé sert de défaut aux nouvelles pièces. Il se dessine en retrait dans l'esquisse, brut en pointillés et mors
 hachurés, et dans la vue 3D, brut translucide ; la touche `M` le masque. Trois cotes du brut restent toujours

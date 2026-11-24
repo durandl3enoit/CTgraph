@@ -127,6 +127,15 @@ vérification par relecture du G-code généré, réception des programmes depui
   étage, placé pour que la face qui serre touche le brut) sert à la 3D, `profil_mors` au dessin 2D. Les réglages
   se font sur le mors dessiné (genre « mors ») : double-clic = retourner, clic droit = serrage et appui ; quand
   un appui devient impossible, `_ajuster_appui` prend le premier réalisable. Les dimensions sont à vérifier.
+  **Cotes du mors éditées en place** : clic droit sur la référence gravée (genre « reference_mors ») →
+  `commencer_edition_mors` ; `VueEsquisse.mode_mors` dessine les cotes du mors (genre « cote_mors », clés
+  `Montage.cles_mors()` : `mors.epaisseur`, `mors.etage{i}.longueur|epaulement`, textes « E 40 », « L1 20 »,
+  « h1 8 »), grise tout le reste (opacité 0,28) et le rend inerte ; bandeau Valider / Annuler, Entrée / Échap ;
+  annuler rend le montage d'avant. Les valeurs éditables du montage passent toutes par `Montage.valeur`,
+  `definir_valeur`, `texte`, `libelle` (brut et mors), appliquées en direct par `definir_montage`.
+- **Survol** : sans bouton enfoncé, l'élément que le clic prendrait (`GENRES_SURVOL`) luit en magenta
+  (`c["lueur"]`, distinct de l'orange de sélection) : stylo épaissi, point grossi, étiquette recolorée, aspect
+  rendu au départ du curseur (`_survoler`). Un élément sélectionné garde sa couleur de sélection.
   Le fichier `.ctg` est désormais une **pièce** (`Piece` : esquisse + montage, format `ctgraph-piece`) ; l'ancien
   format esquisse seule se lit encore. Le dernier montage réglé est le défaut des nouvelles pièces (préférences).
   Courses et broche de la machine : valeurs provisoires, à relever. Trois **cotes du brut** sont toujours affichées

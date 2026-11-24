@@ -146,6 +146,32 @@ def test_cles_inconnues_ignorees():
     assert m.brut.diametre == 60.0
 
 
+def test_cotes_du_mors_editables():
+    m = Montage()
+    assert m.cles_mors() == ["mors.epaisseur", "mors.etage1.longueur", "mors.etage1.epaulement",
+                             "mors.etage2.longueur", "mors.etage2.epaulement", "mors.etage3.longueur"]
+    assert m.texte("mors.epaisseur") == "E 40" and m.texte("mors.etage1.longueur") == "L1 20"
+    assert m.texte("mors.etage2.epaulement") == "h2 8"
+    assert m.libelle("mors.etage1.longueur") == "Longueur de l'étage 1 (bout)"
+    assert m.libelle("mors.etage2.epaulement") == "Épaulement derrière l'étage 2"
+    m.definir_valeur("mors.etage1.longueur", 25.0)
+    assert m.mandrin.etages[0].longueur == 25.0 and m.mandrin.hauteur_mors() == 75.0
+    assert m.z_brut_arriere() == -125.0            # l'appui derrière l'étage 1 a reculé avec lui
+    m.definir_valeur("mors.epaisseur", 45.0)
+    assert m.blocs_mors()[0][3] == 30.0 + 45.0 - 16.0
+    # une valeur impossible est refusée et rien ne change : plus de matière au bout
+    with pytest.raises(ErreurEsquisse):
+        m.definir_valeur("mors.etage1.epaulement", 40.0)
+    assert m.mandrin.etages[0].epaulement == 8.0 and m.mandrin.epaisseur_mors == 45.0
+    for cle in ("mors.etage4.longueur", "mors.etage1.largeur", "mors.rien"):
+        with pytest.raises(ErreurEsquisse):
+            m.valeur(cle)
+    # les trois valeurs du brut passent par les mêmes méthodes
+    assert m.valeur("marge") == m.valeur_brut("marge") and m.texte("diametre") == m.texte_brut("diametre")
+    with pytest.raises(ErreurEsquisse):
+        m.texte_brut("mors.epaisseur")
+
+
 def test_references_et_passage_du_mandrin():
     from ctgraph.montage import PASSAGE_MANDRIN
     m = Montage()

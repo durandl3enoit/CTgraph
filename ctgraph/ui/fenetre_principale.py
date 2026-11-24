@@ -58,6 +58,7 @@ class FenetrePrincipale(QMainWindow):
         self._retablir: List[str] = []
         self._avant_glissement: Optional[str] = None
         self._avant_ajustement: Optional[str] = None     # réglage d'une cote à la molette : une seule annulation
+        self._montage_avant_mors: Optional[Montage] = None   # montage d'avant l'édition des cotes du mors
         self._rayon_arrondi = 2.0
         self._longueur_chanfrein = 1.0
 
@@ -302,7 +303,17 @@ class FenetrePrincipale(QMainWindow):
         menu.coin_propose = None
         menu.cotes_proposees = []
         menu.actions_montage = {}
+        if self.vue.mode_mors:
+            # pendant l'édition des cotes du mors, le menu ne sert qu'à conclure
+            menu.addAction("Valider les cotes du mors\tEntrée", self.valider_edition_mors)
+            menu.addAction("Abandonner les modifications\tÉchap", self.annuler_edition_mors)
+            menu.actions_montage["valider"] = menu.actions()[0]
+            return menu
         if montage is not None:
+            if montage in ("mors", "reference_mors"):
+                act = menu.addAction("Modifier les cotes du mors…", self.commencer_edition_mors)
+                menu.actions_montage["cotes_mors"] = act
+                menu.addSeparator()
             self._menu_prise_de_piece(menu)
             return menu
         if sel:
@@ -516,33 +527,71 @@ class FenetrePrincipale(QMainWindow):
         self.vue.reconstruire()
         self._pousser_montage_3d()
 
-    def editer_brut(self, cle: str) -> None:
-        """Double-clic sur une cote du brut : diamètre, longueur ou marge en bout."""
-        libelle = Montage.LIBELLES_BRUT.get(cle)
-        if libelle is None:
+    def editer_valeur_montage(self, cle: str) -> None:
+        """Double-clic sur une cote du brut (diamètre, longueur, marge) ou du mors (étages, épaisseur)."""
+        try:
+            libelle, defaut = self.montage.libelle(cle), self.montage.valeur(cle)
+        except ErreurEsquisse:
             return
-        valeur, ok = self._demander_valeur(libelle, "mm", self.montage.valeur_brut(cle), 0.0)
+        valeur, ok = self._demander_valeur(libelle, "mm", defaut, 0.0)
         if not ok:
             return
         nouveau = copy.deepcopy(self.montage)
         try:
-            nouveau.definir_valeur_brut(cle, valeur)
+            nouveau.definir_valeur(cle, valeur)
         except ErreurEsquisse as exc:
             self.statusBar().showMessage(str(exc), 6000)
             return
         self.definir_montage(nouveau)
 
-    def ajuster_brut(self, cle: str, sens: int, fin: bool) -> Optional[str]:
-        """Molette sur une cote du brut : un pas par cran (0,1 avec Maj)."""
+    def ajuster_valeur_montage(self, cle: str, sens: int, fin: bool) -> Optional[str]:
+        """Molette ou glisser sur une cote du brut ou du mors : un pas par cran (0,1 avec Maj)."""
         pas = PAS_MOLETTE / 10.0 if fin else PAS_MOLETTE
         nouveau = copy.deepcopy(self.montage)
         try:
-            nouveau.definir_valeur_brut(cle, max(0.0, self.montage.valeur_brut(cle) + sens * pas))
+            nouveau.definir_valeur(cle, max(0.0, self.montage.valeur(cle) + sens * pas))
         except ErreurEsquisse as exc:
             self.statusBar().showMessage(str(exc), 4000)
             return None
         self.definir_montage(nouveau)
-        return nouveau.texte_brut(cle)
+        return nouveau.texte(cle)
+
+    def editer_brut(self, cle: str) -> None:
+        self.editer_valeur_montage(cle)
+
+    def ajuster_brut(self, cle: str, sens: int, fin: bool) -> Optional[str]:
+        return self.ajuster_valeur_montage(cle, sens, fin)
+
+    # -- cotes du mors : édition en place, le reste grisé jusqu'à validation ----------------------
+
+    def commencer_edition_mors(self) -> None:
+        """Depuis le menu de la référence du mors : ses cotes s'affichent et se règlent, le reste se grise."""
+        if self.vue.mode_mors:
+            return
+        self._montage_avant_mors = copy.deepcopy(self.montage)
+        self.vue.mode_mors = True
+        self.vue.reconstruire()
+        self.statusBar().showMessage("Cotes du mors : L longueur d'un étage, h épaulement derrière lui, E épaisseur "
+                                     "au fond. Double-clic ou clic droit + molette. Entrée valide, Échap annule.")
+
+    def valider_edition_mors(self) -> None:
+        if not self.vue.mode_mors:
+            return
+        self._montage_avant_mors = None
+        self.vue.mode_mors = False
+        self.vue.reconstruire()
+        self.statusBar().showMessage("Cotes du mors validées.", 4000)
+
+    def annuler_edition_mors(self) -> None:
+        if not self.vue.mode_mors:
+            return
+        avant, self._montage_avant_mors = self._montage_avant_mors, None
+        self.vue.mode_mors = False
+        if avant is not None:
+            self.definir_montage(avant)
+        else:
+            self.vue.reconstruire()
+        self.statusBar().showMessage("Cotes du mors : modifications abandonnées.", 4000)
 
     def _modifier_prise(self, action) -> bool:
         """Applique `action` à une copie du montage ; refusée avec son message si la prise n'est pas réalisable."""

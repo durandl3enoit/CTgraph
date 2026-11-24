@@ -54,7 +54,9 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   épaulement ou sur la face du mandrin, réglés directement sur le mors dessiné (double-clic : retourner ; clic
   droit : serrage et appui), en 2D comme en 3D. Boutons de vues typiques sur la 3D : côté, face, biais réglable.
   Réglage des cotes aussi par clic droit + glisser vertical. Références gravées (« 210 BH-FC », mors
-  « 12082030 (1/16"x90°) ») inscrites sur le dessin ; passage de barre 42 mm fixe. 96 tests.
+  « 12082030 (1/16"x90°) ») inscrites en haut à gauche du mandrin et du mors ; passage de barre 42 mm fixe.
+  Clic droit sur la référence du mors : édition en place de toutes ses cotes, le reste grisé jusqu'à validation.
+  Survol : l'élément sous le curseur luit en magenta avant le clic. 99 tests.
 
 ## En cours
 

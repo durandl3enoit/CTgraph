@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Dict, List, Tuple
 
@@ -229,14 +230,14 @@ class Montage:
     # -- prise de pièce : réglages faits directement sur le mors ----------------------------
 
     def _modifier(self, modification) -> None:
-        """Applique `modification` puis vérifie ; si la prise n'est pas réalisable, brut et prise reviennent
-        à leur état d'avant et l'erreur est relevée."""
-        brut, prise = copy.deepcopy(self.brut), copy.deepcopy(self.prise)
+        """Applique `modification` puis vérifie ; si le montage n'est pas réalisable, mandrin, brut et prise
+        reviennent à leur état d'avant et l'erreur est relevée."""
+        mandrin, brut, prise = copy.deepcopy(self.mandrin), copy.deepcopy(self.brut), copy.deepcopy(self.prise)
         try:
             modification()
             self.verifier()
         except ErreurEsquisse:
-            self.brut, self.prise = brut, prise
+            self.mandrin, self.brut, self.prise = mandrin, brut, prise
             raise
 
     def _ajuster_appui(self) -> None:
@@ -285,40 +286,92 @@ class Montage:
         appui = "appui sur la face du mandrin" if p.appui <= 0 else f"appui sur l'épaulement de l'étage {p.appui}"
         return f"{mors}, {serrage} par l'étage {self.etage_de_serrage()}, {appui}"
 
-    # -- les trois valeurs du brut affichées et éditables dans l'esquisse ----------------------
+    # -- valeurs éditables dans l'esquisse : les trois du brut, et les cotes du mors --------------------
 
     CLES_BRUT = ("diametre", "longueur", "marge")
     LIBELLES_BRUT = {"diametre": "Diamètre du brut", "longueur": "Longueur du brut",
                      "marge": "Marge en bout (face brute → face finie)"}
 
-    def valeur_brut(self, cle: str) -> float:
+    def cles_mors(self) -> List[str]:
+        """Les cotes du mors : épaisseur au fond, puis par étage sa longueur et l'épaulement derrière lui."""
+        n = self.mandrin.nb_etages()
+        cles = ["mors.epaisseur"]
+        for i in range(1, n + 1):
+            cles.append(f"mors.etage{i}.longueur")
+            if i < n:
+                cles.append(f"mors.etage{i}.epaulement")
+        return cles
+
+    def _etage_de_cle(self, cle: str) -> Tuple[int, str]:
+        m = re.fullmatch(r"mors\.etage(\d+)\.(longueur|epaulement)", cle)
+        if m is None or not 1 <= int(m.group(1)) <= self.mandrin.nb_etages():
+            raise ErreurEsquisse(f"valeur inconnue : {cle}")
+        return int(m.group(1)), m.group(2)
+
+    def libelle(self, cle: str) -> str:
+        if cle in self.LIBELLES_BRUT:
+            return self.LIBELLES_BRUT[cle]
+        if cle == "mors.epaisseur":
+            return "Épaisseur du mors au fond"
+        i, champ = self._etage_de_cle(cle)
+        if champ == "longueur":
+            return f"Longueur de l'étage {i}" + (" (bout)" if i == 1 else "")
+        return f"Épaulement derrière l'étage {i}"
+
+    def valeur(self, cle: str) -> float:
         if cle == "diametre":
             return self.brut.diametre
         if cle == "longueur":
             return self.longueur_brut()
         if cle == "marge":
             return self.prise.surepaisseur_face
-        raise ErreurEsquisse(f"valeur de brut inconnue : {cle}")
+        if cle == "mors.epaisseur":
+            return self.mandrin.epaisseur_mors
+        i, champ = self._etage_de_cle(cle)
+        return getattr(self.mandrin.etages[i - 1], champ)
 
-    def definir_valeur_brut(self, cle: str, valeur: float) -> None:
-        """Change une des trois valeurs. La longueur se répartit sur le dépassement : la prise dans les mors et
-        la marge en bout ne bougent pas, c'est la pièce qui avance ou recule dans le brut."""
-        if cle not in self.CLES_BRUT:
-            raise ErreurEsquisse(f"valeur de brut inconnue : {cle}")
+    def definir_valeur(self, cle: str, valeur: float) -> None:
+        """Change une valeur éditable. La longueur du brut se répartit sur le dépassement : la prise dans les mors
+        et la marge en bout ne bougent pas, c'est la pièce qui avance ou recule dans le brut."""
+        self.libelle(cle)                       # lève si la clé est inconnue
 
         def faire():
             if cle == "diametre":
                 self.brut.diametre = float(valeur)
             elif cle == "longueur":
                 self.prise.depassement = float(valeur) - self.profondeur_prise() - self.prise.surepaisseur_face
-            else:
+            elif cle == "marge":
                 self.prise.surepaisseur_face = float(valeur)
+            elif cle == "mors.epaisseur":
+                self.mandrin.epaisseur_mors = float(valeur)
+            else:
+                i, champ = self._etage_de_cle(cle)
+                setattr(self.mandrin.etages[i - 1], champ, float(valeur))
         self._modifier(faire)
 
-    def texte_brut(self, cle: str) -> str:
-        v = self.valeur_brut(cle)
+    def texte(self, cle: str) -> str:
+        v = self.valeur(cle)
         texte = f"{v:.2f}".rstrip("0").rstrip(".")
-        return {"diametre": "Ø brut ", "longueur": "L brut ", "marge": "marge "}[cle] + texte
+        if cle in self.CLES_BRUT:
+            return {"diametre": "Ø brut ", "longueur": "L brut ", "marge": "marge "}[cle] + texte
+        if cle == "mors.epaisseur":
+            return "E " + texte
+        i, champ = self._etage_de_cle(cle)
+        return ("L" if champ == "longueur" else "h") + f"{i} " + texte
+
+    def valeur_brut(self, cle: str) -> float:
+        if cle not in self.CLES_BRUT:
+            raise ErreurEsquisse(f"valeur de brut inconnue : {cle}")
+        return self.valeur(cle)
+
+    def definir_valeur_brut(self, cle: str, valeur: float) -> None:
+        if cle not in self.CLES_BRUT:
+            raise ErreurEsquisse(f"valeur de brut inconnue : {cle}")
+        self.definir_valeur(cle, valeur)
+
+    def texte_brut(self, cle: str) -> str:
+        self.valeur_brut(cle)                   # lève si ce n'est pas une valeur du brut
+        return self.texte(cle)
 
     def verifier(self) -> None:
         """Lève ErreurEsquisse si le mors ou la prise de pièce ne sont pas réalisables."""
