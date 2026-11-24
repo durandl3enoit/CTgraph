@@ -95,7 +95,8 @@ vérification par relecture du G-code généré, réception des programmes depui
   l'outil viendront s'y ajouter.
 - **Contours fermés remplis** d'une teinte discrète (`VueEsquisse.contours_fermes`) : chaînes dont chaque sommet
   relie exactement deux éléments, refermées sur elles-mêmes ou dont les deux bouts touchent l'axe (fermeture par
-  l'axe de révolution). Les boucles à sommets de degré ≥ 3 attendent un vrai parcours de faces.
+  l'axe de révolution). Deux points liés par « coïncident » comptent pour un seul sommet (union-find).
+  Les boucles à sommets de degré ≥ 3 attendent un vrai parcours de faces.
 - **Les cotes sont un seul outil** (`Cote`, touche C), pas cinq boutons : le type se déduit des éléments cliqués et de
   l'endroit où la cote est posée (`VueEsquisse.deduire_cote`). Point → diamètre ; arc → rayon ; ligne → longueur Z
   si posée au-dessus ou au-dessous, sinon diamètre (horizontale), angle (inclinée) ou distance (verticale) ;

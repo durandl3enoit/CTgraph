@@ -507,16 +507,36 @@ class VueEsquisse(QGraphicsView):
         """
         e = self.esquisse
         elements = list(e.lignes) + list(e.arcs)
+
+        # deux points liés par « coïncident » comptent pour un seul sommet
+        parent: Dict[int, int] = {pid: pid for pid in e.points}
+
+        def trouver(pid: int) -> int:
+            while parent[pid] != pid:
+                parent[pid] = parent[parent[pid]]
+                pid = parent[pid]
+            return pid
+
+        for r in e.relations.values():
+            if r.type == TypeRelation.COINCIDENT and all(p in parent for p in r.elements):
+                a, b = trouver(r.elements[0]), trouver(r.elements[1])
+                if a != b:
+                    parent[b] = a
+
+        def extremites(ident: int) -> Tuple[int, int]:
+            a, b = e.extremites(ident)
+            return trouver(a), trouver(b)
+
         incidences: Dict[int, List[int]] = {}
         for ident in elements:
-            for p in e.extremites(ident):
+            for p in extremites(ident):
                 incidences.setdefault(p, []).append(ident)
 
         def avancer(courant: int, inverse: bool, chaine: List[Tuple[int, bool]], vus: set) -> Optional[int]:
             """Prolonge la chaîne depuis la sortie de `courant` tant que les sommets relient deux éléments.
             Renvoie le point d'arrêt, ou None si la chaîne se referme sur son premier élément."""
             while True:
-                a, b = e.extremites(courant)
+                a, b = extremites(courant)
                 fin = a if inverse else b
                 autour = incidences.get(fin, [])
                 if len(autour) != 2:
@@ -526,7 +546,7 @@ class VueEsquisse(QGraphicsView):
                     return None
                 if suivant in vus:
                     return fin
-                na, nb = e.extremites(suivant)
+                na, nb = extremites(suivant)
                 inverse = (nb == fin)
                 chaine.append((suivant, inverse))
                 vus.add(suivant)
@@ -552,7 +572,7 @@ class VueEsquisse(QGraphicsView):
                 # un profil dont les deux bouts touchent l'axe est fermé par l'axe de révolution
                 if fin_arriere is None or not (sur_axe(fin_avant) and sur_axe(fin_arriere)) or fin_avant == fin_arriere:
                     continue
-                if all(sur_axe(p) for i, _ in chaine for p in e.extremites(i)):
+                if all(sur_axe(p) for i, _ in chaine for p in extremites(i)):
                     continue                                     # tout est sur l'axe : pas de surface
             if len(chaine) >= 3 or any(e.genre(i) == "arc" for i, _ in chaine) or fin_avant is not None:
                 contours.append(chaine)

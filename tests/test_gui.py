@@ -629,6 +629,29 @@ def test_contour_ferme_detecte(fenetre):
     ecran(win, "contour_ferme")
 
 
+def test_contour_ferme_par_une_relation_coincidente(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win.cases_aimants["objets"].setChecked(False)      # le dernier point ne doit pas s'accrocher au premier
+    win.choisir_outil("ligne")
+    clic(vue, 10, 10)
+    clic(vue, 30, 10)
+    clic(vue, 30, 30)
+    clic(vue, 10, 30)
+    clic(vue, 10, 14)                                  # revient près du départ, sans le rejoindre
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    win.cases_aimants["objets"].setChecked(True)
+    e = win.esquisse
+    assert len(e.points) == 5 and vue.contours_fermes() == []
+    depart = next(p for p in e.points.values() if abs(p.z - 10) < 0.2 and abs(p.x - 10) < 0.2)
+    arrivee = next(p for p in e.points.values() if abs(p.z - 10) < 0.2 and abs(p.x - 14) < 0.2)
+    vue.selection = [depart.id, arrivee.id]
+    win.appliquer_relation(TypeRelation.COINCIDENT)
+    assert win.resultat.succes and not win.resultat.conflits
+    assert (e.points[arrivee.id].z, e.points[arrivee.id].x) == pytest.approx((e.points[depart.id].z, e.points[depart.id].x), abs=1e-6)
+    contours = vue.contours_fermes()
+    assert len(contours) == 1 and len(contours[0]) == 4
+
+
 def test_cote_surcontrainte_devient_pilotee_sans_demander_de_valeur(fenetre):
     win, vue = fenetre, fenetre.vue
     demandes = []
