@@ -58,6 +58,8 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Icônes sobres** : un trait, une idée par icône, pas de points ni de pointillés. Les boutons de relations
   portent une petite icône (`icone_relation`), les mêmes symboles que dans l'esquisse pour horizontal et vertical.
   Le menu contextuel et les menus ont des icônes (`icone_action` pour supprimer, désélectionner, tout voir, pilotée).
+  Dans le menu contextuel, les relations possibles sont une rangée d'icônes seules (`QWidgetAction`), nom en infobulle.
+- **Zone Relations repliable** (`ZoneRepliable`), repliée par défaut, état mémorisé.
 - **Curseur par outil** (`curseur_outil`) : croix au point chaud et symbole de l'outil en bas à droite ; la sélection
   garde la flèche. L'outil Cote déplace aussi les cotes posées et les édite au double-clic.
 - **Cycle d'outils à la molette** : bande d'icônes (`BulleOutils`) tournée pour garder l'outil actif au centre.
@@ -82,8 +84,8 @@ vérification par relecture du G-code généré, réception des programmes depui
   si posée au-dessus ou au-dessous, sinon diamètre (horizontale), angle (inclinée) ou distance (verticale) ;
   deux lignes → angle, longueur Z entre deux verticales, ou écart (`TypeCote.ECART`, distance point-droite
   PlaneGCS) entre deux parallèles ; deux points → longueur Z (distance si même z).
-- **Élaguer** : un trait tiré au travers des objets ; quatre modes qui ne changent que les bornes de la portion retirée
-  (croisements avec les autres objets, points d'esquisse sur l'objet, extrémité la plus proche, objet entier).
+- **Élaguer** : un trait tiré au travers des objets, un seul comportement : la portion retirée va jusqu'aux croisements
+  voisins (`elagage.elaguer` garde ses autres modes en réserve, l'interface ne les expose plus).
   Les points de coupe reçoivent « point sur » l'objet croisé ; une ligne scindée garde horizontal/vertical/parallèle/
   perpendiculaire sur ses deux morceaux, un arc scindé garde son centre et reçoit « égal » entre ses morceaux ;
   les cotes de longueur disparaissent.

@@ -19,9 +19,10 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   qui suit est un trait d'élagage ; l'outil d'avant revient au relâchement.
 * **Symboles des relations** : « -z- » pour horizontal (le long de l'axe Z), un x coupant une barre verticale
   pour vertical, puis ∥, ⊥, T, =, ●, axe, F.
-* **Colonne de gauche** : les outils (Sélection, Ligne, Arc 3 points, Cote, Élaguer et son mode), les relations
-  (horizontal, vertical, coïncident, point sur ligne ou sur arc, parallèle, perpendiculaire, tangent, égal, sur l'axe,
-  fixe), l'état du solveur avec la liste des relations et des cotes, l'affichage et l'aimantation.
+* **Colonne de gauche** : les outils (Sélection, Ligne, Arc 3 points, Cote, Élaguer), la zone Relations, repliée
+  par défaut (horizontal, vertical, coïncident, point sur ligne ou sur arc, parallèle, perpendiculaire, tangent,
+  égal, sur l'axe, origine Z, fixe), l'état du solveur avec la liste des relations et des cotes, l'affichage et
+  l'aimantation.
 * **Cote** (`C`) : un seul outil, le type se déduit. Cliquez un point : diamètre si la cote est posée à côté,
   position Z depuis l'origine de la pièce si elle est posée au-dessus. Un arc : rayon. Une ligne, puis
   l'endroit où poser la cote : au-dessus ou au-dessous, c'est la longueur Z ; à côté, c'est le diamètre d'une ligne
@@ -39,10 +40,10 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
 * **À droite** : le dessin. Molette pour zoomer autour du curseur, bouton du milieu pour déplacer la vue, `F` pour tout voir.
 * **Ligne** (`L`) : cliquez le départ puis chaque sommet ; la chaîne continue jusqu'au clic droit ou `Échap`.
 * **Arc 3 points** (`A`) : départ, arrivée, puis un point par où passe l'arc.
-* **Élaguer** (`E`) : tirez un trait au travers des lignes ou des arcs à couper. Le mode, dans la zone Outils, dit ce
-  qui est retiré autour du point traversé : *jusqu'aux croisements* avec les autres objets, *entre deux points*
-  d'esquisse posés sur l'objet, *jusqu'à l'extrémité* la plus proche, ou *tout l'objet*. Les nouveaux points de coupe
-  reçoivent « point sur ligne » ou « point sur arc » avec l'objet croisé : la coupe suit les modifications du profil.
+* **Élaguer** (`E`) : tirez un trait au travers des lignes ou des arcs à couper. La portion retirée va jusqu'aux
+  croisements voisins avec les autres objets, ou jusqu'au bout s'il n'y en a pas ; un objet sans croisement
+  disparaît entier. Les nouveaux points de coupe reçoivent « point sur ligne » ou « point sur arc » avec l'objet
+  croisé : la coupe suit les modifications du profil.
 * **Aimantation** (zone Affichage, chaque case se désactive) : *horizontal / vertical* pose la relation d'office sur
   un trait presque droit ; *45°* aligne le trait sur la diagonale ; *objets proches* accroche aux points (cercle),
   aux lignes et aux arcs (croix, avec la relation « point sur ») et aux alignements avec les points existants
@@ -56,8 +57,9 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   un clic dans le vide vide la sélection. Tirez un point pour le faire glisser : le solveur recalcule tout le profil
   en continu en respectant relations et cotes. Tirez une valeur de cote pour déplacer son étiquette ; double-cliquez-la
   pour changer sa valeur. `Suppr` supprime la sélection.
-* **Clic droit** : menu contextuel avec les relations et cotes possibles pour la sélection, la suppression, les outils
-  et « Tout voir ». Pendant un tracé, le clic droit termine la chaîne.
+* **Clic droit** : menu contextuel avec, en première ligne, les relations possibles pour la sélection sous forme
+  d'icônes (le nom en infobulle), puis la cote déduite, la suppression, les outils et « Tout voir ». Pendant un
+  tracé, le clic droit termine la chaîne.
 * **Relations** : sélectionnez les éléments concernés puis cliquez le bouton (ou le menu du clic droit).
   Une relation ou une cote en conflit est affichée en rouge, une relation redondante en jaune.
 * **État** : « sous-contraint » avec le nombre de degrés de liberté, « entièrement contraint » (profil en vert),

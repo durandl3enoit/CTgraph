@@ -10,9 +10,9 @@ from typing import Callable, List, Optional, Tuple
 
 from PySide6.QtCore import QByteArray, QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QKeySequence, QPalette
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
-                               QLabel, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
-                               QScrollArea, QSizePolicy, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
+                               QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QPushButton,
+                               QScrollArea, QSizePolicy, QToolButton, QVBoxLayout, QWidget, QWidgetAction)
 
 from .. import APP_NAME, __version__
 from ..build_info import BUILD_TIME
@@ -23,6 +23,7 @@ from ..icons import icone_action, icone_outil, icone_relation
 from ..log import get as get_log
 from ..settings import Settings
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
+from .zone_repliable import ZoneRepliable
 
 FILTRE_FICHIERS = "Esquisse CTgraph (*.ctg);;Tous les fichiers (*)"
 MAX_ANNULATION = 200
@@ -71,9 +72,7 @@ class FenetrePrincipale(QMainWindow):
         self.vue.selection_changee.connect(self._selection_changee)
         for cle in AIMANTS_DEFAUT:
             self.vue.aimants[cle] = self.reglages.get_bool("aimant." + cle, AIMANTS_DEFAUT[cle])
-        self.vue.mode_elagage = str(self.reglages.get("modeElagage", "croisement") or "croisement")
-        if self.vue.mode_elagage not in elagage.MODES:
-            self.vue.mode_elagage = "croisement"
+        self.vue.mode_elagage = "croisement"      # un seul élagage : jusqu'aux croisements voisins
 
         # vue 3D incrustée en haut à droite (CTGRAPH_SANS_3D=1 la désactive : tests hors écran sans OpenGL)
         self.vue3d = None
@@ -121,19 +120,12 @@ class FenetrePrincipale(QMainWindow):
             bouton.setMinimumHeight(56)
             bouton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             grille.addWidget(bouton, i // 2, i % 2)
-        self.combo_elagage = QComboBox()
-        for mode in elagage.MODES:
-            self.combo_elagage.addItem(elagage.LIBELLES_MODE[mode], mode)
-        self.combo_elagage.setCurrentIndex(list(elagage.MODES).index(self.vue.mode_elagage))
-        self.combo_elagage.setToolTip("Ce que retire l'outil Élaguer autour du point traversé par le trait")
-        self.combo_elagage.currentIndexChanged.connect(self._changer_mode_elagage)
-        grille.addWidget(QLabel("Mode d'élagage :"), 3, 0, 1, 2)
-        grille.addWidget(self.combo_elagage, 4, 0, 1, 2)
         vbox.addWidget(g_outils)
 
-        # Relations
-        g_rel = QGroupBox("Relations")
-        grille = QGridLayout(g_rel)
+        # Relations : zone repliable, repliée par défaut (le menu du clic droit les propose aussi)
+        contenu_rel = QWidget()
+        grille = QGridLayout(contenu_rel)
+        grille.setContentsMargins(4, 0, 4, 4)
         grille.setSpacing(4)
         self.boutons_relations = {}
         for i, t in enumerate(ORDRE_RELATIONS):
@@ -143,7 +135,9 @@ class FenetrePrincipale(QMainWindow):
             b.clicked.connect(lambda _=False, tt=t: self.appliquer_relation(tt))
             grille.addWidget(b, i // 2, i % 2)
             self.boutons_relations[t] = b
-        vbox.addWidget(g_rel)
+        self.zone_relations = ZoneRepliable("Relations", contenu_rel, self.reglages.get_bool("relations.deployee", False))
+        self.zone_relations.basculee.connect(lambda etat: self.reglages.set("relations.deployee", etat))
+        vbox.addWidget(self.zone_relations)
 
         # État et liste des relations et cotes
         g_etat = QGroupBox("État")
@@ -274,14 +268,31 @@ class FenetrePrincipale(QMainWindow):
         sel = list(self.vue.selection)
         possibles = False
         encre, fond = self._encre, self._fond_icone
+        menu.relations_proposees = []
         if sel:
-            for t in ORDRE_RELATIONS:
-                if self.esquisse.relation_possible(t, sel) or (
-                        t == TypeRelation.POINT_SUR_LIGNE and self.esquisse.relation_possible(TypeRelation.POINT_SUR_ARC, sel)):
-                    menu.addAction(icone_relation(t.value, encre, fond), LIBELLES_RELATION[t],
-                                   lambda tt=t: self.appliquer_relation(tt))
-                    possibles = True
-            if possibles:
+            types = [t for t in ORDRE_RELATIONS if self.esquisse.relation_possible(t, sel) or (
+                t == TypeRelation.POINT_SUR_LIGNE and self.esquisse.relation_possible(TypeRelation.POINT_SUR_ARC, sel))]
+            if types:
+                # les relations possibles, en rangée d'icônes seules (le nom en infobulle)
+                rangee = QWidget(menu)
+                h = QHBoxLayout(rangee)
+                h.setContentsMargins(8, 3, 8, 3)
+                h.setSpacing(2)
+                for t in types:
+                    b = QToolButton(rangee)
+                    b.setIcon(icone_relation(t.value, encre, fond))
+                    b.setIconSize(QSize(22, 22))
+                    b.setAutoRaise(True)
+                    b.setToolTip(LIBELLES_RELATION[t])
+                    b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+                    b.clicked.connect(lambda _=False, tt=t, m=menu: self._relation_depuis_menu(m, tt))
+                    h.addWidget(b)
+                h.addStretch(1)
+                action = QWidgetAction(menu)
+                action.setDefaultWidget(rangee)
+                menu.addAction(action)
+                menu.relations_proposees = types
+                possibles = True
                 menu.addSeparator()
             deduction = self.vue.deduire_cote(sel)
             if deduction is not None:
@@ -313,6 +324,10 @@ class FenetrePrincipale(QMainWindow):
 
     def menu_contextuel(self, pos_globale) -> None:
         self.construire_menu_contextuel().exec(pos_globale)
+
+    def _relation_depuis_menu(self, menu: QMenu, type_: TypeRelation) -> None:
+        menu.close()
+        self.appliquer_relation(type_)
 
     # -- état et affichage ---------------------------------------------------------------
 
@@ -395,11 +410,6 @@ class FenetrePrincipale(QMainWindow):
     def _basculer_aimant(self, cle: str, actif: bool) -> None:
         self.vue.aimants[cle] = actif
         self.reglages.set("aimant." + cle, actif)
-
-    def _changer_mode_elagage(self, index: int) -> None:
-        mode = self.combo_elagage.itemData(index)
-        self.vue.mode_elagage = mode
-        self.reglages.set("modeElagage", mode)
 
     def choisir_outil(self, outil: str) -> None:
         if outil not in self.actions_outils:

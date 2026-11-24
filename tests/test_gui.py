@@ -187,17 +187,21 @@ def test_menu_contextuel_propose_les_relations_possibles(fenetre):
     e = win.esquisse
     menu = win.construire_menu_contextuel()
     assert any("Sélectionnez" in a.text() for a in menu.actions())
+    assert menu.relations_proposees == []
     clic(vue, -20, 20)
     clic(vue, 0, 10)           # deux lignes perpendiculaires
-    textes = [a.text() for a in win.construire_menu_contextuel().actions()]
-    assert "Perpendiculaire" in textes and "Parallèle" in textes and "Égal" in textes
+    menu = win.construire_menu_contextuel()
+    textes = [a.text() for a in menu.actions()]
+    proposees = menu.relations_proposees
+    assert {TypeRelation.PERPENDICULAIRE, TypeRelation.PARALLELE, TypeRelation.EGAL} <= set(proposees)
+    assert TypeRelation.HORIZONTAL not in proposees          # pas pour deux lignes
     assert "Coter la sélection (Angle)" in textes
-    assert "Horizontal" not in textes          # pas pour deux lignes
     assert "Supprimer la sélection" in textes
+    # les relations sont des icônes seules : aucune action textuelle ne porte leur nom
+    assert "Perpendiculaire" not in textes
     # une ligne et un point : point sur ligne
     vue.selection = [next(iter(e.lignes)), next(iter(e.points))]
-    textes = [a.text() for a in win.construire_menu_contextuel().actions()]
-    assert "Point sur ligne" in textes
+    assert TypeRelation.POINT_SUR_LIGNE in win.construire_menu_contextuel().relations_proposees
 
 
 def test_cotes_et_modification(fenetre):
@@ -261,21 +265,22 @@ def test_elaguer_par_un_trait(fenetre):
     dessus = max(p.x for li in e.lignes.values() if li.id != verticale.id for p in (e.points[li.p1], e.points[li.p2]))
     n_lignes = len(e.lignes)
     win.choisir_outil("elaguer")
-    win.combo_elagage.setCurrentIndex(0)                   # jusqu'aux croisements
     glisser(vue, pos(vue, -25, 25), pos(vue, -15, 25))     # trait au-dessus du rectangle : coupe le dépassement haut
     assert len(e.lignes) == n_lignes
     haut = max(e.points[verticale.p1].x, e.points[verticale.p2].x)
     assert haut == pytest.approx(dessus, abs=1e-6)         # raccourcie exactement au côté haut du rectangle
     assert any(r.type == TypeRelation.POINT_SUR_LIGNE for r in e.relations.values())
     assert win.resultat.succes and not win.resultat.conflits
-    # mode « tout » : le trait supprime la verticale entière
-    win.combo_elagage.setCurrentIndex(3)
+    # un trait au milieu du rectangle : le seul croisement restant est l'axe, la verticale est raccourcie
+    # jusqu'à lui (son sommet repose déjà sur le côté haut, ce n'est plus un croisement)
     glisser(vue, pos(vue, -25, 10), pos(vue, -15, 10))
-    assert verticale.id not in e.lignes
-    assert len(e.lignes) == n_lignes - 1
+    assert verticale.id in e.lignes and len(e.lignes) == n_lignes
+    assert max(e.points[verticale.p1].x, e.points[verticale.p2].x) == pytest.approx(0.0, abs=1e-6)
     ecran(win, "elagage")
     win.annuler()
-    assert verticale.id in win.esquisse.lignes
+    e2 = win.esquisse                          # l'annulation recharge le modèle : on relit la ligne par son identifiant
+    li = e2.lignes[verticale.id]
+    assert max(e2.points[li.p1].x, e2.points[li.p2].x) == pytest.approx(dessus, abs=1e-6)
 
 
 def test_outil_cote_deduit_le_type(fenetre):
@@ -378,9 +383,21 @@ def test_menu_contextuel_a_des_icones(fenetre):
     rectangle(win)
     clic(vue, -20, 20)
     clic(vue, 0, 10)
+    from PySide6.QtWidgets import QWidgetAction
     menu = win.construire_menu_contextuel()
-    actions = [a for a in menu.actions() if not a.isSeparator() and a.isEnabled()]
+    actions = [a for a in menu.actions() if not a.isSeparator() and a.isEnabled() and not isinstance(a, QWidgetAction)]
     assert actions and all(not a.icon().isNull() for a in actions)
+    assert menu.relations_proposees
+
+
+def test_zone_relations_repliee_par_defaut(fenetre):
+    win = fenetre
+    assert not win.zone_relations.est_deployee()
+    assert not win.boutons_relations[TypeRelation.HORIZONTAL].isVisibleTo(win)
+    win.zone_relations.deployer(True)
+    assert win.boutons_relations[TypeRelation.HORIZONTAL].isVisibleTo(win)
+    assert win.reglages.get_bool("relations.deployee", False) is True
+    win.zone_relations.deployer(False)
 
 
 def test_outil_cote_deplace_une_cote(fenetre):
@@ -521,7 +538,6 @@ def test_clic_semi_long_puis_glisser_elague(fenetre):
     win.choisir_outil("selection")
     verticale = next(li for li in e.lignes.values() if max(e.points[li.p1].x, e.points[li.p2].x) > 25)
     dessus = max(p.x for li in e.lignes.values() if li.id != verticale.id for p in (e.points[li.p1], e.points[li.p2]))
-    win.combo_elagage.setCurrentIndex(0)
     depart, arrivee = pos(vue, -25, 25), pos(vue, -15, 25)
     QTest.mousePress(vue.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, depart)
     QTest.qWait(500)                                   # clic semi-long : l'outil Élaguer se sélectionne
