@@ -84,12 +84,12 @@ def test_maillages_du_montage():
     m = Montage()
     m.contre_pointe.presente = True
     maillages = maillages_montage(m)
-    # corps, trois mors, brut translucide, contre-pointe
-    assert len(maillages) == 1 + 3 + 1 + 1
+    # corps, trois mors de deux blocs (étage et face de serrage), brut translucide, contre-pointe
+    assert len(maillages) == 1 + 3 * 2 + 1 + 1
     assert all(nb > 0 for _, nb, _ in maillages)
     assert sum(1 for _, _, c in maillages if c[3] < 1.0) == 1
     # le brut va de la surépaisseur à la prise dans les mors
-    brut = maillages[4][0]
+    brut = maillages[7][0]
     zs = brut[0::6]
     assert min(zs) == pytest.approx(m.z_brut_arriere()) and max(zs) == pytest.approx(m.z_brut_avant())
     # normales sortantes et parcours accordé, pour l'élimination des faces arrière : sur le corps du mandrin,

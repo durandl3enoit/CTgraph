@@ -816,13 +816,49 @@ def test_enregistrer_et_rouvrir(fenetre, tmp_path):
     assert win.esquisse.to_dict() == avant
 
 
+def test_cotes_du_brut_affichees_et_editables(fenetre):
+    from ctgraph.montage import Montage
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE, ROLE_ID, Etiquette
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())                  # pas le dernier montage mémorisé par un autre test
+    win.act_voir_montage.setChecked(True)
+    etiquettes = {it.data(ROLE_ID): it for it in vue._items if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "brut"}
+    assert set(etiquettes) == {"diametre", "longueur", "marge"}
+    assert etiquettes["diametre"].texte == "Ø brut 60" and etiquettes["marge"].texte == "marge 2"
+    assert etiquettes["longueur"].texte == f"L brut {win.montage.longueur_brut():g}"
+    # double-clic : la valeur est demandée et appliquée
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (70.0, True)
+    win.editer_brut("diametre")
+    assert win.montage.brut.diametre == 70.0
+    # la longueur du brut se répartit sur le dépassement, marge et prise inchangées
+    avant = (win.montage.prise.prise_mors, win.montage.prise.surepaisseur_face)
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (150.0, True)
+    win.editer_brut("longueur")
+    assert win.montage.longueur_brut() == pytest.approx(150.0)
+    assert (win.montage.prise.prise_mors, win.montage.prise.surepaisseur_face) == avant
+    # molette : un pas, un dixième avec Maj ; une valeur impossible est refusée sans rien changer
+    assert win.ajuster_brut("marge", 1, False) == "marge 3"
+    assert win.ajuster_brut("marge", -1, True) == "marge 2.9"
+    assert win.montage.longueur_brut() == pytest.approx(150.9)      # la marge fait partie de la longueur du brut
+    assert win.ajuster_brut("longueur", -1, False) == "L brut 149.9"
+    depassement = win.montage.prise.depassement
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (5.0, True)
+    win.editer_brut("longueur")                      # plus court que la prise + marge : refusé
+    assert win.montage.prise.depassement == depassement
+    # les cotes du brut ne se sélectionnent pas
+    et = etiquettes["diametre"]
+    clic(vue, et.pos().x(), et.pos().y())
+    assert vue.selection == []
+    win.act_voir_montage.setChecked(False)
+
+
 def test_dialogue_montage_et_dessin(fenetre):
     from ctgraph.ui.dialogue_montage import DialogueMontage
     win, vue = fenetre, fenetre.vue
     n_sans = len(vue._items)                   # montage masqué par la fixture : esquisse vide, rien à dessiner
     assert not win.vue.montage_visible and n_sans == 0
     win.act_voir_montage.setChecked(True)
-    assert len(vue._items) == 3                # brut, mors, corps du mandrin
+    assert len(vue._items) == 3 + 6            # brut, mors, corps du mandrin, et trois cotes du brut (trait + étiquette)
     dlg = DialogueMontage(win.montage, win)
     dlg.brut_diametre.setValue(70.0)
     dlg.depassement.setValue(120.0)
@@ -832,8 +868,8 @@ def test_dialogue_montage_et_dessin(fenetre):
     assert m.mandrin.mors_modele == "SMW-Autoblok 474"
     win.definir_montage(m)
     assert win.montage.z_face_mors() == -120.0 and win._modifie
-    # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés
-    assert len(vue._items) == 4
+    # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés, plus les trois cotes du brut
+    assert len(vue._items) == 4 + 6
     win.act_voir_montage.setChecked(False)
     assert not vue.montage_visible and len(vue._items) == 0
     # une prise de pièce impossible est refusée

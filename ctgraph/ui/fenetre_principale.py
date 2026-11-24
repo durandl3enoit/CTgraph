@@ -5,6 +5,7 @@ solveur, et est enregistrée dans la pile d'annulation.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 from typing import Callable, List, Optional, Tuple
@@ -472,6 +473,34 @@ class FenetrePrincipale(QMainWindow):
         self._marquer_modifie(True)
         self.vue.reconstruire()
         self._pousser_montage_3d()
+
+    def editer_brut(self, cle: str) -> None:
+        """Double-clic sur une cote du brut : diamètre, longueur ou marge en bout."""
+        libelle = Montage.LIBELLES_BRUT.get(cle)
+        if libelle is None:
+            return
+        valeur, ok = self._demander_valeur(libelle, "mm", self.montage.valeur_brut(cle), 0.0)
+        if not ok:
+            return
+        nouveau = copy.deepcopy(self.montage)
+        try:
+            nouveau.definir_valeur_brut(cle, valeur)
+        except ErreurEsquisse as exc:
+            self.statusBar().showMessage(str(exc), 6000)
+            return
+        self.definir_montage(nouveau)
+
+    def ajuster_brut(self, cle: str, sens: int, fin: bool) -> Optional[str]:
+        """Molette sur une cote du brut : un pas par cran (0,1 avec Maj)."""
+        pas = PAS_MOLETTE / 10.0 if fin else PAS_MOLETTE
+        nouveau = copy.deepcopy(self.montage)
+        try:
+            nouveau.definir_valeur_brut(cle, max(0.0, self.montage.valeur_brut(cle) + sens * pas))
+        except ErreurEsquisse as exc:
+            self.statusBar().showMessage(str(exc), 4000)
+            return None
+        self.definir_montage(nouveau)
+        return nouveau.texte_brut(cle)
 
     def regler_montage(self) -> None:
         dlg = DialogueMontage(self.montage, self)

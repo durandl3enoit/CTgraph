@@ -207,13 +207,15 @@ def maillages_montage(montage) -> List[Tuple[array, int, Tuple[float, float, flo
     corps = [(za, re), (za, ri), (zf, ri), (zf, re), (za, re)]
     data, nb = maillage_revolution([corps], 96)
     out.append((data, nb, (0.44, 0.45, 0.49, 1.0)))
-    # mors : blocs qui serrent le brut, répartis autour de l'axe
+    # mors étagés : deux blocs par mors (étage de butée, face de serrage), répartis autour de l'axe
     rb = montage.rayon_brut()
     for k in range(max(md.nb_mors, 1)):
         angle = math.pi / 2 + 2.0 * math.pi * k / max(md.nb_mors, 1)
-        data, nb = maillage_boite_radiale(montage.z_fond_mors(), montage.z_face_mors(), rb, rb + md.epaisseur_mors,
-                                          md.largeur_mors / 2.0, angle)
-        out.append((data, nb, (0.60, 0.61, 0.64, 1.0)))
+        for (z1, z2, r1, r2) in montage.blocs_mors():
+            if r2 - r1 < 1e-6 or z2 - z1 < 1e-6:
+                continue
+            data, nb = maillage_boite_radiale(z1, z2, r1, r2, md.largeur_mors / 2.0, angle)
+            out.append((data, nb, (0.60, 0.61, 0.64, 1.0)))
     # brut : cylindre ou tube translucide
     zb1, zb2 = montage.z_brut_arriere(), montage.z_brut_avant()
     rbi = montage.rayon_interieur_brut()

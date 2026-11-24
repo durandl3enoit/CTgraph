@@ -114,10 +114,14 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Machine et montage** (`ctgraph/montage.py`, validé par l'utilisateur le 24 novembre 2026) : CT200 avec mandrin à mors
   **SMW-Autoblok BH-M 210**, mors **SMW-Autoblok 474**, contre-pointe possible, brut rond plein par défaut, tube possible.
   Repère pièce : Z = 0 face avant finie, Z négatif vers le mandrin ; prise décrite par dépassement (face des mors →
-  face finie), longueur serrée, surépaisseur de face. Les dimensions du mandrin sont des ordres de grandeur à vérifier.
+  face finie), longueur serrée jusqu'à la butée, surépaisseur de face, serrage extérieur ou intérieur (tube).
+  Mors étagés (`Montage.blocs_mors`) : face de serrage devant, étage de butée au fond (`etage_mors`), deux blocs
+  par mors en 2D comme en 3D. Les dimensions du mandrin sont des ordres de grandeur à vérifier.
   Le fichier `.ctg` est désormais une **pièce** (`Piece` : esquisse + montage, format `ctgraph-piece`) ; l'ancien
   format esquisse seule se lit encore. Le dernier montage réglé est le défaut des nouvelles pièces (préférences).
-  Courses et broche de la machine : valeurs provisoires, à relever.
+  Courses et broche de la machine : valeurs provisoires, à relever. Trois **cotes du brut** sont toujours affichées
+  dans l'esquisse (étiquettes de genre « brut », non sélectionnables, éditables au double-clic et à la molette) :
+  Ø brut, L brut, marge en bout ; changer la longueur ajuste le dépassement (prise et marge fixes).
 
 ## Points ouverts
 

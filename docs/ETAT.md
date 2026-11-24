@@ -1,6 +1,6 @@
 # CTgraph — état d'avancement
 
-Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semaine).
+Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
 
 ## Fait
 
@@ -48,10 +48,14 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
 - **Module machine et montage, première version** (`ctgraph/montage.py`, `ui/dialogue_montage.py`) : machine, mandrin
   BH-M 210 et mors 474, brut rond ou tube, prise de pièce, contre-pointe ; dialogue *Pièce → Machine et montage*,
   dessin en retrait dans l'esquisse et dans la vue 3D (brut translucide), enregistré avec la pièce (`Piece`).
+  Puis : les trois cotes du brut (Ø, longueur, marge en bout) toujours affichées en ambre et éditables par
+  double-clic ou clic droit + molette ; mors étagés (face de serrage devant, étage de butée au fond, le brut en
+  appui dessus) et serrage extérieur ou intérieur (dans l'alésage d'un tube), en 2D comme en 3D. 92 tests.
 
 ## En cours
 
-- Les dimensions du mandrin et de la machine sont des ordres de grandeur : à relever et à saisir dans le dialogue.
+- Les dimensions du mandrin et de la machine sont des ordres de grandeur : à relever et à saisir dans le dialogue
+  (en particulier la hauteur de l'étage des mors 474 et l'épaisseur radiale des mors).
 
 ## Prochaines étapes
 

@@ -288,7 +288,7 @@ class VueEsquisse(QGraphicsView):
         xs = [p.x for p in e.points.values()] + [0.0]
         if self.montage is not None and self.montage_visible:
             zs += [self.montage.z_brut_arriere(), self.montage.z_brut_avant()]
-            xs += [self.montage.rayon_brut() + self.montage.mandrin.epaisseur_mors]
+            xs += [max(self.montage.rayon_brut(), max(b[3] for b in self.montage.blocs_mors()))]
         if zs:
             rect = QRectF(min(zs), min(xs), max(max(zs) - min(zs), 1e-3), max(max(xs) - min(xs), 1e-3))
         else:
@@ -487,9 +487,13 @@ class VueEsquisse(QGraphicsView):
         rect.setPen(stylo)
         rect.setBrush(QBrush(QColor(200, 170, 90, 22)))
         ajouter(rect)
-        # mors : bloc hachuré qui serre le brut, du fond des mors à leur face avant
-        zf, zm = m.z_fond_mors(), m.z_face_mors()
-        mors = QGraphicsPathItem(self._rect_path(zf, rb, zm, rb + m.mandrin.epaisseur_mors))
+        # mors étagé : l'étage de butée au fond, la face de serrage devant (hachurés)
+        zf = m.z_fond_mors()
+        path = QPainterPath()
+        for (bz1, bz2, br1, br2) in m.blocs_mors():
+            if br2 - br1 > 1e-6 and bz2 - bz1 > 1e-6:
+                path.addRect(QRectF(bz1, br1, bz2 - bz1, br2 - br1))
+        mors = QGraphicsPathItem(path)
         mors.setPen(plein)
         mors.setBrush(QBrush(muet, Qt.BrushStyle.BDiagPattern))
         ajouter(mors)
@@ -499,6 +503,22 @@ class VueEsquisse(QGraphicsView):
         corps.setPen(plein)
         corps.setBrush(QBrush(QColor(muet.red(), muet.green(), muet.blue(), 30)))
         ajouter(corps)
+        # les trois valeurs du brut, toujours affichées et éditables : Ø, longueur, marge en bout
+        d = self.px_en_mm(30)
+        ambre = QColor(205, 175, 95)
+        zl = z2 + d
+        self._dessiner_cote_brut("diametre", [(zl, 0.0), (zl, rb)], [((z2, rb), (zl + self.px_en_mm(4), rb))],
+                                 (zl, rb / 2.0), ambre, c, fleches=((zl, rb, (0.0, 1.0)), (zl, 0.0, (0.0, -1.0))))
+        xl = max(rb, max(b[3] for b in m.blocs_mors())) + d
+        self._dessiner_cote_brut("longueur", [(z1, xl), (z2, xl)],
+                                 [((z1, rb), (z1, xl + self.px_en_mm(4))), ((z2, rb), (z2, xl + self.px_en_mm(4)))],
+                                 ((z1 + z2) / 2.0, xl), ambre, c,
+                                 fleches=((z1, xl, (-1.0, 0.0)), (z2, xl, (1.0, 0.0))))
+        xm = -d * 0.7
+        self._dessiner_cote_brut("marge", [(0.0, xm), (z2, xm)],
+                                 [((0.0, 0.0), (0.0, xm - self.px_en_mm(4))), ((z2, 0.0), (z2, xm - self.px_en_mm(4)))],
+                                 (z2 / 2.0 + self.px_en_mm(26), xm), ambre, c,
+                                 fleches=((0.0, xm, (-1.0, 0.0)), (z2, xm, (1.0, 0.0))) if z2 > 1e-9 else ())
         # contre-pointe
         cp = m.contre_pointe
         if cp.presente:
@@ -514,6 +534,32 @@ class VueEsquisse(QGraphicsView):
             pointe.setPen(plein)
             pointe.setBrush(QBrush(muet, Qt.BrushStyle.FDiagPattern))
             ajouter(pointe)
+
+    def _dessiner_cote_brut(self, cle: str, ligne, attaches, pos, couleur: QColor, c: Dict[str, QColor],
+                            fleches=()) -> None:
+        """Une cote du brut : ligne de cote, lignes d'attache, flèches, étiquette éditable (genre « brut »)."""
+        path = QPainterPath()
+        (a, b) = ligne
+        path.moveTo(*a)
+        path.lineTo(*b)
+        for (p, q) in attaches:
+            path.moveTo(*p)
+            path.lineTo(*q)
+        for (z, x, direction) in fleches:
+            self._fleche(path, (z, x), direction)
+        it = QGraphicsPathItem(path)
+        pen = QPen(couleur, 1)
+        pen.setCosmetic(True)
+        it.setPen(pen)
+        it.setZValue(2)
+        self._scene.addItem(it)
+        self._items.append(it)
+        et = Etiquette(self.montage.texte_brut(cle), couleur, c["fond"], gras=False)
+        et.setPos(*pos)
+        et.setData(ROLE_GENRE, "brut")
+        et.setData(ROLE_ID, cle)
+        self._scene.addItem(et)
+        self._items.append(et)
 
     @staticmethod
     def _rect_path(z1: float, x1: float, z2: float, x2: float) -> QPainterPath:
@@ -1189,10 +1235,13 @@ class VueEsquisse(QGraphicsView):
         self._timer_bulle.start(1100)
 
     def etiquette_et_variante(self, pos) -> Optional[Tuple[int, Optional[str]]]:
-        """(cote, variante) de l'étiquette de cote sous le curseur : variante « rayon » pour le R d'un diamètre."""
+        """(cote, variante) de l'étiquette sous le curseur : variante « rayon » pour le R d'un diamètre,
+        ou (clé, "brut") pour une cote du brut."""
         for it in self.items(pos):
             if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote":
                 return it.data(ROLE_ID), it.data(ROLE_VARIANTE) or None
+            if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "brut":
+                return it.data(ROLE_ID), "brut"
         return None
 
     def _aide(self) -> None:
@@ -1261,6 +1310,8 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
+        if genre == "brut":
+            return                              # les cotes du brut ne se sélectionnent pas : double-clic ou molette
         if genre == "point":
             self._glisse_point = ident          # sélection ou glissement : tranché au relâchement
             self._glisse_actif = False
@@ -1662,6 +1713,9 @@ class VueEsquisse(QGraphicsView):
             return
         pos = event.position().toPoint()
         el = self.element_sous(pos)
+        if el is not None and el[0] == "brut":
+            self.controleur.editer_brut(el[1])
+            return
         if el is not None and el[0] == "cote":
             self._glisse_cote = None
             variante = next((it.data(ROLE_VARIANTE) for it in self.items(pos)
@@ -1679,7 +1733,10 @@ class VueEsquisse(QGraphicsView):
                 # clic droit maintenu sur une étiquette de cote + molette : la valeur monte ou descend
                 cote_id, variante = self._droit_cote
                 fin = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-                texte = self.controleur.ajuster_cote(cote_id, 1 if delta > 0 else -1, variante, fin)
+                if variante == "brut":
+                    texte = self.controleur.ajuster_brut(cote_id, 1 if delta > 0 else -1, fin)
+                else:
+                    texte = self.controleur.ajuster_cote(cote_id, 1 if delta > 0 else -1, variante, fin)
                 if texte:
                     self._montrer_texte(texte, pos)
             else:

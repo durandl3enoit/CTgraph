@@ -50,6 +50,41 @@ def test_piece_aller_retour_et_ancien_format():
         Piece.from_json("[1, 2]")
 
 
+def test_valeurs_du_brut():
+    m = Montage(brut=Brut(diametre=60.0), prise=PriseDePiece(depassement=100.0, prise_mors=20.0, surepaisseur_face=2.0))
+    assert m.valeur_brut("diametre") == 60.0 and m.valeur_brut("longueur") == 122.0 and m.valeur_brut("marge") == 2.0
+    assert m.texte_brut("diametre") == "Ø brut 60" and m.texte_brut("longueur") == "L brut 122"
+    m.definir_valeur_brut("longueur", 130.0)
+    assert m.prise.depassement == 108.0 and m.longueur_brut() == 130.0
+    m.definir_valeur_brut("marge", 3.5)
+    assert m.texte_brut("marge") == "marge 3.5" and m.longueur_brut() == 131.5
+    with pytest.raises(ErreurEsquisse):
+        m.definir_valeur_brut("longueur", 10.0)      # dépassement négatif
+    with pytest.raises(ErreurEsquisse):
+        m.valeur_brut("autre")
+
+
+def test_mors_etages_exterieur_et_interieur():
+    m = Montage(brut=Brut(diametre=60.0), prise=PriseDePiece(depassement=100.0, prise_mors=20.0))
+    m.mandrin.hauteur_mors, m.mandrin.epaisseur_mors, m.mandrin.etage_mors = 70.0, 25.0, 5.0
+    etage, face = m.blocs_mors()
+    # face de serrage : de la butée (z = -120) à la face des mors (z = -100), du rayon du brut vers l'extérieur
+    assert face == (-120.0, -100.0, 30.0, 55.0)
+    # étage de butée : du fond des mors à la butée, descend de 5 sous le rayon du brut
+    assert etage == (-170.0, -120.0, 25.0, 55.0)
+    assert m.z_brut_arriere() == -120.0            # le brut vient en butée sur l'étage
+    # serrage intérieur dans un tube : la face de serrage est au rayon de l'alésage, l'étage monte au-dessus
+    m.brut = Brut(forme="tube", diametre=60.0, diametre_interieur=40.0)
+    m.prise.serrage = "interieur"
+    m.verifier()
+    etage, face = m.blocs_mors()
+    assert face == (-120.0, -100.0, 0.0, 20.0)
+    assert etage == (-170.0, -120.0, 0.0, 25.0)
+    m.brut.forme = "rond"
+    with pytest.raises(ErreurEsquisse):
+        m.verifier()
+
+
 def test_cles_inconnues_ignorees():
     d = Montage().to_dict()
     d["brut"]["inconnue"] = 1

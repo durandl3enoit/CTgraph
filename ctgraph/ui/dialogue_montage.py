@@ -62,6 +62,7 @@ class DialogueMontage(QDialog):
         self.hauteur_mors = _nombre(md.hauteur_mors)
         self.largeur_mors = _nombre(md.largeur_mors)
         self.epaisseur_mors = _nombre(md.epaisseur_mors)
+        self.etage_mors = _nombre(md.etage_mors)
         f.addRow("Mandrin", self.mandrin_modele)
         f.addRow("Mors", self.mors_modele)
         f.addRow("Ø du mandrin", self.mandrin_diametre)
@@ -71,6 +72,7 @@ class DialogueMontage(QDialog):
         f.addRow("Hauteur des mors (à vérifier)", self.hauteur_mors)
         f.addRow("Largeur des mors (à vérifier)", self.largeur_mors)
         f.addRow("Épaisseur radiale des mors", self.epaisseur_mors)
+        f.addRow("Étage de butée des mors (à vérifier)", self.etage_mors)
         gauche.addWidget(g)
         gauche.addStretch(1)
         colonnes.addLayout(gauche)
@@ -94,11 +96,16 @@ class DialogueMontage(QDialog):
 
         g = QGroupBox("Prise de pièce")
         f = QFormLayout(g)
+        self.serrage = QComboBox()
+        self.serrage.addItem("Extérieur (mors autour du brut)", "exterieur")
+        self.serrage.addItem("Intérieur (mors dans l'alésage d'un tube)", "interieur")
+        self.serrage.setCurrentIndex(1 if p.serrage == "interieur" else 0)
         self.depassement = _nombre(p.depassement)
         self.prise_mors = _nombre(p.prise_mors, 0.1)
         self.surepaisseur = _nombre(p.surepaisseur_face)
+        f.addRow("Serrage", self.serrage)
         f.addRow("Dépassement face des mors → face finie", self.depassement)
-        f.addRow("Longueur serrée dans les mors", self.prise_mors)
+        f.addRow("Longueur serrée, jusqu'à la butée", self.prise_mors)
         f.addRow("Surépaisseur de la face avant", self.surepaisseur)
         droite.addWidget(g)
 
@@ -138,6 +145,8 @@ class DialogueMontage(QDialog):
         md.nb_mors = self.nb_mors.value()
         md.hauteur_mors, md.largeur_mors, md.epaisseur_mors = (self.hauteur_mors.value(), self.largeur_mors.value(),
                                                               self.epaisseur_mors.value())
+        md.etage_mors = self.etage_mors.value()
+        p.serrage = self.serrage.currentData()
         b.forme = self.forme.currentData()
         b.diametre, b.diametre_interieur, b.matiere = (self.brut_diametre.value(), self.brut_interieur.value(),
                                                        self.matiere.text().strip())
