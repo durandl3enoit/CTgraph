@@ -56,7 +56,8 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   Réglage des cotes aussi par clic droit + glisser vertical. Références gravées (« 210 BH-FC », mors
   « 12082030 (1/16"x90°) ») inscrites en haut à gauche du mandrin et du mors ; passage de barre 42 mm fixe.
   Clic droit sur la référence du mors : édition en place de toutes ses cotes, le reste grisé jusqu'à validation.
-  Survol : l'élément sous le curseur luit en magenta avant le clic. 99 tests.
+  Survol : l'élément sous le curseur luit en magenta avant le clic. Le glisser du clic droit suit la direction
+  de la ligne de cote (horizontale, verticale, diagonale, rayon vers l'extérieur). 100 tests.
 
 ## En cours
 

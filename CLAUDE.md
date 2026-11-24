@@ -66,8 +66,10 @@ vérification par relecture du G-code généré, réception des programmes depui
   garde la flèche. L'outil Cote déplace aussi les cotes posées et les édite au double-clic.
 - **Cycle d'outils à la molette** : bande d'icônes (`BulleOutils`) tournée pour garder l'outil actif au centre.
   Si le bouton droit a été enfoncé sur l'étiquette d'une cote, la molette règle la cote (1 par cran, 0,1 avec Maj,
-  rayon sur le « R » d'un diamètre), et le glisser vertical aussi (un pas par `PIXELS_PAR_PAS`, vers le haut =
-  plus) ; une seule étape d'annulation au relâchement, qui n'ouvre pas le menu.
+  rayon sur le « R » d'un diamètre), et le glisser aussi, **projeté sur la direction de la ligne de cote**
+  (`_direction_cotes`, relevée au dessin de chaque cote ; `_vecteur_glisser` : droite ou haut = plus, rayon :
+  vers l'extérieur de l'arc ; un pas par `PIXELS_PAR_PAS`) ; une seule étape d'annulation au relâchement, qui
+  n'ouvre pas le menu.
 - **Arrondi et chanfrein** (`ctgraph/esquisse/coins.py`) : outils sur un sommet entre deux lignes. Le sommet devient
   un **point de construction** (`Point.construction`, coin théorique, croix diagonale) tenu par « point sur ligne »
   sur les deux lignes ; il échappe au balayage des orphelins. Les cotes de longueur portées par les lignes passent

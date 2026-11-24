@@ -50,9 +50,11 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   le rayon ou le chanfrein ne déplace rien d'autre. L'arrondi est tangent aux deux lignes et porte sa cote de rayon ;
   le chanfrein porte sa longueur depuis le coin théorique et son angle, à lire « 1 × 45° ».
 * **Régler une cote à la molette ou en glissant** : clic droit maintenu sur la valeur d'une cote, puis molette, ou
-  glisser verticalement (vers le haut pour augmenter) : un millimètre ou un degré par cran ou par tranche de
-  quelques pixels, un dixième avec `Maj`. Sur le « R » d'un diamètre, c'est le rayon qui change. Le relâchement
-  du bouton n'ouvre pas le menu et ne fait qu'une étape d'annulation.
+  glisser **le long de sa ligne de cote** : horizontalement pour une longueur Z, verticalement pour un diamètre,
+  en diagonale pour un écart ou une distance inclinée, vers l'extérieur de l'arc pour un rayon. Vers la droite
+  ou vers le haut, la cote augmente. Un millimètre ou un degré par cran ou par tranche de quelques pixels, un
+  dixième avec `Maj`. Sur le « R » d'un diamètre, c'est le rayon qui change. Le relâchement du bouton n'ouvre
+  pas le menu et ne fait qu'une étape d'annulation.
 * **Élaguer** (`E`) : tirez un trait au travers des lignes ou des arcs à couper. La portion retirée va jusqu'aux
   croisements voisins avec les autres objets, ou jusqu'au bout s'il n'y en a pas ; un objet sans croisement
   disparaît entier. Les nouveaux points de coupe reçoivent « point sur ligne » ou « point sur arc » avec l'objet

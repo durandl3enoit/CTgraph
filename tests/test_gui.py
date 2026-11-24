@@ -5,6 +5,7 @@ Une variable CTGRAPH_SHOTS=<dossier> enregistre des captures PNG pour contrôle 
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 import tempfile
@@ -463,6 +464,54 @@ def test_molette_sur_une_etiquette_regle_la_cote(fenetre):
     assert len(win._annuler) == n_annulations + 1
     win.annuler()
     assert win.esquisse.cotes[diam.id].valeur == pytest.approx(40.0)
+
+
+def test_glisser_droit_suit_la_ligne_de_cote(fenetre):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+    from ctgraph.ui.vue_esquisse import PIXELS_PAR_PAS, ROLE_ID, ROLE_VARIANTE, Etiquette
+    win, vue = fenetre, fenetre.vue
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (40.0, True)
+    rectangle(win)
+    e = win.esquisse
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    win.poser_cote(TypeCote.LONGUEUR_Z, (haut.id,), (0.0, 6.0))
+    longueur = list(e.cotes.values())[-1]
+    assert vue._vecteur_glisser(longueur.id) == pytest.approx((1.0, 0.0))      # ligne de cote horizontale
+    etiquette = next(it for it in vue._items if isinstance(it, Etiquette) and it.data(ROLE_ID) == longueur.id
+                     and not it.data(ROLE_VARIANTE))
+    p = vue.mapFromScene(etiquette.pos())
+    QTest.mousePress(vue.viewport(), Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, p)
+
+    def glisser_droit(dx, dy):
+        q = p + QPoint(dx, dy)
+        ev = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(q), QPointF(vue.viewport().mapToGlobal(q)),
+                         Qt.MouseButton.NoButton, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier)
+        vue.mouseMoveEvent(ev)
+
+    glisser_droit(0, -3 * PIXELS_PAR_PAS)            # vertical : sans effet sur une cote horizontale
+    assert longueur.valeur == pytest.approx(40.0)
+    glisser_droit(2 * PIXELS_PAR_PAS, -3 * PIXELS_PAR_PAS)   # vers la droite : plus
+    assert longueur.valeur == pytest.approx(42.0)
+    glisser_droit(-1 * PIXELS_PAR_PAS, 0)                   # vers la gauche : moins
+    assert longueur.valeur == pytest.approx(39.0)
+    QTest.mouseRelease(vue.viewport(), Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, p)
+    # un rayon se tire vers l'extérieur de l'arc, en diagonale
+    win.choisir_outil("arc")
+    clic(vue, -70, 0)
+    clic(vue, -50, 20)
+    clic(vue, -64, 14)
+    arc = list(e.arcs.values())[-1]
+    win.choisir_outil("selection")
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (20.0, True)
+    win.poser_cote(TypeCote.RAYON, (arc.id,), (3.0, 3.0))
+    rayon = list(e.cotes.values())[-1]
+    sx, sy = vue._vecteur_glisser(rayon.id)
+    centre, milieu = e.points[arc.centre], vue._points_arc(arc.id, 2)[1]
+    attendu = (milieu[0] - centre.z, -(milieu[1] - centre.x))
+    n = math.hypot(*attendu)
+    assert (sx, sy) == pytest.approx((attendu[0] / n, attendu[1] / n))
+    assert abs(sx) > 0.1 and abs(sy) > 0.1                   # bien en diagonale
 
 
 def test_curseur_suit_l_outil(fenetre):

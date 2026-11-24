@@ -301,7 +301,9 @@ class VueEsquisse(QGraphicsView):
         self._droit_molette = False
         self._droit_cote: Optional[Tuple[int, Optional[str]]] = None
         self._droit_dernier: Optional[QPoint] = None
-        self._droit_reste = 0.0                 # pixels de glisser vertical pas encore convertis en pas
+        self._droit_reste = 0.0                 # pixels de glisser pas encore convertis en pas
+        # direction (dz, dx, orientée ?) de la ligne de cote de chaque cote dessinée : le glisser la suit
+        self._direction_cotes: Dict[object, Tuple[float, float, bool]] = {}
         self._bulle: Optional[BulleOutils] = None
         self._bulle_texte: Optional[QLabel] = None
         self._timer_bulle = QTimer(self)
@@ -434,6 +436,7 @@ class VueEsquisse(QGraphicsView):
         self._items_mors = []
         self._survol = None
         self._survol_items = []
+        self._direction_cotes = {}
         e, c = self.esquisse, self._couleurs()
         conflits = set(self.resultat.conflits) if self.resultat is not None else set()
         redondants = set(self.resultat.redondants) if self.resultat is not None else set()
@@ -651,6 +654,7 @@ class VueEsquisse(QGraphicsView):
         et.setData(ROLE_ID, cle)
         self._scene.addItem(et)
         self._items.append(et)
+        self._direction_cotes[cle] = (b[0] - a[0], b[1] - a[1], False)
         return [it, et]
 
     def _dessiner_cotes_mors(self, blocs, c: Dict[str, QColor]) -> None:
@@ -957,6 +961,7 @@ class VueEsquisse(QGraphicsView):
         dz, dx = co.decalage
         texte = e.texte_cote(co)
         ext = self.px_en_mm(4)
+        direction = (1.0, 0.0, False)            # ligne de cote horizontale, sauf indication ci-dessous
         if co.type in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE):
             if len(co.elements) == 1:
                 a, b = (e.points[i] for i in e.extremites(co.elements[0]))
@@ -990,6 +995,7 @@ class VueEsquisse(QGraphicsView):
                 self._fleche(path, (az, ax), (-vz, -vx))
                 self._fleche(path, (bz, bx), (vz, vx))
                 pos = ((az + bz) / 2, (ax + bx) / 2)
+                direction = (vz, vx, False)
         elif co.type == TypeCote.DIAMETRE:
             el = co.elements[0]
             p = e.points[el] if e.genre(el) == "point" else e.points[e.lignes[el].p1]
@@ -1002,6 +1008,7 @@ class VueEsquisse(QGraphicsView):
             path.moveTo(zl - ext, 0.0)
             path.lineTo(zl + ext, 0.0)
             pos = (zl, p.x / 2 + dx)
+            direction = (0.0, 1.0, False)
         elif co.type == TypeCote.RAYON:
             a = e.arcs[co.elements[0]]
             ce = e.points[a.centre]
@@ -1010,6 +1017,7 @@ class VueEsquisse(QGraphicsView):
             path.lineTo(mz, mx)
             self._fleche(path, (mz, mx), (mz - ce.z, mx - ce.x))
             pos = (mz + dz, mx + dx)
+            direction = (mz - ce.z, mx - ce.x, True)     # vers l'extérieur de l'arc = plus grand
         elif co.type == TypeCote.POSITION_Z:
             # de la face d'origine (z = 0) au point visé, sur une horizontale au-dessus du point ou de la face
             el = co.elements[0]
@@ -1047,6 +1055,7 @@ class VueEsquisse(QGraphicsView):
             if math.hypot(bz - az, bx - ax) > 1e-9:
                 self._fleche(path, (az, ax), (az - bz, ax - bx))
                 self._fleche(path, (bz, bx), (bz - az, bx - ax))
+                direction = (bz - az, bx - ax, False)
             pos = ((az + bz) / 2, (ax + bx) / 2)
         else:  # angle
             if len(co.elements) == 1:
@@ -1063,12 +1072,15 @@ class VueEsquisse(QGraphicsView):
             path.moveTo(mz, mx)
             path.lineTo(mz + dz, mx + dx)
             pos = (mz + dz, mx + dx)
+            if math.hypot(dz, dx) > 1e-9:
+                direction = (dz, dx, False)             # le long de la ligne de rappel
         it = QGraphicsPathItem(path)
         pen = QPen(couleur, 1, Qt.PenStyle.DashLine if apercu else Qt.PenStyle.SolidLine)
         pen.setCosmetic(True)
         it.setPen(pen)
         if not apercu:
             self._pos_cotes[co.id] = pos
+            self._direction_cotes[co.id] = direction
         etiquettes = [(Etiquette(texte, couleur, c["fond"], gras=True), pos, None)]
         if co.type == TypeCote.DIAMETRE:
             # le rayon accompagne le diamètre : même grandeur lue depuis l'axe, éditable aussi
@@ -1773,9 +1785,11 @@ class VueEsquisse(QGraphicsView):
             return
         if (event.buttons() & Qt.MouseButton.RightButton) and self._droit_cote is not None \
                 and self._droit_dernier is not None:
-            # clic droit maintenu sur une étiquette + glisser vertical : la cote monte ou descend, un pas par
-            # tranche de PIXELS_PAR_PAS (comme la molette ; un dixième avec Maj)
-            self._droit_reste += self._droit_dernier.y() - pos.y()
+            # clic droit maintenu sur une étiquette + glisser le long de sa ligne de cote : la cote monte ou
+            # descend, un pas par tranche de PIXELS_PAR_PAS (comme la molette ; un dixième avec Maj)
+            sx, sy = self._vecteur_glisser(self._droit_cote[0])
+            delta = pos - self._droit_dernier
+            self._droit_reste += delta.x() * sx + delta.y() * sy
             self._droit_dernier = pos
             pas = int(self._droit_reste / PIXELS_PAR_PAS)
             if pas:
@@ -1935,6 +1949,20 @@ class VueEsquisse(QGraphicsView):
             event.accept()
             return
         self.zoomer(1.15 ** (delta / 120.0), event.position().toPoint())
+
+    def _vecteur_glisser(self, cote_id) -> Tuple[float, float]:
+        """Direction unitaire, en pixels d'écran, du glisser qui augmente la cote : celle de sa ligne de cote,
+        horizontale, verticale ou en diagonale. Vers la droite ou vers le haut = plus, sauf pour un rayon :
+        vers l'extérieur de l'arc."""
+        dz, dx, oriente = self._direction_cotes.get(cote_id, (0.0, 1.0, False))
+        sx, sy = dz, -dx                        # la vue est retournée : x de l'esquisse vers le haut
+        n = math.hypot(sx, sy)
+        if n < 1e-12:
+            return 0.0, -1.0
+        sx, sy = sx / n, sy / n
+        if not oriente and (sx < -1e-9 or (abs(sx) <= 1e-9 and sy > 0)):
+            sx, sy = -sx, -sy
+        return sx, sy
 
     def _regler_cote_droite(self, sens: int, nb_pas: int, fin: bool, pos) -> None:
         """Molette ou glisser vertical, bouton droit enfoncé sur une étiquette : `nb_pas` pas dans le sens donné."""
