@@ -98,6 +98,14 @@ class FenetrePrincipale(QMainWindow):
             except ValueError:
                 self.vue3d.resize(TAILLE_DEFAUT)
             self.vue3d.taille_changee.connect(lambda s: self.reglages.set("vue3d.taille", f"{s.width()},{s.height()}"))
+            biais = str(self.reglages.get("vue3d.biais", "") or "")
+            if biais:
+                try:
+                    lacet, tangage = (float(v) for v in biais.split(","))
+                    self.vue3d.definir_biais(lacet, tangage)
+                except ValueError:
+                    pass
+            self.vue3d.biais_change.connect(lambda l, t: self.reglages.set("vue3d.biais", f"{l:g},{t:g}"))
             self.vue3d.setVisible(self.reglages.get_bool("vue3d.visible", True))
             self.vue.vue3d = self.vue3d
             self.vue.placer_superposition()
@@ -283,8 +291,9 @@ class FenetrePrincipale(QMainWindow):
         menu.addAction(act)
         return act
 
-    def construire_menu_contextuel(self) -> QMenu:
-        """Menu du clic droit : relations et cotes possibles pour la sélection, suppression, outils, vue."""
+    def construire_menu_contextuel(self, montage: Optional[str] = None) -> QMenu:
+        """Menu du clic droit : relations et cotes possibles pour la sélection, suppression, outils, vue.
+        Sur le mors ou une cote du brut (`montage`), d'abord les réglages de la prise de pièce."""
         menu = QMenu(self)
         sel = list(self.vue.selection)
         possibles = False
@@ -292,6 +301,10 @@ class FenetrePrincipale(QMainWindow):
         menu.relations_proposees = []
         menu.coin_propose = None
         menu.cotes_proposees = []
+        menu.actions_montage = {}
+        if montage is not None:
+            self._menu_prise_de_piece(menu)
+            return menu
         if sel:
             types = [t for t in ORDRE_RELATIONS if self.esquisse.relation_possible(t, sel) or (
                 t == TypeRelation.POINT_SUR_LIGNE and self.esquisse.relation_possible(TypeRelation.POINT_SUR_ARC, sel))]
@@ -371,8 +384,37 @@ class FenetrePrincipale(QMainWindow):
             return None
         return pid
 
-    def menu_contextuel(self, pos_globale) -> None:
-        self.construire_menu_contextuel().exec(pos_globale)
+    def _menu_prise_de_piece(self, menu: QMenu) -> None:
+        """Les réglages faits directement sur le mors : retournement, serrage, appui du brut."""
+        m, p = self.montage, self.montage.prise
+        titre = menu.addAction(f"Mors {m.mandrin.mors_modele}")
+        titre.setEnabled(False)
+        act = menu.addAction("Retourner les mors", self.retourner_mors)
+        act.setCheckable(True)
+        act.setChecked(p.mors_retournes)
+        menu.actions_montage["retourner"] = act
+        menu.addSeparator()
+        for serrage, libelle in (("exterieur", "Serrage extérieur"), ("interieur", "Serrage intérieur (tube)")):
+            act = menu.addAction(libelle, lambda s=serrage: self.definir_serrage(s))
+            act.setCheckable(True)
+            act.setChecked(p.serrage == serrage)
+            if serrage == "interieur" and m.brut.forme != "tube":
+                act.setEnabled(False)
+                act.setToolTip("Demande un brut en tube (Machine et montage…)")
+            menu.actions_montage[serrage] = act
+        menu.addSeparator()
+        titre = menu.addAction("Appui du brut")
+        titre.setEnabled(False)
+        for valeur, libelle in m.appuis_possibles():
+            act = menu.addAction(libelle, lambda v=valeur: self.definir_appui(v))
+            act.setCheckable(True)
+            act.setChecked(p.appui == valeur)
+            menu.actions_montage[f"appui{valeur}"] = act
+        menu.addSeparator()
+        menu.addAction("Machine et montage…", self.regler_montage)
+
+    def menu_contextuel(self, pos_globale, montage: Optional[str] = None) -> None:
+        self.construire_menu_contextuel(montage).exec(pos_globale)
 
     def _relation_depuis_menu(self, menu: QMenu, type_: TypeRelation) -> None:
         menu.close()
@@ -501,6 +543,28 @@ class FenetrePrincipale(QMainWindow):
             return None
         self.definir_montage(nouveau)
         return nouveau.texte_brut(cle)
+
+    def _modifier_prise(self, action) -> bool:
+        """Applique `action` à une copie du montage ; refusée avec son message si la prise n'est pas réalisable."""
+        nouveau = copy.deepcopy(self.montage)
+        try:
+            action(nouveau)
+        except ErreurEsquisse as exc:
+            self.statusBar().showMessage(str(exc), 6000)
+            return False
+        self.definir_montage(nouveau)
+        self.statusBar().showMessage(nouveau.description_prise().capitalize() + ".", 6000)
+        return True
+
+    def retourner_mors(self) -> bool:
+        """Double-clic sur le mors : face étagée vers l'axe ou vers l'extérieur."""
+        return self._modifier_prise(lambda mo: mo.retourner_mors())
+
+    def definir_serrage(self, serrage: str) -> bool:
+        return self._modifier_prise(lambda mo: mo.definir_serrage(serrage))
+
+    def definir_appui(self, appui: int) -> bool:
+        return self._modifier_prise(lambda mo: mo.definir_appui(appui))
 
     def regler_montage(self) -> None:
         dlg = DialogueMontage(self.montage, self)

@@ -49,13 +49,17 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   BH-M 210 et mors 474, brut rond ou tube, prise de pièce, contre-pointe ; dialogue *Pièce → Machine et montage*,
   dessin en retrait dans l'esquisse et dans la vue 3D (brut translucide), enregistré avec la pièce (`Piece`).
   Puis : les trois cotes du brut (Ø, longueur, marge en bout) toujours affichées en ambre et éditables par
-  double-clic ou clic droit + molette ; mors étagés (face de serrage devant, étage de butée au fond, le brut en
-  appui dessus) et serrage extérieur ou intérieur (dans l'alésage d'un tube), en 2D comme en 3D. 92 tests.
+  double-clic ou clic droit + molette ; **mors durs étagés et réversibles** (étages saisis dans le dialogue :
+  longueur et épaulement, mors le plus épais au fond), serrage extérieur ou intérieur, appui du brut sur un
+  épaulement ou sur la face du mandrin, réglés directement sur le mors dessiné (double-clic : retourner ; clic
+  droit : serrage et appui), en 2D comme en 3D. Boutons de vues typiques sur la 3D : côté, face, biais réglable.
+  95 tests.
 
 ## En cours
 
 - Les dimensions du mandrin et de la machine sont des ordres de grandeur : à relever et à saisir dans le dialogue
-  (en particulier la hauteur de l'étage des mors 474 et l'épaisseur radiale des mors).
+  (en particulier les étages des mors 474 : longueur et épaulement de chacun, épaisseur radiale au fond, largeur).
+- Non prévu encore : brut en barre passant dans le mandrin (pas d'appui, longueur de brut sans objet).
 
 ## Prochaines étapes
 

@@ -487,15 +487,22 @@ class VueEsquisse(QGraphicsView):
         rect.setPen(stylo)
         rect.setBrush(QBrush(QColor(200, 170, 90, 22)))
         ajouter(rect)
-        # mors étagé : l'étage de butée au fond, la face de serrage devant (hachurés)
+        # mors dur étagé, hachuré : la face plate et l'escalier des étages ; on agit dessus directement
         zf = m.z_fond_mors()
         path = QPainterPath()
-        for (bz1, bz2, br1, br2) in m.blocs_mors():
-            if br2 - br1 > 1e-6 and bz2 - bz1 > 1e-6:
-                path.addRect(QRectF(bz1, br1, bz2 - bz1, br2 - br1))
+        profil = m.profil_mors()
+        if profil:
+            path.moveTo(*profil[0])
+            for (pz, px) in profil[1:]:
+                path.lineTo(pz, px)
+            path.closeSubpath()
         mors = QGraphicsPathItem(path)
         mors.setPen(plein)
         mors.setBrush(QBrush(muet, Qt.BrushStyle.BDiagPattern))
+        mors.setData(ROLE_GENRE, "mors")
+        mors.setData(ROLE_ID, 0)
+        mors.setToolTip(f"Mors {m.mandrin.mors_modele} : {m.description_prise()}.\n"
+                        "Double-clic : retourner les mors. Clic droit : serrage et appui du brut.")
         ajouter(mors)
         # corps du mandrin : de l'alésage au diamètre extérieur, derrière les mors
         za = m.z_arriere_mandrin()
@@ -1119,7 +1126,7 @@ class VueEsquisse(QGraphicsView):
                      and (genres is None or it.data(ROLE_GENRE) in genres)]
         if not candidats:
             return None
-        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4}
+        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "mors": 8}
         candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
         return candidats[0]
 
@@ -1310,8 +1317,8 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
-        if genre == "brut":
-            return                              # les cotes du brut ne se sélectionnent pas : double-clic ou molette
+        if genre in ("brut", "mors"):
+            return                              # cotes du brut et mors : pas de sélection, double-clic ou clic droit
         if genre == "point":
             self._glisse_point = ident          # sélection ou glissement : tranché au relâchement
             self._glisse_actif = False
@@ -1657,6 +1664,10 @@ class VueEsquisse(QGraphicsView):
                 self.annuler_outil()
                 return
             el = self.element_sous(pos)
+            if el is not None and el[0] in ("mors", "brut"):
+                # sur le mors ou une cote du brut : les réglages de la prise de pièce
+                self.controleur.menu_contextuel(event.globalPosition().toPoint(), montage=el[0])
+                return
             if el is not None and el[1] not in self.selection:
                 self.selectionner(el[1], ajouter=True)
             self.controleur.menu_contextuel(event.globalPosition().toPoint())
@@ -1715,6 +1726,9 @@ class VueEsquisse(QGraphicsView):
         el = self.element_sous(pos)
         if el is not None and el[0] == "brut":
             self.controleur.editer_brut(el[1])
+            return
+        if el is not None and el[0] == "mors":
+            self.controleur.retourner_mors()
             return
         if el is not None and el[0] == "cote":
             self._glisse_cote = None

@@ -79,17 +79,25 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   ou « sur-contraint » avec les relations en cause. Un contour fermé se remplit d'une teinte discrète.
 * **Vue 3D** (en haut à droite, touche `3` pour la masquer) : la pièce obtenue par révolution des contours fermés,
   mise à jour en continu. Bouton gauche : orbite. Molette : zoom. Bouton du milieu : déplacement. Double-clic ou
-  `Ctrl+3` : recadrer. Le coin inférieur gauche la redimensionne.
+  `Ctrl+3` : recadrer. Le coin inférieur gauche la redimensionne. Les boutons *Côté*, *Face* et *Biais* donnent
+  les vues typiques ; la flèche de *Biais* mémorise la vue actuelle comme vue de biais ou en règle les angles.
 * **Fichiers** : les esquisses sont enregistrées en `.ctg` (JSON lisible). `Ctrl+Z` / `Ctrl+Y` annulent et rétablissent.
 
 ## Machine et montage
 
 Menu *Pièce → Machine et montage…* (`Ctrl+M`) : la machine (courses, broche, position de changement d'outil,
 à relever sur le CT200), le mandrin SMW-Autoblok BH-M 210 et ses mors 474 (dimensions à vérifier sur le mandrin),
-le brut (rond plein ou tube, diamètre, matière), la prise de pièce (serrage extérieur autour du brut ou
-intérieur dans l'alésage d'un tube, dépassement de la face des mors à la face finie, longueur serrée jusqu'à
-la butée de l'étage des mors, surépaisseur de la face avant) et la contre-pointe. Les mors sont dessinés étagés :
-la face de serrage devant, l'étage de butée au fond, sur lequel le brut vient en appui. Le repère est celui de la pièce :
+le brut (rond plein ou tube, diamètre, matière), la prise de pièce (serrage, mors retournés ou non, appui du
+brut, dépassement de la face des mors à la face finie, surépaisseur de la face avant) et la contre-pointe.
+
+Les **mors** sont des mors durs étagés et réversibles : chaque étage, numéroté depuis le bout, a une longueur et
+un épaulement derrière lui ; le mors est le plus épais au fond. Mors normaux, la face étagée regarde l'axe et
+serre le brut par l'extérieur ; le brut s'appuie sur l'épaulement derrière l'étage qui le serre, ou sur la face
+du mandrin s'il traverse tous les étages. Mors retournés, la face étagée regarde dehors et écarte un tube par
+son alésage, avec les mêmes appuis ; la face plate, vers l'axe, serre un gros brut par l'extérieur avec appui
+sur le mandrin. Ces réglages se font **directement sur le mors dessiné** : double-clic pour retourner les mors,
+clic droit pour choisir le serrage et l'appui (la face du mandrin ou un épaulement). Quand un appui devient
+impossible, le premier réalisable est pris. Le repère est celui de la pièce :
 Z = 0 sur la face avant finie, Z négatif vers le mandrin. Le montage est enregistré avec la pièce et le dernier
 réglé sert de défaut aux nouvelles pièces. Il se dessine en retrait dans l'esquisse, brut en pointillés et mors
 hachurés, et dans la vue 3D, brut translucide ; la touche `M` le masque. Trois cotes du brut restent toujours

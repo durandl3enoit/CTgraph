@@ -2,6 +2,7 @@
 
 Incrustée en haut à droite de l'esquisse. Bouton gauche : orbite. Molette : zoom. Bouton du milieu
 ou droit : déplacement. Double-clic : recadrer. Poignée en bas à gauche : redimensionner.
+Boutons de vues typiques : de côté, de face, de biais (angles réglables, mémorisés dans les préférences).
 
 Repère 3D : l'axe Z de la pièce est porté par l'axe X du monde (horizontal à l'écran), le rayon
 tourne dans le plan (Y, Z). Rendu par QOpenGLWidget avec un petit programme de nuanceurs, sans
@@ -17,7 +18,8 @@ from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QMatrix4x4, QPainter, QPen, QSurfaceFormat, QVector3D
 from PySide6.QtOpenGL import QOpenGLBuffer, QOpenGLShader, QOpenGLShaderProgram, QOpenGLVertexArrayObject
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtWidgets import QFrame, QLabel, QWidget
+from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
+                               QMenu, QToolButton, QWidget)
 
 GL_LINES = 0x0001
 GL_TRIANGLES = 0x0004
@@ -36,6 +38,20 @@ SEGMENTS = 96             # facettes sur un tour
 ANGLE_PLI_DEG = 30.0      # en deçà, deux segments voisins du profil partagent une normale lissée (arcs, congés)
 TAILLE_DEFAUT = QSize(380, 270)
 TAILLE_MINI = QSize(180, 130)
+
+# vues typiques : (lacet, tangage) en degrés. Lacet autour de la verticale, tangage autour de l'horizontale.
+# De côté : l'axe de la pièce à l'horizontale, comme l'esquisse. De face : on regarde la face avant, Z vers soi.
+VUES = {"cote": (0.0, 0.0), "face": (-90.0, 0.0)}
+BIAIS_DEFAUT = (-35.0, 22.0)
+
+
+def angles_de_vue(nom: str, biais: Tuple[float, float] = BIAIS_DEFAUT) -> Tuple[float, float]:
+    """Les angles (lacet, tangage) d'une vue typique ; « biais » est la vue oblique réglable."""
+    if nom == "biais":
+        return (float(biais[0]), float(biais[1]))
+    if nom not in VUES:
+        raise ValueError(f"vue inconnue : {nom}")
+    return VUES[nom]
 
 SOMMETS = """
 #version 120
@@ -267,8 +283,8 @@ class Vue3D(QOpenGLWidget):
         self._centre = QVector3D(0.0, 0.0, 0.0)
         self._rayon = 50.0
         self._jamais_cadre = True
-        self._lacet = -35.0
-        self._tangage = 22.0
+        self._lacet, self._tangage = BIAIS_DEFAUT
+        self._biais: Tuple[float, float] = BIAIS_DEFAUT
         self._distance = 220.0
         self._pan = QVector3D(0.0, 0.0, 0.0)
         self._dernier: Optional[QPoint] = None
@@ -323,6 +339,27 @@ class Vue3D(QOpenGLWidget):
         self._distance = self._rayon * 3.2
         self._pan = QVector3D(0.0, 0.0, 0.0)
         self.update()
+
+    # -- vues typiques -------------------------------------------------------------------
+
+    def angles(self) -> Tuple[float, float]:
+        return (self._lacet, self._tangage)
+
+    def definir_angles(self, lacet: float, tangage: float) -> None:
+        self._lacet = float(lacet) % 360.0
+        self._tangage = max(-89.0, min(89.0, float(tangage)))
+        self.update()
+
+    def montrer_vue(self, nom: str) -> None:
+        """Vue de côté, de face, ou de biais (la vue oblique réglable) ; recadre au passage."""
+        self.definir_angles(*angles_de_vue(nom, self._biais))
+        self.recadrer()
+
+    def biais(self) -> Tuple[float, float]:
+        return self._biais
+
+    def definir_biais(self, lacet: float, tangage: float) -> None:
+        self._biais = (float(lacet), max(-89.0, min(89.0, float(tangage))))
 
     # -- OpenGL ---------------------------------------------------------------------
 
@@ -548,10 +585,46 @@ class Poignee(QWidget):
         event.accept()
 
 
+class DialogueBiais(QDialog):
+    """Les deux angles de la vue de biais."""
+
+    def __init__(self, lacet: float, tangage: float, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Vue de biais")
+        f = QFormLayout(self)
+        self.lacet = QDoubleSpinBox()
+        self.lacet.setRange(-180.0, 360.0)
+        self.lacet.setDecimals(0)
+        self.lacet.setSuffix("°")
+        self.lacet.setValue(lacet)
+        self.tangage = QDoubleSpinBox()
+        self.tangage.setRange(-89.0, 89.0)
+        self.tangage.setDecimals(0)
+        self.tangage.setSuffix("°")
+        self.tangage.setValue(tangage)
+        f.addRow("Lacet (autour de la verticale ; 0 = de côté, -90 = de face)", self.lacet)
+        f.addRow("Tangage (vu d'au-dessus si positif)", self.tangage)
+        boutons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        boutons.accepted.connect(self.accept)
+        boutons.rejected.connect(self.reject)
+        f.addRow(boutons)
+
+    def angles(self) -> Tuple[float, float]:
+        return (self.lacet.value(), self.tangage.value())
+
+
+STYLE_BOUTON_3D = ("QToolButton { background: rgba(0, 0, 0, 110); color: white; padding: 1px 6px; border: none; "
+                   "border-radius: 3px; } QToolButton:hover { background: rgba(0, 0, 0, 170); } "
+                   "QToolButton::menu-button { border: none; width: 12px; } "
+                   "QToolButton::menu-arrow { image: none; width: 0; }")
+
+
 class Incrustation3D(QFrame):
-    """Cadre de la vue 3D : bordure, titre, poignée de redimensionnement. C'est lui que l'esquisse ancre."""
+    """Cadre de la vue 3D : bordure, titre, boutons de vues typiques, poignée de redimensionnement.
+    C'est lui que l'esquisse ancre."""
 
     taille_changee = Signal(QSize)
+    biais_change = Signal(float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -563,6 +636,30 @@ class Incrustation3D(QFrame):
         self.titre.setStyleSheet("background: rgba(0, 0, 0, 110); color: white; padding: 1px 6px; border-radius: 3px;")
         self.titre.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.titre.adjustSize()
+        # vues typiques : de côté, de face, de biais (réglable par le petit menu du bouton)
+        self.barre = QWidget(self)
+        h = QHBoxLayout(self.barre)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(3)
+        self.boutons_vues = {}
+        for nom, texte, aide in (("cote", "Côté", "Vue de côté : l'axe à l'horizontale, comme l'esquisse"),
+                                 ("face", "Face", "Vue de face : la face avant de la pièce vers soi"),
+                                 ("biais", "Biais", "Vue de biais ; la flèche règle ses angles")):
+            b = QToolButton(self.barre)
+            b.setText(texte)
+            b.setToolTip(aide)
+            b.setStyleSheet(STYLE_BOUTON_3D)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            b.clicked.connect(lambda _=False, n=nom: self.vue.montrer_vue(n))
+            h.addWidget(b)
+            self.boutons_vues[nom] = b
+        menu = QMenu(self.boutons_vues["biais"])
+        menu.addAction("Mémoriser la vue actuelle comme vue de biais", self.memoriser_biais)
+        menu.addAction("Angles de la vue de biais…", self.regler_biais)
+        self.boutons_vues["biais"].setMenu(menu)
+        self.boutons_vues["biais"].setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.boutons_vues["biais"].setText("Biais ▾")
+        self.barre.adjustSize()
         self.poignee = Poignee(self)
         self.setMinimumSize(TAILLE_MINI)
         self.resize(TAILLE_DEFAUT)
@@ -575,6 +672,24 @@ class Incrustation3D(QFrame):
 
     def recadrer(self) -> None:
         self.vue.recadrer()
+
+    def montrer_vue(self, nom: str) -> None:
+        self.vue.montrer_vue(nom)
+
+    def definir_biais(self, lacet: float, tangage: float) -> None:
+        self.vue.definir_biais(lacet, tangage)
+
+    def memoriser_biais(self) -> None:
+        lacet, tangage = self.vue.angles()
+        self.vue.definir_biais(lacet, tangage)
+        self.biais_change.emit(*self.vue.biais())
+
+    def regler_biais(self) -> None:
+        dlg = DialogueBiais(*self.vue.biais(), parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.vue.definir_biais(*dlg.angles())
+            self.biais_change.emit(*self.vue.biais())
+            self.vue.montrer_vue("biais")
 
     def redimensionner(self, w: int, h: int) -> None:
         parent = self.parentWidget()
@@ -595,5 +710,7 @@ class Incrustation3D(QFrame):
         self.vue.setGeometry(m, m, self.width() - 2 * m, self.height() - 2 * m)
         self.titre.move(m + 6, m + 6)
         self.titre.raise_()
+        self.barre.move(self.titre.x() + self.titre.width() + 8, m + 6)
+        self.barre.raise_()
         self.poignee.move(m + 1, self.height() - m - 1 - self.poignee.height())
         self.poignee.raise_()

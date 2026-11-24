@@ -831,11 +831,11 @@ def test_cotes_du_brut_affichees_et_editables(fenetre):
     win.editer_brut("diametre")
     assert win.montage.brut.diametre == 70.0
     # la longueur du brut se répartit sur le dépassement, marge et prise inchangées
-    avant = (win.montage.prise.prise_mors, win.montage.prise.surepaisseur_face)
+    avant = (win.montage.profondeur_prise(), win.montage.prise.surepaisseur_face)
     win._demander_valeur = lambda libelle, unite, defaut, mini: (150.0, True)
     win.editer_brut("longueur")
     assert win.montage.longueur_brut() == pytest.approx(150.0)
-    assert (win.montage.prise.prise_mors, win.montage.prise.surepaisseur_face) == avant
+    assert (win.montage.profondeur_prise(), win.montage.prise.surepaisseur_face) == avant
     # molette : un pas, un dixième avec Maj ; une valeur impossible est refusée sans rien changer
     assert win.ajuster_brut("marge", 1, False) == "marge 3"
     assert win.ajuster_brut("marge", -1, True) == "marge 2.9"
@@ -872,11 +872,52 @@ def test_dialogue_montage_et_dessin(fenetre):
     assert len(vue._items) == 4 + 6
     win.act_voir_montage.setChecked(False)
     assert not vue.montage_visible and len(vue._items) == 0
-    # une prise de pièce impossible est refusée
-    dlg.prise_mors.setValue(500.0)
+    # les étages se saisissent dans le dialogue : deux étages de 25 et 45, un seul épaulement
+    assert dlg.nb_etages.value() == 3 and not dlg.lignes_etages[2][1].isEnabled()
+    dlg.nb_etages.setValue(2)
+    assert dlg.lignes_etages[1][0].isEnabled() and not dlg.lignes_etages[2][0].isEnabled()
+    dlg.lignes_etages[0][0].setValue(25.0)
+    dlg.lignes_etages[1][0].setValue(45.0)
+    m = dlg.montage_resultat()
+    assert [(e.longueur, e.epaulement) for e in m.mandrin.etages] == [(25.0, 8.0), (45.0, 0.0)]
+    assert m.mandrin.hauteur_mors() == 70.0
+    # une prise de pièce impossible est refusée : serrage intérieur d'un rond plein
+    dlg.serrage.setCurrentIndex(1)
     from ctgraph.esquisse.modele import ErreurEsquisse
     with pytest.raises(ErreurEsquisse):
         dlg.montage_resultat()
+
+
+def test_reglages_directement_sur_le_mors(fenetre):
+    from ctgraph.montage import Montage
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())
+    win.act_voir_montage.setChecked(True)
+    mors = next(it for it in vue._items if it.data(ROLE_GENRE) == "mors")
+    # le mors se voit sous le curseur, mais ne se sélectionne pas
+    centre = mors.boundingRect().center()
+    assert vue.element_sous(vue.mapFromScene(centre)) == ("mors", 0)
+    clic(vue, centre.x(), centre.y())
+    assert vue.selection == []
+    # double-clic : les mors se retournent, l'appui passe sur la face du mandrin
+    assert win.retourner_mors()
+    assert win.montage.prise.mors_retournes and win.montage.prise.appui == 0
+    assert win.montage.z_brut_arriere() == win.montage.z_face_mandrin()
+    # le menu du clic droit sur le mors : retournement, serrage, appuis possibles
+    menu = win.construire_menu_contextuel(montage="mors")
+    assert menu.actions_montage["retourner"].isChecked()
+    assert not menu.actions_montage["interieur"].isEnabled()         # pas de tube
+    assert set(menu.actions_montage) == {"retourner", "exterieur", "interieur", "appui0"}
+    assert win.retourner_mors()
+    menu = win.construire_menu_contextuel(montage="mors")
+    assert {"appui0", "appui1", "appui2"} <= set(menu.actions_montage)
+    assert win.definir_appui(2) and win.montage.profondeur_prise() == 40.0
+    assert not win.definir_appui(3)                                  # pas d'épaulement derrière le fond
+    assert win.montage.prise.appui == 2
+    # le serrage intérieur demande un tube
+    assert not win.definir_serrage("interieur")
+    win.act_voir_montage.setChecked(False)
 
 
 def test_suppression(fenetre):

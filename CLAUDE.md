@@ -94,8 +94,9 @@ vérification par relecture du G-code généré, réception des programmes depui
   Le sens de parcours des triangles est accordé à la normale ; les maillages du montage, construits avec des
   profils parcourus dans le sens horaire (normales sortantes), sont rendus avec élimination des faces arrière,
   si bien que l'on voit au travers du mandrin quand la caméra y entre. Le brut est translucide.
-  Repère : Z pièce = X monde. `CTGRAPH_SANS_3D=1` la désactive (tests hors écran). Le mandrin, le brut et
-  l'outil viendront s'y ajouter.
+  Repère : Z pièce = X monde. `CTGRAPH_SANS_3D=1` la désactive (tests hors écran). Boutons de vues typiques
+  dans le cadre (`angles_de_vue`) : de côté (lacet 0, tangage 0), de face (lacet −90), de biais réglable
+  (mémorisé dans les préférences `vue3d.biais`). L'outil sur la tourelle viendra s'y ajouter.
 - **Contours fermés remplis** d'une teinte discrète (`VueEsquisse.contours_fermes`) : chaînes dont chaque sommet
   relie exactement deux éléments, refermées sur elles-mêmes ou dont les deux bouts touchent l'axe (fermeture par
   l'axe de révolution). Deux points liés par « coïncident » comptent pour un seul sommet (union-find).
@@ -114,9 +115,14 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Machine et montage** (`ctgraph/montage.py`, validé par l'utilisateur le 24 novembre 2026) : CT200 avec mandrin à mors
   **SMW-Autoblok BH-M 210**, mors **SMW-Autoblok 474**, contre-pointe possible, brut rond plein par défaut, tube possible.
   Repère pièce : Z = 0 face avant finie, Z négatif vers le mandrin ; prise décrite par dépassement (face des mors →
-  face finie), longueur serrée jusqu'à la butée, surépaisseur de face, serrage extérieur ou intérieur (tube).
-  Mors étagés (`Montage.blocs_mors`) : face de serrage devant, étage de butée au fond (`etage_mors`), deux blocs
-  par mors en 2D comme en 3D. Les dimensions du mandrin sont des ordres de grandeur à vérifier.
+  face finie), surépaisseur de face, serrage extérieur ou intérieur (tube), mors retournés ou non, et **appui**
+  de l'arrière du brut : face du mandrin (0) ou épaulement derrière l'étage k ; la longueur engagée en découle.
+  **Mors durs étagés réversibles** (`Mandrin.etages`, depuis le bout : longueur + épaulement derrière ; le mors est le
+  plus épais au fond, `epaisseur_mors`). La face étagée serre quand (mors normaux ∧ extérieur) ou (retournés ∧
+  intérieur) ; sinon c'est la face plate, et l'appui ne peut être que le mandrin. `Montage.blocs_mors` (un bloc par
+  étage, placé pour que la face qui serre touche le brut) sert à la 3D, `profil_mors` au dessin 2D. Les réglages
+  se font sur le mors dessiné (genre « mors ») : double-clic = retourner, clic droit = serrage et appui ; quand
+  un appui devient impossible, `_ajuster_appui` prend le premier réalisable. Les dimensions sont à vérifier.
   Le fichier `.ctg` est désormais une **pièce** (`Piece` : esquisse + montage, format `ctgraph-piece`) ; l'ancien
   format esquisse seule se lit encore. Le dernier montage réglé est le défaut des nouvelles pièces (préférences).
   Courses et broche de la machine : valeurs provisoires, à relever. Trois **cotes du brut** sont toujours affichées
