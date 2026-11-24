@@ -69,9 +69,11 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   et ISO 6261. Zone ancrée à droite (touche `O`) : filtre, colonnes désignation / plaquette / attaque / queue /
   fixation, icône de la forme de la plaquette, infobulle d'usage, case « en stock » mémorisée.
 - **Atelier : trois volets repliables latéralement** (`ui/zone_atelier.py`, `ui/volet_lateral.py`), ancrés à
-  droite, touche `O` : **Tourelle**, **Stock d'outils**, **Plaquettes** (catalogue ISO 1832 de 50 tailles,
-  avec le dessin coté de la plaquette choisie : contour, becs arrondis, cercle inscrit, épaisseur et
-  dépouille). Seul le stock d'outils est déplié au premier lancement.
+  droite, touche `O` : **Tourelle**, **Stock d'outils**, **Plaquettes** (catalogue ISO 1832 de 50 tailles).
+  Dans les deux catalogues, l'élément choisi est dessiné coté en dessous, chaque élément géométrique portant
+  sa valeur : pour une plaquette l'arête, le cercle inscrit, le rayon de bec, l'épaisseur et la dépouille ;
+  pour un porte-plaquette la longueur, la queue, l'angle d'attaque et l'alésage minimal d'une barre.
+  Seul le stock d'outils est déplié au premier lancement.
 - **Tourelle garnie** : douze postes VDI 30 vus de face, implantation transversale en périphérie ou axiale
   (alternées, réglables poste par poste), liste des postes avec le porte-plaquette et la plaquette montés,
   et le correcteur à appliquer (numéro, X, Z, rayon de bec, orientation). Garniture mémorisée avec les
