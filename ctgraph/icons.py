@@ -315,34 +315,47 @@ def app_pixmap(size: int = 256) -> QPixmap:
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     s = size / 256.0
 
-    # fond : carré arrondi bleu acier
+    # fond : la zone de dessin, sombre, avec sa grille
+    coin = QPainterPath()
+    coin.addRoundedRect(QRectF(0, 0, size, size), 44 * s, 44 * s)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QBrush(QColor(38, 70, 110)))
-    p.drawRoundedRect(QRectF(0, 0, size, size), 48 * s, 48 * s)
+    p.setBrush(QBrush(QColor(34, 36, 40)))
+    p.drawPath(coin)
+    p.setClipPath(coin)
+    grille = QPen(QColor(255, 255, 255, 38), max(1.0, 2 * s))
+    p.setPen(grille)
+    pas = 32 * s
+    for i in range(1, 8):
+        p.drawLine(QPointF(i * pas, 0), QPointF(i * pas, size))
+        p.drawLine(QPointF(0, i * pas), QPointF(size, i * pas))
 
-    # axe de la pièce (tiret-point)
-    axe = QPen(QColor(255, 255, 255, 140), 5 * s)
+    # axe de la pièce (tiret-point) et face d'origine (pointillés)
+    axe = QPen(QColor(255, 255, 255, 150), 5 * s)
     axe.setStyle(Qt.PenStyle.DashDotLine)
     axe.setCapStyle(Qt.PenCapStyle.FlatCap)
     p.setPen(axe)
-    p.drawLine(QPointF(20 * s, 196 * s), QPointF(236 * s, 196 * s))
+    p.drawLine(QPointF(0, 192 * s), QPointF(size, 192 * s))
+    origine = QPen(QColor(255, 255, 255, 90), 3 * s, Qt.PenStyle.DotLine)
+    p.setPen(origine)
+    p.drawLine(QPointF(208 * s, 0), QPointF(208 * s, size))
 
-    # demi-profil : face avant, petit diamètre, épaulement, grand diamètre
+    # demi-profil entièrement contraint, en vert, avec son remplissage discret
     path = QPainterPath()
-    path.moveTo(200 * s, 196 * s)
-    path.lineTo(200 * s, 130 * s)
-    path.lineTo(130 * s, 130 * s)
-    path.lineTo(130 * s, 70 * s)
-    path.lineTo(48 * s, 70 * s)
-    path.lineTo(48 * s, 196 * s)
-    p.setBrush(QBrush(QColor(255, 196, 64, 200)))
-    p.setPen(QPen(QColor(255, 236, 190), 8 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    path.moveTo(208 * s, 192 * s)
+    path.lineTo(208 * s, 128 * s)
+    path.lineTo(128 * s, 128 * s)
+    path.lineTo(128 * s, 64 * s)
+    path.lineTo(44 * s, 64 * s)
+    path.lineTo(44 * s, 192 * s)
+    path.closeSubpath()
+    p.setBrush(QBrush(QColor(46, 160, 67, 60)))
+    p.setPen(QPen(QColor(70, 200, 95), 9 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     p.drawPath(path)
 
     # sommets : points d'esquisse
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QBrush(QColor(255, 255, 255)))
-    for z, x in ((200, 130), (130, 130), (130, 70), (48, 70)):
+    for z, x in ((208, 128), (128, 128), (128, 64), (44, 64)):
         p.drawEllipse(QPointF(z * s, x * s), 10 * s, 10 * s)
     p.end()
     return pm
