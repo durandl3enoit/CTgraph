@@ -180,10 +180,28 @@ vérification par relecture du G-code généré, réception des programmes depui
   lettre ISO C/D/V/W/T/S/R, ou filetage / gorge / lame) et dessinée par `icons.icone_plaquette`, devant la
   désignation de la plaquette. Les icônes sont construites une fois par zone, pas par ligne : le filtre
   reconstruit la liste à chaque frappe.
-  La zone est un `QDockWidget` ancré à droite, avec filtre et case « en stock » par référence (préférence
-  `outils.stock`, visibilité `outils.visible`, touche `O`). Le catalogue dit ce qui est montable, les coches
-  disent ce que l'atelier possède. Les tests d'interface masquent la zone : elle rétrécit la vue d'esquisse et
-  fausserait les clics simulés.
+  Le catalogue dit ce qui est montable, les coches « en stock » disent ce que l'atelier possède
+  (préférence `outils.stock`).
+- **Atelier : trois volets repliables latéralement** (`ui/zone_atelier.py`, demandé le 24 novembre 2026), un
+  seul `QDockWidget` sans barre de titre ancré à droite (visibilité `atelier.visible`, touche `O`), contenant
+  de gauche à droite **Tourelle**, **Stock d'outils**, **Plaquettes**. Chacun est un `VoletLateral`
+  (`ui/volet_lateral.py`) : bandeau vertical cliquable, titre tourné, chevron ; replié, le volet est borné à
+  `LARGEUR_BANDEAU`. Bandeau du côté extérieur (à gauche pour les deux premiers, à droite pour le dernier).
+  État mémorisé dans `volet.<clé>`, déplié par défaut pour le seul stock d'outils ; le menu Affichage a une
+  entrée par volet. Les tests d'interface masquent l'atelier : il rétrécit la vue d'esquisse et fausserait
+  les clics simulés.
+- **Tourelle** (`ctgraph/tourelle.py`, `ui/zone_tourelle.py`) : douze postes **VDI 30** (DIN 69880), queue
+  Ø 30 mm fixée par la norme (c'est elle qui borne `outils.QUEUE_MAXI` à 20 mm). Poste 1 en haut,
+  numérotation horaire vue de face ; clic sur un logement pour le mettre en travail. Diamètre du disque et
+  rayon d'implantation à relever sur le CT200.
+- **Plaquettes** (`ctgraph/plaquettes.py`, `ui/zone_plaquettes.py`) : catalogue **ISO 1832** des tailles qui
+  garnissent les porte-plaquettes, quatre familles (négatives, positives, filetage, gorge). `Plaquette.base`
+  (« CNMG 1204 ») relie la plaquette au champ `plaquette` du catalogue des outils ; `pour_base` accepte la
+  notation « CNMG 1204.. » et « 16ER / 16EL ». `FORMES_PLAQUETTE`, `forme_plaquette` et `sommets_forme` vivent
+  ici : `outils.py` les réexporte et `icons.icone_plaquette` dessine les contours à partir de `sommets_forme`
+  (losanges à grande diagonale au diamètre, pour qu'ils se comparent). Le volet dessine la plaquette choisie
+  cotée, de face et de profil ; les valeurs sont en légende sous le dessin, le dessin ne porte que les
+  lettres r, s et α. Nombres à la française (`Plaquette.nombre`, virgule décimale).
 
 ## Points ouverts
 

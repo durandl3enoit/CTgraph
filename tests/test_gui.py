@@ -42,7 +42,7 @@ def fenetre(app):
     for cle in win.vue.aimants:
         win.cases_aimants[cle].setChecked(True)
     win.act_voir_montage.setChecked(False)     # le montage élargit la vue : les clics simulés perdraient en précision
-    win.act_zone_outils.setChecked(False)      # la zone des outils rétrécit la vue : même raison
+    win.act_zone_atelier.setChecked(False)     # les volets de l'atelier rétrécissent la vue : même raison
     win.vue.tout_voir()
     QTest.qWait(30)
     yield win
@@ -1196,7 +1196,8 @@ def test_zone_stock_d_outils(fenetre):
     from ctgraph.outils import CATALOGUE, FAMILLES, FORMES_PLAQUETTE
     win = fenetre
     zone = win.zone_outils
-    win.act_zone_outils.setChecked(True)        # la fixture la masque pour laisser la vue au large
+    win.act_zone_atelier.setChecked(True)       # la fixture la masque pour laisser la vue au large
+    win.zone_atelier.volets["outils"].definir_deploye(True)
     zone.definir_stock([])                      # pas le stock laissé par une autre séance
 
     def lignes():
@@ -1242,17 +1243,108 @@ def test_zone_stock_d_outils(fenetre):
     # une désignation disparue du catalogue est ignorée au rechargement
     zone.definir_stock(["MGEHR 2020-3", "OUTIL-FANTOME 9999"])
     assert zone.stock() == {"MGEHR 2020-3"}
-    # le menu Affichage masque et rouvre la zone, et le réglage suit
-    assert win.act_zone_outils.isChecked() and zone.isVisible()
-    win.act_zone_outils.setChecked(False)
-    assert not zone.isVisible() and win.reglages.get_bool("outils.visible", True) is False
-    win.act_zone_outils.setChecked(True)
-    assert zone.isVisible() and win.reglages.get_bool("outils.visible", False) is True
-    # fermer la zone par sa croix décoche le menu
-    zone.close()
-    QTest.qWait(20)
-    assert not win.act_zone_outils.isChecked()
+    # le menu Affichage masque et rouvre l'atelier, et le réglage suit
+    assert win.act_zone_atelier.isChecked() and win.zone_atelier.isVisible()
+    win.act_zone_atelier.setChecked(False)
+    assert not win.zone_atelier.isVisible() and win.reglages.get_bool("atelier.visible", True) is False
+    win.act_zone_atelier.setChecked(True)
+    assert win.zone_atelier.isVisible() and win.reglages.get_bool("atelier.visible", False) is True
     zone.definir_stock([])
+
+
+def test_volets_de_l_atelier(fenetre):
+    win = fenetre
+    win.act_zone_atelier.setChecked(True)
+    volets = win.zone_atelier.volets
+    assert list(volets) == ["tourelle", "outils", "plaquettes"]       # tourelle à gauche, plaquettes à droite
+    assert volets["tourelle"].bandeau_a_gauche and not volets["plaquettes"].bandeau_a_gauche
+    # replier un volet le réduit à son bandeau et cache son contenu ; déplier le rend
+    outils = volets["outils"]
+    outils.definir_deploye(True)
+    QTest.qWait(10)
+    assert outils.contenu.isVisible() and outils.maximumWidth() > 200
+    outils.basculer()
+    QTest.qWait(10)
+    from ctgraph.ui.volet_lateral import LARGEUR_BANDEAU
+    assert not outils.contenu.isVisible() and outils.maximumWidth() == LARGEUR_BANDEAU
+    assert win.reglages.get_bool("volet.outils", True) is False      # l'état est mémorisé
+    assert not win.actions_volets["outils"].isChecked()              # et le menu suit
+    # le menu commande aussi le volet
+    win.actions_volets["tourelle"].setChecked(True)
+    QTest.qWait(10)
+    assert volets["tourelle"].est_deploye() and win.zone_tourelle.isVisible()
+    assert win.reglages.get_bool("volet.tourelle", False) is True
+    # un clic sur le bandeau bascule
+    QTest.mouseClick(volets["tourelle"].bandeau, Qt.MouseButton.LeftButton)
+    QTest.qWait(10)
+    assert not volets["tourelle"].est_deploye()
+    for cle in volets:
+        win.actions_volets[cle].setChecked(cle == "outils")
+
+
+def test_zone_tourelle(fenetre):
+    from PySide6.QtCore import QPoint
+    win = fenetre
+    win.act_zone_atelier.setChecked(True)
+    win.actions_volets["tourelle"].setChecked(True)
+    QTest.qWait(20)
+    zone = win.zone_tourelle
+    t = zone.tourelle
+    assert t.nb_postes == 12 and t.diametre_queue == 30.0
+    zone.definir_poste(1)
+    assert "Poste en travail : 1" in zone.lbl_poste.text()
+    # cliquer sur le logement du poste 4 (à 90°, donc à droite) le met en travail
+    x, y = t.position_poste(4)
+    cible = zone.vue._en_pixels(x, y)
+    QTest.mouseClick(zone.vue, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                     QPoint(int(cible.x()), int(cible.y())))
+    QTest.qWait(10)
+    assert t.poste_en_travail == 4 and "Poste en travail : 4" in zone.lbl_poste.text()
+    win.actions_volets["tourelle"].setChecked(False)
+
+
+def test_zone_plaquettes(fenetre):
+    from ctgraph.plaquettes import CATALOGUE, FAMILLES
+    win = fenetre
+    win.act_zone_atelier.setChecked(True)
+    win.actions_volets["plaquettes"].setChecked(True)
+    QTest.qWait(20)
+    zone = win.zone_plaquettes
+    zone.definir_stock([])
+
+    def lignes():
+        out = []
+        for i in range(zone.arbre.topLevelItemCount()):
+            parent = zone.arbre.topLevelItem(i)
+            out += [parent.child(j) for j in range(parent.childCount())]
+        return out
+
+    assert zone.arbre.topLevelItemCount() == len(FAMILLES) and len(lignes()) == len(CATALOGUE)
+    it = next(x for x in lignes() if x.text(0) == "CNMG 120408")
+    assert [it.text(c) for c in range(5)] == ["CNMG 120408", "0°", "12,9", "4,76", "0,8"]
+    assert not it.icon(0).isNull() and "ISO 1832" in it.toolTip(0)
+    # choisir une ligne dessine la plaquette cotée
+    assert zone.dessin.plaquette is None
+    zone.arbre.setCurrentItem(it)
+    QTest.qWait(10)
+    assert zone.dessin.plaquette is not None and zone.dessin.plaquette.designation == "CNMG 120408"
+    # les cotes sous le dessin disent ce qui sert à choisir
+    legende = zone.dessin.legende()
+    assert "arête 12,9 mm" in legende[0] and "rayon de bec r 0,8 mm" in legende[0]
+    assert "épaisseur s 4,76 mm" in legende[1] and "deux faces utilisables" in legende[1]
+    # le filtre et la case « en stock » marchent comme dans le stock d'outils
+    zone.filtre.setText("ronde")
+    assert lignes() and all("RNMG" in x.text(0) or "RCMT" in x.text(0) for x in lignes())
+    zone.filtre.setText("")
+    it = next(x for x in lignes() if x.text(0) == "CCMT 09T304")
+    it.setCheckState(0, Qt.CheckState.Checked)
+    assert zone.stock() == {"CCMT 09T304"}
+    assert win.reglages.get("plaquettes.stock") == ["CCMT 09T304"]
+    zone.case_stock.setChecked(True)
+    assert [x.text(0) for x in lignes()] == ["CCMT 09T304"]
+    zone.case_stock.setChecked(False)
+    zone.definir_stock([])
+    win.actions_volets["plaquettes"].setChecked(False)
 
 
 def test_suppression(fenetre):

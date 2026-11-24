@@ -27,38 +27,12 @@ Ce catalogue dit ce qu'il est **possible** de monter, pas ce que l'atelier poss�
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from .plaquettes import FORMES_PLAQUETTE, forme_plaquette   # noqa: F401  (réexportés : la forme vient des plaquettes)
+
 QUEUE_MAXI = 20.0        # VDI 30 : queue carrée 20 × 20 ou queue cylindrique Ø 20 au plus
-
-# Forme de la plaquette : la lettre ISO de la désignation, ou la nature de l'outil quand il n'y en a pas.
-# `icons.icone_plaquette` dessine chacune de ces clés.
-FORMES_PLAQUETTE: Dict[str, str] = {
-    "C": "Losange 80°",
-    "D": "Losange 55°",
-    "V": "Losange 35°",
-    "W": "Trigon 80°",
-    "T": "Triangle 60°",
-    "S": "Carré",
-    "R": "Ronde",
-    "filetage": "Plaquette de filetage",
-    "gorge": "Plaquette de gorge",
-    "lame": "Lame de tronçonnage",
-}
-
-
-def forme_plaquette(plaquette: str) -> str:
-    """La clé de forme déduite d'une désignation de plaquette (« CNMG 1204.. » → « C »). Vide si inconnue."""
-    if plaquette.startswith("MGMN"):
-        return "gorge"
-    if plaquette.startswith("Lame"):
-        return "lame"
-    if re.match(r"\d+[EI][RL]", plaquette):
-        return "filetage"
-    lettre = plaquette[:1].upper()
-    return lettre if lettre in FORMES_PLAQUETTE and len(lettre) == 1 else ""
 
 FAMILLES: Dict[str, str] = {
     "ext_neg": "Extérieur — plaquette négative (ébauche)",
@@ -177,9 +151,9 @@ def _construire() -> List[PortePlaquette]:
              "Même outil de profilage en queue 16 × 16.")
     _ajouter(cat, "SVVCN 2020 K16", "ext_pos", "VBMT 1604..", 72.5, 20, 125, "vis", iso5608,
              "Profilage symétrique à 72,5° : formes attaquées des deux côtés.", mains="N")
-    _ajouter(cat, "STFC_ 2020 K16", "ext_pos", "TCMT 1604..", 90.0, 20, 125, "vis", iso5608,
+    _ajouter(cat, "STFC_ 2020 K16", "ext_pos", "TCMT 16T3..", 90.0, 20, 125, "vis", iso5608,
              "Dressage de face en positif, triangle à 90°.")
-    _ajouter(cat, "STGC_ 2020 K16", "ext_pos", "TCMT 1604..", 91.0, 20, 125, "vis", iso5608,
+    _ajouter(cat, "STGC_ 2020 K16", "ext_pos", "TCMT 16T3..", 91.0, 20, 125, "vis", iso5608,
              "Chariotage et dressage en triangle positif.")
     _ajouter(cat, "SSSC_ 2020 K12", "ext_pos", "SCMT 1204..", 45.0, 20, 125, "vis", iso5608,
              "Chariotage, dressage et chanfreins à 45° : plaquette carrée positive.")
@@ -209,7 +183,7 @@ def _construire() -> List[PortePlaquette]:
              "Barre d'alésage de la plus grosse section tenue en VDI 30.", cylindrique=True, alesage_mini=25.0)
     _ajouter(cat, "S20R-SDUC_ 11", "alesage", "DCMT 11T3..", 93.0, 20, 200, "vis", iso6261,
              "Alésage avec dégagement en Ø 20.", cylindrique=True, alesage_mini=25.0)
-    _ajouter(cat, "S20R-STFC_ 16", "alesage", "TCMT 1604..", 90.0, 20, 200, "vis", iso6261,
+    _ajouter(cat, "S20R-STFC_ 16", "alesage", "TCMT 16T3..", 90.0, 20, 200, "vis", iso6261,
              "Alésage et dressage de fond en Ø 20.", cylindrique=True, alesage_mini=25.0)
     _ajouter(cat, "S20R-SVUC_ 16", "alesage", "VBMT 1604..", 93.0, 20, 200, "vis", iso6261,
              "Profilage intérieur en Ø 20.", cylindrique=True, alesage_mini=25.0)

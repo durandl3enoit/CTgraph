@@ -134,9 +134,24 @@ référence » (le point ou la face y reste, et suit le montage quand il change)
 l'écart signé depuis ce plan, lu « mors 15 » ou « mandrin 190 ». Avec l'aimantation *Axe Z*, un tracé qui
 s'approche d'une référence s'y accroche et reçoit la relation d'office.
 
-## Stock d'outils
+## L'atelier : tourelle, stock d'outils, plaquettes
 
-Zone ancrée à droite (*Affichage → Stock d'outils*, touche `O`) : les **porte-plaquettes montables sur les
+Zone ancrée à droite (*Affichage → Atelier*, touche `O`), faite de **trois volets repliables latéralement**,
+de gauche à droite : **Tourelle**, **Stock d'outils**, **Plaquettes**. Chaque volet se replie sur son bandeau
+vertical, d'un clic sur le bandeau ou par le menu *Affichage* ; l'état de chacun est mémorisé. Au premier
+lancement, seul le stock d'outils est déplié : cliquez les bandeaux « Tourelle » et « Plaquettes » pour
+ouvrir les deux autres.
+
+### Tourelle
+
+La tourelle du tour vue de face : un disque à **douze postes VDI 30** (DIN 69880), chacun recevant la queue
+cylindrique de Ø 30 mm d'un porte-outil. Le poste 1 est en haut, la numérotation tourne dans le sens horaire.
+Cliquez un poste pour le mettre en travail ; la flèche le désigne. Le diamètre du disque et le rayon
+d'implantation sont des ordres de grandeur, à relever sur le CT200 ; le Ø 30 de la queue vient de la norme.
+
+### Stock d'outils
+
+Les **porte-plaquettes montables sur les
 porte-outils VDI 30** du CT200, c'est-à-dire de queue 20 mm au plus, carrée (16 × 16, 20 × 20) ou cylindrique
 (Ø 10 à Ø 20). Ils sont rangés en cinq familles : extérieur en plaquette négative (ébauche), extérieur en
 plaquette positive (finition), barres d'alésage, filetage, gorge et tronçonnage. Chaque ligne donne la
@@ -151,6 +166,18 @@ code est en tête de `ctgraph/outils.py`.
 Le catalogue dit ce qu'il est **possible** de monter. Cochez la case d'une ligne pour dire que l'atelier la
 possède : les coches sont mémorisées, et le filtre *En stock* n'affiche plus qu'elles. Le champ de filtre
 cherche dans la désignation, la plaquette, la queue, la main et l'usage.
+
+### Plaquettes
+
+Les plaquettes **ISO 1832** qui garnissent ces porte-plaquettes, rangées en quatre familles : négatives
+(ébauche, dépouille 0°, deux faces utilisables), positives (finition, dépouille 5 à 11°), filetage, gorge et
+tronçonnage. Même principe que le stock d'outils : filtre, cases « en stock », icône de la forme.
+Les colonnes donnent la dépouille, la longueur d'arête, l'épaisseur et le rayon de bec.
+
+Choisissez une ligne : la plaquette est **dessinée cotée** en dessous, de face avec son contour, ses becs
+arrondis et son cercle inscrit, de profil avec son épaisseur `s` et son angle de dépouille `α` ; le bec est
+entouré et repéré `r`. Les deux lignes sous le dessin donnent les valeurs. La lecture d'un code ISO 1832 est
+détaillée en tête de `ctgraph/plaquettes.py`.
 
 ## Lancer
 
@@ -183,8 +210,14 @@ ctgraph/
   esquisse/solveur.py      adaptateur PlaneGCS : traduction du modèle, résolution, glissement, diagnostic
   montage.py               machine, mandrin, mors étagés, brut, prise de pièce ; plans de référence
   outils.py                catalogue des porte-plaquettes montables en VDI 30 (ISO 5608 et ISO 6261)
+  plaquettes.py            formes, géométrie et catalogue des plaquettes (ISO 1832)
+  tourelle.py              tourelle VDI 30 à douze postes : répartition, poste en travail
   ui/vue_esquisse.py       QGraphicsView : tracé, aimantation, sélection, élagage, dessin des cotes et des symboles
-  ui/zone_outils.py        zone « Stock d'outils » : catalogue filtrable, cases « en stock »
+  ui/zone_atelier.py       les trois volets repliables ancrés à droite
+  ui/volet_lateral.py      volet repliable latéralement : bandeau vertical cliquable
+  ui/zone_tourelle.py      tourelle vue de face, poste en travail au clic
+  ui/zone_outils.py        volet « Stock d'outils » : catalogue filtrable, cases « en stock »
+  ui/zone_plaquettes.py    volet « Plaquettes » : catalogue et dessin coté de la plaquette choisie
   ui/fenetre_principale.py fenêtre, menus, menu contextuel, fichiers, annulation ; contrôleur de la vue
 tests/                     modèle, géométrie, élagage, solveur, interface (plateforme Qt hors écran)
 tools/                     icône, exemple, capture

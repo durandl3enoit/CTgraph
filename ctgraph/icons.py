@@ -9,6 +9,8 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap,
                            QPolygonF)
 
+from .plaquettes import sommets_forme
+
 ROUGE = QColor(225, 60, 50)
 BLEU = QColor(60, 140, 230)
 
@@ -335,31 +337,11 @@ def _dessins_plaquettes(encre: QColor, fond: QColor) -> Dict[str, Callable[[QPai
         p.setBrush(QBrush(remplissage))
         p.drawPolygon(QPolygonF([QPointF(*q) for q in points]))
 
-    def losange(angle: float) -> Callable[[QPainter], None]:
-        """Losange dont l'angle de pointe vaut `angle` : la grande diagonale est horizontale."""
+    def polygonale(forme: str) -> Callable[[QPainter], None]:
+        """Les formes à contour : le modèle des plaquettes en donne les sommets, centrés sur l'icône."""
         def dessin(p: QPainter):
-            demi = math.radians(angle) / 2.0
-            a, b = R * math.cos(demi), R * math.sin(demi)
-            contour(p, [(12 - a, 12), (12, 12 - b), (12 + a, 12), (12, 12 + b)])
+            contour(p, [(12 + z, 12 + x) for z, x in sommets_forme(forme, R)])
         return dessin
-
-    def _sommets(nb: int, rayon: float, depart: float):
-        return [(12 + rayon * math.cos(math.radians(depart + 360.0 * k / nb)),
-                 12 - rayon * math.sin(math.radians(depart + 360.0 * k / nb))) for k in range(nb)]
-
-    def triangle(p: QPainter) -> None:
-        contour(p, _sommets(3, R, 90.0))
-
-    def trigon(p: QPainter) -> None:
-        # trois pointes à 80°, reliées par des côtés rentrants : la silhouette d'une WNMG
-        # les creux tombent entre deux pointes (60° plus loin) : sans cela le contour part en hélice
-        pointes = _sommets(3, R, 90.0)
-        # entre le triangle (milieu de côté à 0,5 R) et le rond : la silhouette à trois lobes d'une WNMG
-        creux = _sommets(3, R * 0.72, 150.0)
-        contour(p, [coin for paire in zip(pointes, creux) for coin in paire])
-
-    def carre(p: QPainter) -> None:
-        contour(p, _sommets(4, R, 45.0))
 
     def ronde(p: QPainter) -> None:
         p.setPen(_stylo(encre, 1.5))
@@ -368,7 +350,7 @@ def _dessins_plaquettes(encre: QColor, fond: QColor) -> Dict[str, Callable[[QPai
 
     def filetage(p: QPainter) -> None:
         # plaquette triangulaire couchée : le profil du filet est gravé sous la pointe
-        contour(p, _sommets(3, R, 90.0))
+        contour(p, [(12 + z, 12 + x) for z, x in sommets_forme("T", R)])
         p.setPen(_stylo(encre, 1.4))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawPolyline(QPolygonF([QPointF(9, 13.4), QPointF(12, 17.2), QPointF(15, 13.4)]))
@@ -381,8 +363,9 @@ def _dessins_plaquettes(encre: QColor, fond: QColor) -> Dict[str, Callable[[QPai
         # lame de tronçonnage : une longue plaque mince, avec le logement de la plaquette au bout
         contour(p, [(2, 10.4), (6.5, 10.4), (8, 7.6), (22, 7.6), (22, 14.6), (2, 14.6)])
 
-    return {"C": losange(80.0), "D": losange(55.0), "V": losange(35.0), "W": trigon, "T": triangle,
-            "S": carre, "R": ronde, "filetage": filetage, "gorge": gorge, "lame": lame}
+    return {"C": polygonale("C"), "D": polygonale("D"), "V": polygonale("V"), "W": polygonale("W"),
+            "T": polygonale("T"), "S": polygonale("S"), "R": ronde,
+            "filetage": filetage, "gorge": gorge, "lame": lame}
 
 
 def icone_plaquette(forme: str, encre: QColor, fond: QColor) -> QIcon:

@@ -62,14 +62,18 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   cote), angle (coin). **Références du montage** (face de référence Z = 0 à la marge du bout du brut, face des
   mors, appui, face du mandrin, surfaces du brut) : alignement et cote depuis, par le menu contextuel ou
   l'aimantation. Cotes d'angle en arc de secteur, à la façon de SolidWorks : le secteur mesuré est celui où
-  l'étiquette est posée. Brut sans appui : cote « prise » réglable. 116 tests.
+  l'étiquette est posée. Brut sans appui : cote « prise » réglable. 128 tests.
 
 - **Stock d'outils, première version** (`ctgraph/outils.py`, `ui/zone_outils.py`) : catalogue des 105
   porte-plaquettes montables sur porte-outils VDI 30 (queue ≤ 20 mm), en cinq familles, désignations ISO 5608
   et ISO 6261. Zone ancrée à droite (touche `O`) : filtre, colonnes désignation / plaquette / attaque / queue /
   fixation, icône de la forme de la plaquette, infobulle d'usage, case « en stock » mémorisée.
-  Première brique du point 1 du périmètre ; les
-  plaquettes elles-mêmes, les porte-outils VDI et les jauges viendront ensuite.
+- **Atelier : trois volets repliables latéralement** (`ui/zone_atelier.py`, `ui/volet_lateral.py`), ancrés à
+  droite, touche `O` : **Tourelle** (douze postes VDI 30 vus de face, poste en travail au clic),
+  **Stock d'outils**, **Plaquettes** (catalogue ISO 1832 de 50 tailles, avec le dessin coté de la plaquette
+  choisie : contour, becs arrondis, cercle inscrit, épaisseur et dépouille). Seul le stock d'outils est
+  déplié au premier lancement. Point 1 du périmètre bien engagé ; restent les porte-outils VDI eux-mêmes,
+  l'affectation des outils aux postes et les jauges.
 
 ## En cours
 

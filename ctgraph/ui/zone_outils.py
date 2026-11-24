@@ -1,8 +1,8 @@
-"""Zone « Stock d'outils » : les porte-plaquettes montables sur les porte-outils VDI 30 du CT200.
+"""Volet « Stock d'outils » : les porte-plaquettes montables sur les porte-outils VDI 30 du CT200.
 
-Panneau ancré à droite de l'esquisse. Il liste le catalogue de `ctgraph.outils`, rangé par famille, avec
-un filtre et une case « en stock » par référence : le catalogue dit ce qui est montable, les cases disent
-ce que l'atelier possède (mémorisé dans les préférences).
+Il liste le catalogue de `ctgraph.outils`, rangé par famille, avec un filtre et une case « en stock » par
+référence : le catalogue dit ce qui est montable, les cases disent ce que l'atelier possède (mémorisé dans
+les préférences).
 """
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from typing import Dict, Iterable, List, Set
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import (QCheckBox, QDockWidget, QHBoxLayout, QLabel, QLineEdit, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QTreeWidget, QTreeWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from ..icons import icone_plaquette
 from ..outils import CATALOGUE, FAMILLES, FORMES_PLAQUETTE, QUEUE_MAXI, PortePlaquette, filtrer
@@ -20,15 +20,14 @@ COLONNES = ["Désignation", "Plaquette", "Attaque", "Queue", "Fixation"]
 ROLE_DESIGNATION = Qt.ItemDataRole.UserRole
 
 
-class ZoneOutils(QDockWidget):
+class ZoneOutils(QWidget):
     """Le catalogue des porte-plaquettes, filtrable, avec les cases « en stock »."""
 
     stock_change = Signal(object)        # l'ensemble des désignations cochées
 
     def __init__(self, parent=None):
-        super().__init__("Stock d'outils", parent)
-        self.setObjectName("zone_outils")
-        self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        super().__init__(parent)
+        self.setMinimumWidth(510)
         self._stock: Set[str] = set()
         self._blocage = False
         # une icône par forme de plaquette, dessinée une fois : le filtre reconstruit la liste à chaque frappe
@@ -37,8 +36,7 @@ class ZoneOutils(QDockWidget):
         fond = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Base)
         self._icones = {forme: icone_plaquette(forme, encre, fond) for forme in FORMES_PLAQUETTE}
 
-        contenu = QWidget(self)
-        v = QVBoxLayout(contenu)
+        v = QVBoxLayout(self)
         v.setContentsMargins(6, 6, 6, 6)
         v.setSpacing(5)
 
@@ -73,8 +71,6 @@ class ZoneOutils(QDockWidget):
         self.lbl_total = QLabel("")
         self.lbl_total.setWordWrap(True)
         v.addWidget(self.lbl_total)
-
-        self.setWidget(contenu)
         self._remplir()
 
     # -- stock ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ from ..montage import Montage, Piece
 from ..settings import Settings
 from .dialogue_montage import DialogueMontage
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
-from .zone_outils import ZoneOutils
+from .zone_atelier import ZoneAtelier
 from .zone_repliable import ZoneRepliable
 
 FILTRE_FICHIERS = "Esquisse CTgraph (*.ctg);;Tous les fichiers (*)"
@@ -213,16 +213,22 @@ class FenetrePrincipale(QMainWindow):
         disposition.addWidget(self.vue, 1)
         self.setCentralWidget(central)
 
-        # Stock d'outils : catalogue des porte-plaquettes montables en VDI 30, ancré à droite
-        self.zone_outils = ZoneOutils(self)
-        self.zone_outils.setMinimumWidth(340)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.zone_outils)
-        self.resizeDocks([self.zone_outils], [540], Qt.Orientation.Horizontal)
-        stock = self.reglages.get("outils.stock", []) or []
-        self.zone_outils.definir_stock([stock] if isinstance(stock, str) else stock)
-        self.zone_outils.stock_change.connect(lambda s: self.reglages.set("outils.stock", sorted(s)))
-        self.zone_outils.setVisible(self.reglages.get_bool("outils.visible", True))
-        self.zone_outils.visibilityChanged.connect(self._zone_outils_visible)
+        # Atelier : tourelle, stock d'outils et plaquettes, en volets repliables ancrés à droite
+        self.zone_atelier = ZoneAtelier(self)
+        self.zone_tourelle = self.zone_atelier.tourelle
+        self.zone_outils = self.zone_atelier.outils
+        self.zone_plaquettes = self.zone_atelier.plaquettes
+        for cle, volet in self.zone_atelier.volets.items():
+            volet.definir_deploye(self.reglages.get_bool("volet." + cle, cle == "outils"))
+            volet.basculee.connect(lambda etat, c=cle: self._volet_bascule(c, etat))
+        for cle, zone in (("outils", self.zone_outils), ("plaquettes", self.zone_plaquettes)):
+            stock = self.reglages.get(cle + ".stock", []) or []
+            zone.definir_stock([stock] if isinstance(stock, str) else stock)
+            zone.stock_change.connect(lambda s, c=cle: self.reglages.set(c + ".stock", sorted(s)))
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.zone_atelier)
+        self.resizeDocks([self.zone_atelier], [self.zone_atelier.largeur_souhaitee()], Qt.Orientation.Horizontal)
+        self.zone_atelier.setVisible(self.reglages.get_bool("atelier.visible", True))
+        self.zone_atelier.visibilityChanged.connect(self._zone_atelier_visible)
 
         barre = self.statusBar()
         self.lbl_aide = QLabel("")
@@ -294,11 +300,19 @@ class FenetrePrincipale(QMainWindow):
         self._action(m_aff, "Recadrer la vue 3&D", QKeySequence("Ctrl+3"),
                      lambda: self.vue3d.recadrer() if self.vue3d is not None else None)
         m_aff.addSeparator()
-        self.act_zone_outils = QAction("Stock d'&outils", self, checkable=True)
-        self.act_zone_outils.setShortcut(QKeySequence("O"))
-        self.act_zone_outils.setChecked(self.reglages.get_bool("outils.visible", True))
-        self.act_zone_outils.toggled.connect(self._basculer_zone_outils)
-        m_aff.addAction(self.act_zone_outils)
+        self.act_zone_atelier = QAction("&Atelier (tourelle, outils, plaquettes)", self, checkable=True)
+        self.act_zone_atelier.setShortcut(QKeySequence("O"))
+        self.act_zone_atelier.setChecked(self.reglages.get_bool("atelier.visible", True))
+        self.act_zone_atelier.toggled.connect(self._basculer_zone_atelier)
+        m_aff.addAction(self.act_zone_atelier)
+        self.actions_volets = {}
+        for cle, volet in self.zone_atelier.volets.items():
+            act = QAction(f"Volet « {volet.titre} »", self, checkable=True)
+            act.setChecked(volet.est_deploye())
+            act.toggled.connect(lambda etat, c=cle: self._regler_volet(c, etat))
+            volet.basculee.connect(act.setChecked)
+            m_aff.addAction(act)
+            self.actions_volets[cle] = act
 
         m_aide = barre.addMenu("&Aide")
         self._action(m_aide, "À &propos de CTgraph", None, self.a_propos)
@@ -710,16 +724,30 @@ class FenetrePrincipale(QMainWindow):
         self.vue.reconstruire()
         self._pousser_montage_3d()
 
-    def _basculer_zone_outils(self, actif: bool) -> None:
-        self.zone_outils.setVisible(actif)
-        self.reglages.set("outils.visible", actif)
+    def _basculer_zone_atelier(self, actif: bool) -> None:
+        self.zone_atelier.setVisible(actif)
+        self.reglages.set("atelier.visible", actif)
 
-    def _zone_outils_visible(self, visible: bool) -> None:
-        """La zone fermée par sa croix, ou rouverte : le menu suit (et le réglage avec lui). Tant que la
-        fenêtre n'est pas affichée, Qt annonce la zone masquée : on n'en tient pas compte."""
-        if not self.isVisible() or self.isMinimized() or not hasattr(self, "act_zone_outils"):
+    def _zone_atelier_visible(self, visible: bool) -> None:
+        """La zone masquée ou rouverte : le menu suit (et le réglage avec lui). Tant que la fenêtre n'est
+        pas affichée, Qt annonce la zone masquée : on n'en tient pas compte."""
+        if not self.isVisible() or self.isMinimized() or not hasattr(self, "act_zone_atelier"):
             return
-        self.act_zone_outils.setChecked(visible)
+        self.act_zone_atelier.setChecked(visible)
+
+    def _regler_volet(self, cle: str, deploye: bool) -> None:
+        """Le volet commandé depuis le menu : même effet qu'un clic sur son bandeau."""
+        volet = self.zone_atelier.volets[cle]
+        if volet.est_deploye() != deploye:
+            volet.definir_deploye(deploye)
+        self._volet_bascule(cle, deploye)
+
+    def _volet_bascule(self, cle: str, deploye: bool) -> None:
+        """Un volet replié ou déplié : on mémorise, et la zone reprend la largeur qu'il lui faut."""
+        self.reglages.set("volet." + cle, deploye)
+        if self.zone_atelier.isVisible():
+            self.resizeDocks([self.zone_atelier], [self.zone_atelier.largeur_souhaitee()],
+                             Qt.Orientation.Horizontal)
 
     def _basculer_vue3d(self, actif: bool) -> None:
         if self.vue3d is None:
