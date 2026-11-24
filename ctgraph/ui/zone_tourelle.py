@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from typing import List, Optional
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPalette, QPen
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QPushButton, QSizePolicy, QSpinBox, QTreeWidget, QTreeWidgetItem,
@@ -201,9 +201,10 @@ class ListePostes(QTreeWidget):
         return int(it.data(0, Qt.ItemDataRole.UserRole) or 0) if it is not None else 0
 
     def _survoler(self, event) -> None:
+        # on ne touche pas à la sélection pendant le survol : garnir reconstruit la liste, et la vider
+        # sous les pieds d'un glisser en cours ferait disparaître l'élément visé
         poste, _, _ = accueillir(event, self.poste_sous, self.accepte_depot)
         if poste:
-            self.setCurrentItem(self.itemAt(event.position().toPoint()))
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -220,7 +221,8 @@ class ListePostes(QTreeWidget):
             event.ignore()
             return
         event.acceptProposedAction()
-        self.depot.emit(poste, type_mime, designation)
+        # la liste se reconstruit en garnissant : on le fait après la sortie de l'événement
+        QTimer.singleShot(0, lambda: self.depot.emit(poste, type_mime, designation))
 
 
 class ZoneTourelle(QWidget):

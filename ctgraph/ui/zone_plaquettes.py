@@ -300,8 +300,7 @@ class ZonePlaquettes(QWidget):
             for pl in lot:
                 it = QTreeWidgetItem(parent, [pl.designation, pl.texte_depouille, pl.texte_arete,
                                               pl.texte_epaisseur, pl.texte_rayon])
-                it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-                            | Qt.ItemFlag.ItemIsUserCheckable)
+                it.setFlags(ArbreGlissable.FLAGS_LIGNE)
                 it.setCheckState(0, Qt.CheckState.Checked if pl.designation in self._stock
                                  else Qt.CheckState.Unchecked)
                 it.setData(0, ROLE_DESIGNATION, pl.designation)

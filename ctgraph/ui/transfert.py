@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Callable, Tuple
 
-from PySide6.QtCore import QMimeData
+from PySide6.QtCore import QMimeData, Qt
 from PySide6.QtWidgets import QAbstractItemView, QTreeWidget
 
 MIME_PORTE_PLAQUETTE = "application/x-ctgraph-porte-plaquette"
@@ -32,7 +32,14 @@ def lire(mime: QMimeData) -> Tuple[str, str]:
 
 
 class ArbreGlissable(QTreeWidget):
-    """Arbre dont on peut tirer une ligne : elle emporte la désignation rangée dans `role`."""
+    """Arbre dont on peut tirer une ligne : elle emporte la désignation rangée dans `role`.
+
+    Attention : chaque ligne doit porter `Qt.ItemIsDragEnabled` dans ses drapeaux. Fixer les drapeaux d'un
+    `QTreeWidgetItem` remplace les valeurs par défaut, et il est vite oublié ; `FLAGS_LIGNE` le rappelle.
+    """
+
+    FLAGS_LIGNE = (Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
+                   | Qt.ItemFlag.ItemIsDragEnabled)
 
     def __init__(self, type_mime: str, role: int, parent=None):
         super().__init__(parent)
@@ -40,6 +47,8 @@ class ArbreGlissable(QTreeWidget):
         self.role = role
         self.setDragEnabled(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
     def mimeTypes(self):
         return [self.type_mime, "text/plain"]

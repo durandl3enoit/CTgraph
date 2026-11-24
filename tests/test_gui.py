@@ -1431,11 +1431,17 @@ def test_glisser_deposer_sur_la_tourelle(fenetre):
                     return parent.child(j)
         raise AssertionError(designation)
 
-    # une ligne du stock d'outils emporte sa désignation ; celle des plaquettes aussi, dans son format
-    mime = win.zone_outils.arbre.mimeData([ligne(win.zone_outils.arbre, "SCLCR 2020 K09")])
-    assert lire(mime) == (MIME_PORTE_PLAQUETTE, "SCLCR 2020 K09")
-    mime = win.zone_plaquettes.arbre.mimeData([ligne(win.zone_plaquettes.arbre, "CCMT 09T308")])
-    assert lire(mime) == (MIME_PLAQUETTE, "CCMT 09T308")
+    # une ligne du stock d'outils emporte sa désignation ; celle des plaquettes aussi, dans son format.
+    # On passe par le modèle, comme Qt le fait pendant un vrai glisser : les drapeaux de la ligne comptent.
+    for arbre, designation, attendu in ((win.zone_outils.arbre, "SCLCR 2020 K09", MIME_PORTE_PLAQUETTE),
+                                        (win.zone_plaquettes.arbre, "CCMT 09T308", MIME_PLAQUETTE)):
+        it = ligne(arbre, designation)
+        assert arbre.dragEnabled()
+        assert it.flags() & Qt.ItemFlag.ItemIsDragEnabled      # sans ce drapeau, rien ne se tire
+        index = arbre.indexFromItem(it)
+        assert arbre.model().flags(index) & Qt.ItemFlag.ItemIsDragEnabled
+        assert lire(arbre.model().mimeData([index])) == (attendu, designation)
+        assert lire(arbre.mimeData([it])) == (attendu, designation)
 
     # ce que chaque poste accepte : les plaquettes partout, les outils selon l'implantation
     assert zone.accepte_depot(1, MIME_PORTE_PLAQUETTE, "SCLCR 2020 K09")        # poste 1 transversal
@@ -1451,11 +1457,25 @@ def test_glisser_deposer_sur_la_tourelle(fenetre):
         ev = QDropEvent(QPointF(point), Qt.DropAction.CopyAction, m, Qt.MouseButton.LeftButton,
                         Qt.KeyboardModifier.NoModifier)
         cible.dropEvent(ev)
+        QTest.qWait(10)        # le tableau garnit après la sortie de l'événement
+        return ev.isAccepted()
+
+    def survol(cible, point, type_mime, designation):
+        from PySide6.QtGui import QDragMoveEvent
+        m = charger(type_mime, designation)
+        ev = QDragMoveEvent(QPointF(point), Qt.DropAction.CopyAction, m, Qt.MouseButton.LeftButton,
+                            Qt.KeyboardModifier.NoModifier)
+        cible.dragMoveEvent(ev)
         return ev.isAccepted()
 
     # dépôt sur le schéma : le logement du poste 3 (transversal)
     x, y = t.position_poste(3)
     cible = zone.vue._en_pixels(x, y)
+    # le survol dit si le dépôt est possible, et entoure le poste visé
+    assert survol(zone.vue, cible, MIME_PORTE_PLAQUETTE, "SDJCR 2020 K11")
+    assert zone.vue._survol == 3
+    assert not survol(zone.vue, cible, MIME_PORTE_PLAQUETTE, "S16Q-SCLCR 09")
+    assert zone.vue._survol == 0
     assert deposer(zone.vue, cible, MIME_PORTE_PLAQUETTE, "SDJCR 2020 K11")
     assert t.poste(3).porte_plaquette == "SDJCR 2020 K11" and t.poste_en_travail == 3
     # la plaquette se dépose sur le même poste sans effacer le porte-plaquette

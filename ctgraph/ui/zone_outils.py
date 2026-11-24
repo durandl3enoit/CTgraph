@@ -113,8 +113,7 @@ class ZoneOutils(QWidget):
             for pp in lot:
                 it = QTreeWidgetItem(parent, [pp.designation, pp.plaquette, pp.texte_attaque, pp.queue,
                                               pp.fixation])
-                it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-                            | Qt.ItemFlag.ItemIsUserCheckable)
+                it.setFlags(ArbreGlissable.FLAGS_LIGNE)
                 it.setCheckState(0, Qt.CheckState.Checked if pp.designation in self._stock
                                  else Qt.CheckState.Unchecked)
                 it.setData(0, ROLE_DESIGNATION, pp.designation)
