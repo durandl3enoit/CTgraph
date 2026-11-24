@@ -35,7 +35,8 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
     `tools/capture.py` fait une capture en vraie fenêtre.
 - **Référence du post-processeur Go2CAM** : neuf programmes ISO réels dans `docs/exemples-cn/`, syntaxe relevée dans
   `docs/reference-go2cam-ct200.md`. Les ébauches sont des trajectoires explicites G0/G1 ; filetage G33, perçage G83.
-- **Git** : dépôt local initialisé (MinGit portable sur ce poste). Pas encore de dépôt distant.
+- **Git** : dépôt local (MinGit portable sur ce poste) relié au dépôt distant privé
+  `https://github.com/durandl3enoit/CTgraph` depuis le 24 novembre 2026 ; la branche `main` y est poussée.
 
 - **Séance du 24 novembre** : cotes pilotées, écart entre parallèles, contours fermés remplis, vue 3D lisse,
   icônes sobres et icônes de relations, couple Ø/R, curseurs par outil, menu contextuel à icônes, origine Z et
@@ -54,8 +55,8 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
    miroir, pas de lignes de construction tracées par l'utilisateur, pas de prolongement jusqu'à un objet,
    pas de profil intérieur distinct, pas d'export DXF, pas de contour passant par un sommet à trois branches.
    Module suivant proposé : **machine, brut et prise de pièce**, puis la bibliothèque d'outils minimale.
-2. **Dépôt distant privé** : créer le dépôt (GitHub ou autre), `git remote add origin …`, `git push -u origin main`.
-   Sur le poste du week-end : installer Git, cloner, créer `.venv` avec `requirements.txt`.
+2. **Poste du week-end** : installer Git, cloner `https://github.com/durandl3enoit/CTgraph`, créer `.venv`
+   avec `requirements.txt`, lancer les tests, puis `build.ps1`.
 3. **Installeur** : reprendre `installer/` et `tools/make_installer.ps1` de DXFgraph en remplaçant le nom et
    l'association de fichiers (`.ctg`).
 4. **Module suivant à décider** : bibliothèque d'outils (plaquettes, porte-plaquettes, porte-outils, tourelle)
