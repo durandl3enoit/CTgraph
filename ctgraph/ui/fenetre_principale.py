@@ -275,6 +275,7 @@ class FenetrePrincipale(QMainWindow):
         encre, fond = self._encre, self._fond_icone
         menu.relations_proposees = []
         menu.coin_propose = None
+        menu.cotes_proposees = []
         if sel:
             types = [t for t in ORDRE_RELATIONS if self.esquisse.relation_possible(t, sel) or (
                 t == TypeRelation.POINT_SUR_LIGNE and self.esquisse.relation_possible(TypeRelation.POINT_SUR_ARC, sel))]
@@ -300,10 +301,11 @@ class FenetrePrincipale(QMainWindow):
                 menu.relations_proposees = types
                 possibles = True
                 menu.addSeparator()
-            deduction = self.vue.deduire_cote(sel)
-            if deduction is not None:
-                menu.addAction(self.actions_outils["cote"].icon(),
-                               f"Coter la sélection ({LIBELLES_COTE[deduction[0]]})", self.coter_selection)
+            cotes = self.vue.cotes_possibles(sel)
+            menu.cotes_proposees = [t for t, _, _ in cotes]
+            for t, els, dec in cotes:
+                menu.addAction(self.actions_outils["cote"].icon(), f"Coter : {LIBELLES_COTE[t]}",
+                               lambda tt=t, ee=els, dd=dec: self.poser_cote(tt, ee, dd))
                 possibles = True
             coin = self.coin_depuis_selection(sel)
             menu.coin_propose = coin

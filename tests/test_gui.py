@@ -195,8 +195,23 @@ def test_menu_contextuel_propose_les_relations_possibles(fenetre):
     proposees = menu.relations_proposees
     assert {TypeRelation.PERPENDICULAIRE, TypeRelation.PARALLELE, TypeRelation.EGAL} <= set(proposees)
     assert TypeRelation.HORIZONTAL not in proposees          # pas pour deux lignes
-    assert "Coter la sélection (Angle)" in textes
+    assert "Coter : Angle" in textes
     assert "Supprimer la sélection" in textes
+    # une ligne horizontale : diamètre par rapport à l'axe Z, et longueur Z
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    vue.selection = [haut.id]
+    menu = win.construire_menu_contextuel()
+    textes = [a.text() for a in menu.actions()]
+    assert "Coter : Diamètre" in textes and "Coter : Longueur Z" in textes
+    assert menu.cotes_proposees == [TypeCote.LONGUEUR_Z, TypeCote.DIAMETRE]
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (defaut, True)
+    next(a for a in menu.actions() if a.text() == "Coter : Diamètre").trigger()
+    c = list(e.cotes.values())[-1]
+    assert c.type == TypeCote.DIAMETRE and c.elements == (haut.id,) and c.valeur == pytest.approx(40.0, abs=0.2)
+    # une face verticale : position Z et hauteur
+    face = next(li for li in e.lignes.values() if all(abs(e.points[p].z) < 1e-6 for p in (li.p1, li.p2)))
+    vue.selection = [face.id]
+    assert win.construire_menu_contextuel().cotes_proposees == [TypeCote.POSITION_Z, TypeCote.DISTANCE]
     # les relations sont des icônes seules : aucune action textuelle ne porte leur nom
     assert "Perpendiculaire" not in textes
     # une ligne et un point : point sur ligne

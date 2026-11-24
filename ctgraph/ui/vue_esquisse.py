@@ -1337,6 +1337,45 @@ class VueEsquisse(QGraphicsView):
             return TypeCote.LONGUEUR_Z, elements, dec
         return None
 
+    def cotes_possibles(self, elements) -> List[Tuple[TypeCote, Tuple[int, ...], Tuple[float, float]]]:
+        """Toutes les cotes que ces éléments peuvent porter, la déduction par défaut en premier (menu contextuel)."""
+        e = self.esquisse
+        elements = tuple(elements)
+        genres = [e.genre(i) for i in elements]
+        d = self.px_en_mm(34)
+        candidats: List[Tuple[TypeCote, Tuple[int, ...], Tuple[float, float]]] = []
+        defaut = self.deduire_cote(elements)
+        if defaut is not None:
+            candidats.append(defaut)
+        if genres == ["ligne"]:
+            li = e.lignes[elements[0]]
+            a, b = e.points[li.p1], e.points[li.p2]
+            if self.est_horizontale(li.id):
+                candidats.append((TypeCote.DIAMETRE, elements, (d, 0.0)))       # diamètre par rapport à l'axe Z
+                candidats.append((TypeCote.LONGUEUR_Z, elements, (0.0, d)))
+            elif self.est_verticale(li.id):
+                candidats.append((TypeCote.POSITION_Z, elements, (0.0, d)))
+                candidats.append((TypeCote.DISTANCE, elements, (0.0, d)))
+            else:
+                candidats.append((TypeCote.LONGUEUR_Z, elements, (0.0, d)))
+                candidats.append((TypeCote.ANGLE, elements, (d * 0.6, d * 0.6)))
+                candidats.append((TypeCote.DISTANCE, elements, (0.0, d)))
+        elif genres == ["point"]:
+            p = e.points[elements[0]]
+            if abs(p.x) > 1e-9:
+                candidats.append((TypeCote.DIAMETRE, elements, (d, 0.0)))
+            candidats.append((TypeCote.POSITION_Z, elements, (0.0, d)))
+        elif genres == ["point", "point"]:
+            candidats.append((TypeCote.LONGUEUR_Z, elements, (0.0, d)))
+            candidats.append((TypeCote.DISTANCE, elements, (0.0, d)))
+        vus = set()
+        uniques = []
+        for t, els, dec in candidats:
+            if t not in vus and e.cote_possible(t, els):
+                vus.add(t)
+                uniques.append((t, els, dec))
+        return uniques
+
     def _presser_cote(self, pos) -> None:
         # la géométrie seule : une étiquette de cote déjà posée ne doit pas cacher la ligne que l'on vise
         el = self.element_sous(pos, genres=("point", "ligne", "arc"))

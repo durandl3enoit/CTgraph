@@ -67,7 +67,8 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   en continu en respectant relations et cotes. Tirez une valeur de cote pour déplacer son étiquette ; double-cliquez-la
   pour changer sa valeur. `Suppr` supprime la sélection.
 * **Clic droit** : menu contextuel avec, en première ligne, les relations possibles pour la sélection sous forme
-  d'icônes (le nom en infobulle), puis la cote déduite, Arrondi et Chanfrein si la sélection est un coin ou deux
+  d'icônes (le nom en infobulle), puis les cotes possibles (pour une ligne horizontale : diamètre par rapport à
+  l'axe Z et longueur Z), Arrondi et Chanfrein si la sélection est un coin ou deux
   lignes concourantes, la suppression, les outils et « Tout voir ». Pendant un tracé, le clic droit termine la chaîne.
 * **Relations** : sélectionnez les éléments concernés puis cliquez le bouton (ou le menu du clic droit).
   Une relation ou une cote en conflit est affichée en rouge, une relation redondante en jaune.
