@@ -134,6 +134,23 @@ référence » (le point ou la face y reste, et suit le montage quand il change)
 l'écart signé depuis ce plan, lu « mors 15 » ou « mandrin 190 ». Avec l'aimantation *Axe Z*, un tracé qui
 s'approche d'une référence s'y accroche et reçoit la relation d'office.
 
+## Stock d'outils
+
+Zone ancrée à droite (*Affichage → Stock d'outils*, touche `O`) : les **porte-plaquettes montables sur les
+porte-outils VDI 30** du CT200, c'est-à-dire de queue 20 mm au plus, carrée (16 × 16, 20 × 20) ou cylindrique
+(Ø 10 à Ø 20). Ils sont rangés en cinq familles : extérieur en plaquette négative (ébauche), extérieur en
+plaquette positive (finition), barres d'alésage, filetage, gorge et tronçonnage. Chaque ligne donne la
+désignation, la plaquette, l'angle d'attaque, la queue et la fixation ; l'infobulle ajoute l'usage, l'alésage
+minimal des outils intérieurs et la norme.
+
+Les désignations suivent l'**ISO 5608** (queue carrée) et l'**ISO 6261** (barres) ; les outils de filetage, de
+gorge et de tronçonnage portent leur référence du commerce, signalée comme telle. Le détail de la lecture d'un
+code est en tête de `ctgraph/outils.py`.
+
+Le catalogue dit ce qu'il est **possible** de monter. Cochez la case d'une ligne pour dire que l'atelier la
+possède : les coches sont mémorisées, et le filtre *En stock* n'affiche plus qu'elles. Le champ de filtre
+cherche dans la désignation, la plaquette, la queue, la main et l'usage.
+
 ## Lancer
 
 * **Depuis les sources** : `.venv\Scripts\python.exe run.py [fichier.ctg]`.
@@ -163,7 +180,10 @@ ctgraph/
   esquisse/geometrie.py    géométrie exacte : paramètres, intersections ligne/arc, point le plus proche
   esquisse/elagage.py      élagage : raccourcir ou scinder une ligne ou un arc en gardant les relations cohérentes
   esquisse/solveur.py      adaptateur PlaneGCS : traduction du modèle, résolution, glissement, diagnostic
+  montage.py               machine, mandrin, mors étagés, brut, prise de pièce ; plans de référence
+  outils.py                catalogue des porte-plaquettes montables en VDI 30 (ISO 5608 et ISO 6261)
   ui/vue_esquisse.py       QGraphicsView : tracé, aimantation, sélection, élagage, dessin des cotes et des symboles
+  ui/zone_outils.py        zone « Stock d'outils » : catalogue filtrable, cases « en stock »
   ui/fenetre_principale.py fenêtre, menus, menu contextuel, fichiers, annulation ; contrôleur de la vue
 tests/                     modèle, géométrie, élagage, solveur, interface (plateforme Qt hors écran)
 tools/                     icône, exemple, capture

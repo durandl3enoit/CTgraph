@@ -169,6 +169,18 @@ vérification par relecture du G-code généré, réception des programmes depui
   dans l'esquisse (étiquettes de genre « brut », non sélectionnables, éditables au double-clic et à la molette) :
   Ø brut, L brut, marge en bout ; changer la longueur ajuste le dépassement (prise et marge fixes).
 
+- **Stock d'outils** (`ctgraph/outils.py`, `ui/zone_outils.py`, demandé le 24 novembre 2026) : catalogue des
+  porte-plaquettes montables sur les porte-outils **VDI 30** (DIN 69880) du CT200, borne `QUEUE_MAXI` = 20 mm
+  (queue carrée 16 × 16 ou 20 × 20, queue cylindrique Ø 10 à Ø 20). Cinq familles (`FAMILLES`) : extérieur
+  négatif, extérieur positif, alésage, filetage, gorge et tronçonnage. Désignations **ISO 5608** (queue carrée)
+  et **ISO 6261** (barres) ; filetage, gorge et tronçonnage portent une référence du commerce, marquée « hors
+  ISO ». Les gabarits portent « _ » à la place de la lettre de main, `_ajouter` crée une ligne par main. La clé
+  de lecture des codes est en tête du module : à garder à jour si des références s'ajoutent.
+  La zone est un `QDockWidget` ancré à droite, avec filtre et case « en stock » par référence (préférence
+  `outils.stock`, visibilité `outils.visible`, touche `O`). Le catalogue dit ce qui est montable, les coches
+  disent ce que l'atelier possède. Les tests d'interface masquent la zone : elle rétrécit la vue d'esquisse et
+  fausserait les clics simulés.
+
 ## Points ouverts
 
 - Post-processeur : cycles NUM (G64, G33…) ou trajectoires explicites en G1/G2/G3. Les programmes Go2CAM

@@ -28,6 +28,7 @@ from ..montage import Montage, Piece
 from ..settings import Settings
 from .dialogue_montage import DialogueMontage
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
+from .zone_outils import ZoneOutils
 from .zone_repliable import ZoneRepliable
 
 FILTRE_FICHIERS = "Esquisse CTgraph (*.ctg);;Tous les fichiers (*)"
@@ -212,6 +213,17 @@ class FenetrePrincipale(QMainWindow):
         disposition.addWidget(self.vue, 1)
         self.setCentralWidget(central)
 
+        # Stock d'outils : catalogue des porte-plaquettes montables en VDI 30, ancré à droite
+        self.zone_outils = ZoneOutils(self)
+        self.zone_outils.setMinimumWidth(340)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.zone_outils)
+        self.resizeDocks([self.zone_outils], [470], Qt.Orientation.Horizontal)
+        stock = self.reglages.get("outils.stock", []) or []
+        self.zone_outils.definir_stock([stock] if isinstance(stock, str) else stock)
+        self.zone_outils.stock_change.connect(lambda s: self.reglages.set("outils.stock", sorted(s)))
+        self.zone_outils.setVisible(self.reglages.get_bool("outils.visible", True))
+        self.zone_outils.visibilityChanged.connect(self._zone_outils_visible)
+
         barre = self.statusBar()
         self.lbl_aide = QLabel("")
         barre.addWidget(self.lbl_aide, 1)
@@ -281,6 +293,12 @@ class FenetrePrincipale(QMainWindow):
         m_aff.addAction(self.act_vue3d)
         self._action(m_aff, "Recadrer la vue 3&D", QKeySequence("Ctrl+3"),
                      lambda: self.vue3d.recadrer() if self.vue3d is not None else None)
+        m_aff.addSeparator()
+        self.act_zone_outils = QAction("Stock d'&outils", self, checkable=True)
+        self.act_zone_outils.setShortcut(QKeySequence("O"))
+        self.act_zone_outils.setChecked(self.reglages.get_bool("outils.visible", True))
+        self.act_zone_outils.toggled.connect(self._basculer_zone_outils)
+        m_aff.addAction(self.act_zone_outils)
 
         m_aide = barre.addMenu("&Aide")
         self._action(m_aide, "À &propos de CTgraph", None, self.a_propos)
@@ -691,6 +709,17 @@ class FenetrePrincipale(QMainWindow):
         self.reglages.set("montage.visible", actif)
         self.vue.reconstruire()
         self._pousser_montage_3d()
+
+    def _basculer_zone_outils(self, actif: bool) -> None:
+        self.zone_outils.setVisible(actif)
+        self.reglages.set("outils.visible", actif)
+
+    def _zone_outils_visible(self, visible: bool) -> None:
+        """La zone fermée par sa croix, ou rouverte : le menu suit (et le réglage avec lui). Tant que la
+        fenêtre n'est pas affichée, Qt annonce la zone masquée : on n'en tient pas compte."""
+        if not self.isVisible() or self.isMinimized() or not hasattr(self, "act_zone_outils"):
+            return
+        self.act_zone_outils.setChecked(visible)
 
     def _basculer_vue3d(self, actif: bool) -> None:
         if self.vue3d is None:

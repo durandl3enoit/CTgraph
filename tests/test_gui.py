@@ -42,6 +42,7 @@ def fenetre(app):
     for cle in win.vue.aimants:
         win.cases_aimants[cle].setChecked(True)
     win.act_voir_montage.setChecked(False)     # le montage élargit la vue : les clics simulés perdraient en précision
+    win.act_zone_outils.setChecked(False)      # la zone des outils rétrécit la vue : même raison
     win.vue.tout_voir()
     QTest.qWait(30)
     yield win
@@ -1188,6 +1189,66 @@ def test_survol_fait_luire_l_element(fenetre):
     survoler(-20, 20)
     assert item.pen().color() == vue._couleurs()["selection"]
     assert item.data(ROLE_GENRE) == "ligne"
+
+
+def test_zone_stock_d_outils(fenetre):
+    from PySide6.QtWidgets import QTreeWidgetItem
+    from ctgraph.outils import CATALOGUE, FAMILLES
+    win = fenetre
+    zone = win.zone_outils
+    win.act_zone_outils.setChecked(True)        # la fixture la masque pour laisser la vue au large
+    zone.definir_stock([])                      # pas le stock laissé par une autre séance
+
+    def lignes():
+        out = []
+        for i in range(zone.arbre.topLevelItemCount()):
+            parent = zone.arbre.topLevelItem(i)
+            out += [parent.child(j) for j in range(parent.childCount())]
+        return out
+
+    def ligne(designation: str) -> QTreeWidgetItem:
+        return next(it for it in lignes() if it.text(0) == designation)
+
+    # tout le catalogue est présenté, rangé par famille
+    assert zone.arbre.topLevelItemCount() == len(FAMILLES)
+    assert len(lignes()) == len(CATALOGUE)
+    assert "105" in zone.lbl_total.text() or str(len(CATALOGUE)) in zone.lbl_total.text()
+    it = ligne("SCLCR 2020 K09")
+    assert [it.text(c) for c in range(5)] == ["SCLCR 2020 K09", "CCMT 09T3..", "95°", "20 × 20", "vis"]
+    assert "ISO 5608" in it.toolTip(0)
+    # le filtre restreint la liste et vide les familles sans réponse
+    zone.filtre.setText("barre alésage")
+    assert lignes() and all(it.text(0).startswith(("S", "A")) for it in lignes())
+    assert zone.arbre.topLevelItemCount() == 1
+    zone.filtre.setText("")
+    assert len(lignes()) == len(CATALOGUE)
+    # cocher une référence la met en stock, et c'est mémorisé
+    recu = []
+    zone.stock_change.connect(lambda s: recu.append(set(s)))
+    ligne("SDJCR 2020 K11").setCheckState(0, Qt.CheckState.Checked)
+    ligne("MGEHR 2020-3").setCheckState(0, Qt.CheckState.Checked)
+    assert zone.stock() == {"SDJCR 2020 K11", "MGEHR 2020-3"} and recu[-1] == zone.stock()
+    assert sorted(win.reglages.get("outils.stock")) == ["MGEHR 2020-3", "SDJCR 2020 K11"]
+    # « En stock » n'affiche plus que les références cochées
+    zone.case_stock.setChecked(True)
+    assert sorted(it.text(0) for it in lignes()) == ["MGEHR 2020-3", "SDJCR 2020 K11"]
+    ligne("SDJCR 2020 K11").setCheckState(0, Qt.CheckState.Unchecked)
+    assert zone.stock() == {"MGEHR 2020-3"}
+    zone.case_stock.setChecked(False)
+    # une désignation disparue du catalogue est ignorée au rechargement
+    zone.definir_stock(["MGEHR 2020-3", "OUTIL-FANTOME 9999"])
+    assert zone.stock() == {"MGEHR 2020-3"}
+    # le menu Affichage masque et rouvre la zone, et le réglage suit
+    assert win.act_zone_outils.isChecked() and zone.isVisible()
+    win.act_zone_outils.setChecked(False)
+    assert not zone.isVisible() and win.reglages.get_bool("outils.visible", True) is False
+    win.act_zone_outils.setChecked(True)
+    assert zone.isVisible() and win.reglages.get_bool("outils.visible", False) is True
+    # fermer la zone par sa croix décoche le menu
+    zone.close()
+    QTest.qWait(20)
+    assert not win.act_zone_outils.isChecked()
+    zone.definir_stock([])
 
 
 def test_suppression(fenetre):
