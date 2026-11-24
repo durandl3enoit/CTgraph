@@ -368,11 +368,77 @@ def test_outil_cote_deduit_le_type(fenetre):
     ecran(win, "outil_cote")
 
 
+def test_outils_arrondi_et_chanfrein(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
+    coin = next(p for p in e.points.values() if p.z < -30 and p.x > 10)       # coin arrière haut
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (3.0, True)
+    win.choisir_outil("arrondi")
+    clic(vue, coin.z, coin.x)
+    assert coin.id not in e.points and len(e.arcs) == 1
+    arc = next(iter(e.arcs.values()))
+    assert e.rayon(arc.id) == pytest.approx(3.0, abs=1e-6)
+    assert sum(1 for r in e.relations.values() if r.type == TypeRelation.TANGENT) == 2
+    assert win.resultat.succes and not win.resultat.conflits
+    assert win._rayon_arrondi == 3.0                                           # mémorisé pour la prochaine fois
+    # chanfrein sur le coin avant haut
+    coin2 = next(p for p in e.points.values() if abs(p.z) < 1e-6 and p.x > 10)
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (1.5, True)
+    win.choisir_outil("chanfrein")
+    clic(vue, coin2.z, coin2.x)
+    assert coin2.id not in e.points
+    assert any(c.type == TypeCote.ANGLE for c in e.cotes.values())
+    assert any(c.type == TypeCote.LONGUEUR_Z and c.valeur == pytest.approx(1.5, abs=1e-6) for c in e.cotes.values())
+    assert win.resultat.succes and not win.resultat.conflits
+    ecran(win, "coins")
+    win.annuler()
+    assert coin2.id in win.esquisse.points
+
+
+def test_molette_sur_une_etiquette_regle_la_cote(fenetre):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QWheelEvent
+    from ctgraph.ui.vue_esquisse import ROLE_ID, ROLE_VARIANTE, Etiquette
+    win, vue = fenetre, fenetre.vue
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (40.0, True)
+    rectangle(win)
+    e = win.esquisse
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    win.poser_cote(TypeCote.DIAMETRE, (haut.id,), (6.0, 0.0))
+    diam = list(e.cotes.values())[-1]
+    etiquette = next(it for it in vue._items if isinstance(it, Etiquette) and it.data(ROLE_ID) == diam.id
+                     and not it.data(ROLE_VARIANTE))
+    p = vue.mapFromScene(etiquette.pos())
+    QTest.mousePress(vue.viewport(), Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, p)
+    assert vue._droit_cote == (diam.id, None)
+
+    def molette(delta, modif=Qt.KeyboardModifier.NoModifier):
+        ev = QWheelEvent(QPointF(p), QPointF(vue.viewport().mapToGlobal(p)), QPoint(0, 0), QPoint(0, delta),
+                         Qt.MouseButton.RightButton, modif, Qt.ScrollPhase.NoScrollPhase, False)
+        vue.wheelEvent(ev)
+
+    n_annulations = len(win._annuler)
+    molette(120)
+    molette(120)
+    assert diam.valeur == pytest.approx(42.0)
+    molette(-120, Qt.KeyboardModifier.ShiftModifier)
+    assert diam.valeur == pytest.approx(41.9)
+    assert max(pt.x for pt in e.points.values()) == pytest.approx(20.95, abs=1e-6)
+    assert vue._bulle_texte is not None and vue._bulle_texte.isVisible() and "41.9" in vue._bulle_texte.text()
+    assert vue.outil == "selection"                     # pas de changement d'outil
+    assert len(win._annuler) == n_annulations           # l'annulation n'est poussée qu'au relâchement
+    QTest.mouseRelease(vue.viewport(), Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, p)
+    assert len(win._annuler) == n_annulations + 1
+    win.annuler()
+    assert win.esquisse.cotes[diam.id].valeur == pytest.approx(40.0)
+
+
 def test_curseur_suit_l_outil(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("selection")
     assert vue.viewport().cursor().shape() == Qt.CursorShape.ArrowCursor
-    for outil in ("ligne", "arc", "cote", "elaguer"):
+    for outil in ("ligne", "arc", "cote", "arrondi", "chanfrein", "elaguer"):
         win.choisir_outil(outil)
         assert vue.viewport().cursor().shape() == Qt.CursorShape.BitmapCursor
     win.choisir_outil("selection")
@@ -578,7 +644,7 @@ def test_clic_droit_molette_change_d_outil(fenetre):
     assert vue.outil == "ligne"
     assert vue.echelle() == pytest.approx(echelle)     # pas de zoom pendant le cycle
     assert vue._bulle is not None and vue._bulle.isVisible() and vue._bulle.courant == "ligne"
-    assert vue._bulle.ordre()[2] == "ligne"            # l'outil actif est au milieu de la bande
+    assert vue._bulle.ordre()[3] == "ligne"            # l'outil actif est au milieu de la bande de sept
     assert vue._droit_molette                          # le relâchement n'ouvrira pas le menu
     win.choisir_outil("selection")
 

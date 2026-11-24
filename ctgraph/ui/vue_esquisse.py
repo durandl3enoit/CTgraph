@@ -53,9 +53,9 @@ TOLERANCE_PX = 9          # rayon d'accrochage et de sélection, en pixels
 ANGLE_AUTO_DEG = 4.0      # en deçà, un trait reçoit la relation horizontal ou vertical, ou s'aligne à 45°
 AIMANTS_DEFAUT = {"ortho": True, "diag": True, "objets": True, "axe": True}
 LIBELLES_AIMANTS = {"ortho": "Horizontal / vertical", "diag": "45°", "objets": "Objets proches", "axe": "Axe Z"}
-OUTILS_RAPIDES = ("selection", "ligne", "arc", "cote", "elaguer")      # clic droit maintenu + molette
+OUTILS_RAPIDES = ("selection", "ligne", "arc", "cote", "arrondi", "chanfrein", "elaguer")   # clic droit + molette
 LIBELLES_OUTILS = {"selection": "Sélection", "ligne": "Ligne", "arc": "Arc 3 points", "cote": "Cote",
-                   "elaguer": "Élaguer"}
+                   "arrondi": "Arrondi", "chanfrein": "Chanfrein", "elaguer": "Élaguer"}
 DELAI_GESTE_MS = 350      # clic semi-long : au-delà, glisser élague au lieu de sélectionner ou de tracer
 SEUIL_GESTE_PX = 4        # bouger plus que cela avant le délai annule le geste
 
@@ -194,7 +194,7 @@ class VueEsquisse(QGraphicsView):
     message = Signal(str)                    # aide contextuelle pour la barre d'état
     selection_changee = Signal()
 
-    OUTILS = ("selection", "ligne", "arc", "cote", "elaguer")
+    OUTILS = ("selection", "ligne", "arc", "cote", "arrondi", "chanfrein", "elaguer")
 
     def __init__(self, controleur, parent=None):
         super().__init__(parent)
@@ -245,9 +245,12 @@ class VueEsquisse(QGraphicsView):
         self._timer_geste.setSingleShot(True)
         self._timer_geste.timeout.connect(self._declencher_geste)
 
-        # clic droit maintenu + molette : changement d'outil, bande d'icônes qui défile sous le curseur
+        # clic droit maintenu + molette : changement d'outil (bande d'icônes), ou réglage d'une cote si le
+        # bouton a été enfoncé sur son étiquette
         self._droit_molette = False
+        self._droit_cote: Optional[Tuple[int, Optional[str]]] = None
         self._bulle: Optional[BulleOutils] = None
+        self._bulle_texte: Optional[QLabel] = None
         self._timer_bulle = QTimer(self)
         self._timer_bulle.setSingleShot(True)
         self._timer_bulle.timeout.connect(self._cacher_bulle)
@@ -1067,6 +1070,29 @@ class VueEsquisse(QGraphicsView):
     def _cacher_bulle(self) -> None:
         if self._bulle is not None:
             self._bulle.hide()
+        if self._bulle_texte is not None:
+            self._bulle_texte.hide()
+
+    def _montrer_texte(self, texte: str, pos) -> None:
+        """Petite bulle de texte sous le curseur (valeur d'une cote en cours de réglage)."""
+        if self._bulle_texte is None:
+            self._bulle_texte = QLabel(self.viewport())
+            self._bulle_texte.setStyleSheet("background: rgba(40, 40, 40, 225); color: white; padding: 3px 8px; "
+                                            "border-radius: 4px; font-weight: 600;")
+            self._bulle_texte.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._bulle_texte.setText(texte)
+        self._bulle_texte.adjustSize()
+        self._bulle_texte.move(pos + QPoint(14, 14))
+        self._bulle_texte.show()
+        self._bulle_texte.raise_()
+        self._timer_bulle.start(1100)
+
+    def etiquette_et_variante(self, pos) -> Optional[Tuple[int, Optional[str]]]:
+        """(cote, variante) de l'étiquette de cote sous le curseur : variante « rayon » pour le R d'un diamètre."""
+        for it in self.items(pos):
+            if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote":
+                return it.data(ROLE_ID), it.data(ROLE_VARIANTE) or None
+        return None
 
     def _aide(self) -> None:
         if self.outil == "ligne":
@@ -1082,6 +1108,10 @@ class VueEsquisse(QGraphicsView):
                 self.message.emit("Arc : cliquez un point par où passe l'arc.")
         elif self.outil == "elaguer":
             self.message.emit("Élaguer : tirez un trait au travers des lignes ou des arcs à couper.")
+        elif self.outil == "arrondi":
+            self.message.emit("Arrondi : cliquez le sommet entre deux lignes, puis donnez le rayon.")
+        elif self.outil == "chanfrein":
+            self.message.emit("Chanfrein : cliquez le sommet entre deux lignes, puis donnez la longueur du pan.")
         elif self.outil == "cote":
             if not self._cote_elements:
                 self.message.emit("Cote : cliquez un point (diamètre), un arc (rayon), une ligne, ou deux éléments.")
@@ -1103,6 +1133,7 @@ class VueEsquisse(QGraphicsView):
             return
         if event.button() == Qt.MouseButton.RightButton:
             self._droit_molette = False        # l'action du clic droit est décidée au relâchement
+            self._droit_cote = self.etiquette_et_variante(pos)   # sur une étiquette : la molette règle la cote
             return
         if event.button() != Qt.MouseButton.LeftButton:
             return
@@ -1115,7 +1146,7 @@ class VueEsquisse(QGraphicsView):
             self._glisse_cote = el[1]
             self._glisse_dernier = self.mapToScene(pos)
             self._glisse_actif = False
-        elif self.outil in ("ligne", "arc", "cote"):
+        elif self.outil in ("ligne", "arc", "cote", "arrondi", "chanfrein"):
             if not self.en_cours():
                 self._timer_geste.start(DELAI_GESTE_MS)
         elif self.outil == "elaguer":
@@ -1324,6 +1355,18 @@ class VueEsquisse(QGraphicsView):
         self.controleur.poser_cote(type_, elements, decalage)
         self._aide()
 
+    def _presser_coin(self, pos) -> None:
+        """Arrondi ou chanfrein : le clic désigne le sommet, la fenêtre demande la valeur et modifie le modèle."""
+        el = self.element_sous(pos, genres=("point",))
+        if el is None:
+            self.message.emit("Cliquez un sommet entre deux lignes.")
+            return
+        if self.outil == "arrondi":
+            self.controleur.arrondir(el[1])
+        else:
+            self.controleur.chanfreiner(el[1])
+        self._aide()
+
     def _apercu_cote(self, curseur: Optional[Accroche], c: Dict[str, QColor]) -> None:
         e = self.esquisse
         surbrillance = QPen(QColor(c["selection"].red(), c["selection"].green(), c["selection"].blue(), 120), 7)
@@ -1414,8 +1457,10 @@ class VueEsquisse(QGraphicsView):
             self.appliquer_curseur()
             return
         if event.button() == Qt.MouseButton.RightButton:
+            self._droit_cote = None
+            self.controleur.fin_ajustement()
             if self._droit_molette:
-                self._droit_molette = False     # la molette a servi à changer d'outil : pas de menu
+                self._droit_molette = False     # la molette a servi (outil ou cote) : pas de menu
                 return
             if self.en_cours():
                 self.annuler_outil()
@@ -1439,6 +1484,8 @@ class VueEsquisse(QGraphicsView):
             self._presser_arc(pos)
         elif self.outil == "cote" and not etiquette_prise and not self._a_bouge(pos):
             self._presser_cote(pos)
+        elif self.outil in ("arrondi", "chanfrein") and not self._a_bouge(pos):
+            self._presser_coin(pos)
         self._press_pos = None
         if self._glisse_point is not None:
             if self._glisse_actif:
@@ -1486,9 +1533,18 @@ class VueEsquisse(QGraphicsView):
         if delta == 0:
             return
         if event.buttons() & Qt.MouseButton.RightButton:
-            # clic droit maintenu + molette : Sélection -> Ligne -> Arc -> Élaguer
             self._droit_molette = True
-            self.cycler_outil(1 if delta < 0 else -1, event.position().toPoint())
+            pos = event.position().toPoint()
+            if self._droit_cote is not None:
+                # clic droit maintenu sur une étiquette de cote + molette : la valeur monte ou descend
+                cote_id, variante = self._droit_cote
+                fin = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                texte = self.controleur.ajuster_cote(cote_id, 1 if delta > 0 else -1, variante, fin)
+                if texte:
+                    self._montrer_texte(texte, pos)
+            else:
+                # sinon, cycle des outils : Sélection -> Ligne -> Arc -> Cote -> Arrondi -> Chanfrein -> Élaguer
+                self.cycler_outil(1 if delta < 0 else -1, pos)
             event.accept()
             return
         self.zoomer(1.15 ** (delta / 120.0), event.position().toPoint())

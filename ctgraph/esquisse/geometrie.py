@@ -31,6 +31,24 @@ def angles_arc(centre: Point2, debut: Point2, fin: Point2, horaire: bool) -> Tup
     return a0, a1
 
 
+def arc_par_trois_points(a: Point2, b: Point2, m: Point2) -> Optional[Tuple[Point2, bool]]:
+    """Centre et sens (horaire) d'un arc allant de a à b en passant par m. None si les points sont alignés."""
+    ax, ay = a
+    bx, by = b
+    mx, my = m
+    d = 2 * (ax * (by - my) + bx * (my - ay) + mx * (ay - by))
+    if abs(d) < EPS:
+        return None
+    ux = ((ax * ax + ay * ay) * (by - my) + (bx * bx + by * by) * (my - ay) + (mx * mx + my * my) * (ay - by)) / d
+    uy = ((ax * ax + ay * ay) * (mx - bx) + (bx * bx + by * by) * (ax - mx) + (mx * mx + my * my) * (bx - ax)) / d
+    aa = math.atan2(ay - uy, ax - ux)
+    ab = math.atan2(by - uy, bx - ux)
+    am = math.atan2(my - uy, mx - ux)
+    balayage_b = (ab - aa) % (2 * math.pi)
+    balayage_m = (am - aa) % (2 * math.pi)
+    return (ux, uy), balayage_m > balayage_b      # en tournant dans le sens direct, on atteint b avant m
+
+
 def ligne(a: Point2, b: Point2) -> tuple:
     return ("ligne", (float(a[0]), float(a[1])), (float(b[0]), float(b[1])))
 

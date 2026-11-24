@@ -37,6 +37,10 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
   `docs/reference-go2cam-ct200.md`. Les ébauches sont des trajectoires explicites G0/G1 ; filetage G33, perçage G83.
 - **Git** : dépôt local initialisé (MinGit portable sur ce poste). Pas encore de dépôt distant.
 
+- **Séance du 24 novembre** : cotes pilotées, écart entre parallèles, contours fermés remplis, vue 3D lisse,
+  icônes sobres et icônes de relations, couple Ø/R, curseurs par outil, menu contextuel à icônes, origine Z et
+  position Z, un seul élagage, zone Relations repliable, réglage des cotes à la molette, outils Arrondi et Chanfrein.
+
 ## En cours
 
 - Rien d'ouvert : la séance s'est terminée sur un état propre.

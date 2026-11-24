@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QCheckBox, QFileDialog, QGridLayout, QGroupBox, Q
 
 from .. import APP_NAME, __version__
 from ..build_info import BUILD_TIME
-from ..esquisse import elagage
+from ..esquisse import coins, elagage
 from ..esquisse.modele import (LIBELLES_COTE, LIBELLES_RELATION, ErreurEsquisse, Esquisse, TypeCote, TypeRelation)
 from ..esquisse.solveur import AdaptateurSolveur, Resultat
 from ..icons import icone_action, icone_outil, icone_relation
@@ -32,7 +32,9 @@ ORDRE_RELATIONS = [TypeRelation.HORIZONTAL, TypeRelation.VERTICAL, TypeRelation.
                    TypeRelation.TANGENT, TypeRelation.EGAL, TypeRelation.SUR_AXE, TypeRelation.ORIGINE_Z,
                    TypeRelation.FIXE]
 OUTILS = (("selection", "Sélection", "S"), ("ligne", "Ligne", "L"), ("arc", "Arc 3 points", "A"),
-          ("cote", "Cote", "C"), ("elaguer", "Élaguer", "E"))
+          ("cote", "Cote", "C"), ("arrondi", "Arrondi", "R"), ("chanfrein", "Chanfrein", "H"),
+          ("elaguer", "Élaguer", "E"))
+PAS_MOLETTE = 1.0          # réglage d'une cote à la molette : 1 mm ou 1° par cran, 0,1 avec Maj
 
 
 class FenetrePrincipale(QMainWindow):
@@ -50,6 +52,9 @@ class FenetrePrincipale(QMainWindow):
         self._annuler: List[str] = []
         self._retablir: List[str] = []
         self._avant_glissement: Optional[str] = None
+        self._avant_ajustement: Optional[str] = None     # réglage d'une cote à la molette : une seule annulation
+        self._rayon_arrondi = 2.0
+        self._longueur_chanfrein = 1.0
 
         self._construire_interface()
         self._construire_menus()
@@ -656,6 +661,55 @@ class FenetrePrincipale(QMainWindow):
             self.vue.selection = []
             self.vue.reconstruire()
             self._selection_changee()
+
+    def ajuster_cote(self, cote_id: int, sens: int, variante: Optional[str], fin: bool) -> Optional[str]:
+        """Molette sur une étiquette : la cote monte ou descend d'un pas. Renvoie le texte à afficher, ou None."""
+        c = self.esquisse.cotes.get(cote_id)
+        if c is None:
+            return None
+        if c.pilotee:
+            self.statusBar().showMessage("Cote pilotée : elle mesure, elle ne se règle pas.", 4000)
+            return None
+        pas = PAS_MOLETTE / 10.0 if fin else PAS_MOLETTE
+        if c.type == TypeCote.DIAMETRE and variante == "rayon":
+            pas *= 2.0                                   # un pas de rayon vaut deux pas de diamètre
+        valeur = c.valeur + sens * pas
+        if c.type not in (TypeCote.ANGLE, TypeCote.POSITION_Z):
+            valeur = max(0.0, valeur)
+        if abs(valeur - c.valeur) < 1e-12:
+            return self.esquisse.texte_cote(c)
+        if self._avant_ajustement is None:
+            self._avant_ajustement = self.esquisse.to_json()
+        res = self.solveur.modifier_cote(cote_id, valeur)
+        self._appliquer_resultat(res)
+        if not res.succes:
+            self.statusBar().showMessage("La géométrie ne peut pas suivre cette valeur.", 4000)
+        self._marquer_modifie(True)
+        return self.esquisse.texte_rayon(c) if (c.type == TypeCote.DIAMETRE and variante == "rayon") \
+            else self.esquisse.texte_cote(c)
+
+    def fin_ajustement(self) -> None:
+        """Relâchement du bouton droit : le réglage à la molette devient une seule étape d'annulation."""
+        if self._avant_ajustement is not None:
+            if self._avant_ajustement != self.esquisse.to_json():
+                self._pousser_annulation(self._avant_ajustement)
+            self._avant_ajustement = None
+
+    def arrondir(self, point_id: int) -> None:
+        valeur, ok = self._demander_valeur("Rayon de l'arrondi", "mm", self._rayon_arrondi, 0.001)
+        if not ok:
+            return
+        self._rayon_arrondi = valeur
+        decalage = self.vue.decalage_par_defaut(TypeCote.RAYON, ())
+        self._modifier(lambda: coins.arrondir(self.esquisse, point_id, valeur, decalage))
+
+    def chanfreiner(self, point_id: int) -> None:
+        valeur, ok = self._demander_valeur("Longueur du chanfrein", "mm", self._longueur_chanfrein, 0.001)
+        if not ok:
+            return
+        self._longueur_chanfrein = valeur
+        decalage = self.vue.decalage_par_defaut(TypeCote.ANGLE, ())
+        self._modifier(lambda: coins.chanfreiner(self.esquisse, point_id, valeur, decalage))
 
     def basculer_pilotee(self, cote_id: int) -> bool:
         """Passe une cote de pilotante à pilotée ou l'inverse. Une cote qui sur-contraindrait reste pilotée."""

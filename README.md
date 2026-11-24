@@ -11,7 +11,7 @@ vue 3D, séquences d'usinage, post-processeur, liaison RS232) viendront ensuite.
 Une pièce est un **demi-profil** dans le plan (Z, X) : Z le long de l'axe de la pièce, X le rayon.
 L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les cotes « Ø ».
 
-* **Changer d'outil** : les boutons à icônes de la colonne, les touches `S`, `L`, `A`, `C`, `E`, ou **clic droit
+* **Changer d'outil** : les boutons à icônes de la colonne, les touches `S`, `L`, `A`, `C`, `R`, `H`, `E`, ou **clic droit
   maintenu + molette** sur le dessin : une bande d'icônes défile sous le curseur, l'outil actif au milieu avec
   son nom. Le curseur porte le symbole
   de l'outil actif, avec une petite croix au point de visée.
@@ -19,7 +19,8 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   qui suit est un trait d'élagage ; l'outil d'avant revient au relâchement.
 * **Symboles des relations** : « -z- » pour horizontal (le long de l'axe Z), un x coupant une barre verticale
   pour vertical, puis ∥, ⊥, T, =, ●, axe, F.
-* **Colonne de gauche** : les outils (Sélection, Ligne, Arc 3 points, Cote, Élaguer), la zone Relations, repliée
+* **Colonne de gauche** : les outils (Sélection, Ligne, Arc 3 points, Cote, Arrondi, Chanfrein, Élaguer), la zone
+  Relations, repliée
   par défaut (horizontal, vertical, coïncident, point sur ligne ou sur arc, parallèle, perpendiculaire, tangent,
   égal, sur l'axe, origine Z, fixe), l'état du solveur avec la liste des relations et des cotes, l'affichage et
   l'aimantation.
@@ -40,6 +41,13 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
 * **À droite** : le dessin. Molette pour zoomer autour du curseur, bouton du milieu pour déplacer la vue, `F` pour tout voir.
 * **Ligne** (`L`) : cliquez le départ puis chaque sommet ; la chaîne continue jusqu'au clic droit ou `Échap`.
 * **Arc 3 points** (`A`) : départ, arrivée, puis un point par où passe l'arc.
+* **Arrondi** (`R`) et **Chanfrein** (`H`) : cliquez le sommet entre deux lignes, donnez le rayon ou la longueur
+  du pan ; la dernière valeur est proposée la fois suivante. L'arrondi est tangent aux deux lignes et porte sa
+  cote de rayon ; le chanfrein porte son angle et sa longueur Z, à lire « 1 × 45° ». Les cotes de longueur des
+  deux lignes raccourcies sont retirées.
+* **Régler une cote à la molette** : clic droit maintenu sur la valeur d'une cote, puis molette : un millimètre ou
+  un degré par cran, un dixième avec `Maj`. Sur le « R » d'un diamètre, c'est le rayon qui change. Le relâchement
+  du bouton n'ouvre pas le menu et ne fait qu'une étape d'annulation.
 * **Élaguer** (`E`) : tirez un trait au travers des lignes ou des arcs à couper. La portion retirée va jusqu'aux
   croisements voisins avec les autres objets, ou jusqu'au bout s'il n'y en a pas ; un objet sans croisement
   disparaît entier. Les nouveaux points de coupe reçoivent « point sur ligne » ou « point sur arc » avec l'objet

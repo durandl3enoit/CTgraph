@@ -76,6 +76,26 @@ def _dessin_cote(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
     return dessin
 
 
+def _dessin_arrondi(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
+    """Un coin dont l'angle est remplacé par un congé."""
+    def dessin(p: QPainter):
+        p.setPen(_stylo(encre, TRAIT))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawLine(QPointF(4, 20), QPointF(4, 11))
+        p.drawArc(QRectF(4, 4, 14, 14), 90 * 16, 90 * 16)
+        p.drawLine(QPointF(11, 4), QPointF(20, 4))
+    return dessin
+
+
+def _dessin_chanfrein(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
+    """Un coin dont l'angle est abattu."""
+    def dessin(p: QPainter):
+        p.setPen(_stylo(encre, TRAIT))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPolyline(QPolygonF([QPointF(4, 20), QPointF(4, 11), QPointF(11, 4), QPointF(20, 4)]))
+    return dessin
+
+
 def _dessin_elaguer(encre: QColor, fond: QColor) -> Callable[[QPainter], None]:
     """Une ligne barrée d'un trait rouge."""
     def dessin(p: QPainter):
@@ -277,6 +297,8 @@ ICONES_OUTILS = {
     "ligne": _dessin_ligne,
     "arc": _dessin_arc,
     "cote": _dessin_cote,
+    "arrondi": _dessin_arrondi,
+    "chanfrein": _dessin_chanfrein,
     "elaguer": _dessin_elaguer,
 }
 
