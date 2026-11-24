@@ -17,14 +17,19 @@ from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox
 from ..outils import CATALOGUE as OUTILS
 from ..plaquettes import CATALOGUE as PLAQUETTES
 from ..tourelle import IMPLANTATIONS, NORME, ORIENTATIONS, Tourelle
+from .transfert import MIME_PLAQUETTE, accueillir
 
 COLONNES = ["Poste", "Type", "Porte-plaquette", "Plaquette", "Correcteur"]
 
 
 class VueTourelle(QWidget):
-    """Le disque : logements numérotés, postes garnis marqués, poste en travail désigné par une flèche."""
+    """Le disque : logements numérotés, postes garnis marqués, poste en travail désigné par une flèche.
+
+    On peut y déposer un porte-plaquette ou une plaquette tirés des autres volets : le poste survolé
+    s'entoure tant que le dépôt est possible."""
 
     poste_choisi = Signal(int)
+    depot = Signal(int, str, str)        # poste, type du glisser, désignation
 
     def __init__(self, tourelle: Tourelle, parent=None):
         super().__init__(parent)
@@ -32,6 +37,9 @@ class VueTourelle(QWidget):
         self.setMinimumSize(200, 200)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAcceptDrops(True)
+        self.accepte_depot = lambda poste, type_mime, designation: False
+        self._survol = 0                 # poste survolé par un glisser en cours
 
     def _echelle(self) -> float:
         marge = 24.0
@@ -100,6 +108,11 @@ class VueTourelle(QWidget):
             p.setBrush(QBrush(QColor(couleur.red(), couleur.green(), couleur.blue(), 70)
                               if poste.est_garni() else fond))
             p.drawEllipse(c, r_logement, r_logement)
+            if numero == self._survol:
+                # cible d'un glisser en cours : un anneau franc autour du logement
+                p.setPen(QPen(choix, 2.4, Qt.PenStyle.DashLine))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(c, r_logement + 5.0, r_logement + 5.0)
             etiquette = self._en_pixels(x - ux * (t.diametre_queue * 0.5 + 11.0 / k),
                                         y - uy * (t.diametre_queue * 0.5 + 11.0 / k))
             p.setPen(QPen(couleur))
@@ -134,6 +147,81 @@ class VueTourelle(QWidget):
             self.update()
         self.poste_choisi.emit(poste)
 
+    # -- dépôt d'un outil ou d'une plaquette ------------------------------------------------
+
+    def poste_sous(self, point) -> int:
+        return self.tourelle.poste_le_plus_proche(*self._en_mm(point.x(), point.y()))
+
+    def _survoler(self, event) -> None:
+        poste, _, _ = accueillir(event, self.poste_sous, self.accepte_depot)
+        if poste != self._survol:
+            self._survol = poste
+            self.update()
+        if poste:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragEnterEvent(self, event) -> None:
+        self._survoler(event)
+
+    def dragMoveEvent(self, event) -> None:
+        self._survoler(event)
+
+    def dragLeaveEvent(self, event) -> None:
+        self._survol = 0
+        self.update()
+
+    def dropEvent(self, event) -> None:
+        poste, type_mime, designation = accueillir(event, self.poste_sous, self.accepte_depot)
+        self._survol = 0
+        self.update()
+        if not poste:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.depot.emit(poste, type_mime, designation)
+
+
+class ListePostes(QTreeWidget):
+    """Le tableau des postes : on y dépose aussi un porte-plaquette ou une plaquette."""
+
+    depot = Signal(int, str, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QTreeWidget.DragDropMode.DropOnly)
+        self.accepte_depot = lambda poste, type_mime, designation: False
+
+    def poste_sous(self, point) -> int:
+        it = self.itemAt(point)
+        return int(it.data(0, Qt.ItemDataRole.UserRole) or 0) if it is not None else 0
+
+    def _survoler(self, event) -> None:
+        poste, _, _ = accueillir(event, self.poste_sous, self.accepte_depot)
+        if poste:
+            self.setCurrentItem(self.itemAt(event.position().toPoint()))
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragEnterEvent(self, event) -> None:
+        self._survoler(event)
+
+    def dragMoveEvent(self, event) -> None:
+        self._survoler(event)
+
+    def dropEvent(self, event) -> None:
+        poste, type_mime, designation = accueillir(event, self.poste_sous, self.accepte_depot)
+        if not poste:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.depot.emit(poste, type_mime, designation)
+
 
 class ZoneTourelle(QWidget):
     """Le volet : le disque, la liste des postes et le formulaire du poste choisi."""
@@ -152,15 +240,20 @@ class ZoneTourelle(QWidget):
         v.setSpacing(5)
         entete = QLabel(f"{NORME} : {self.tourelle.nb_postes} postes, queue Ø {self.tourelle.diametre_queue:g} mm. "
                         "La moitié des outils sont montés transversalement en périphérie, l'autre travaille "
-                        "dans l'axe. Cliquez un poste.")
+                        "dans l'axe. Cliquez un poste, ou déposez-y un outil ou une plaquette tirés des "
+                        "volets voisins.")
         entete.setWordWrap(True)
         v.addWidget(entete)
 
         self.vue = VueTourelle(self.tourelle, self)
         self.vue.poste_choisi.connect(self._poste_choisi)
+        self.vue.accepte_depot = self.accepte_depot
+        self.vue.depot.connect(self.deposer)
         v.addWidget(self.vue, 1)
 
-        self.liste = QTreeWidget()
+        self.liste = ListePostes()
+        self.liste.accepte_depot = self.accepte_depot
+        self.liste.depot.connect(self.deposer)
         self.liste.setColumnCount(len(COLONNES))
         self.liste.setHeaderLabels(COLONNES)
         self.liste.setRootIsDecorated(False)
@@ -312,11 +405,40 @@ class ZoneTourelle(QWidget):
         poste = self.tourelle.poste(self.tourelle.poste_en_travail)
         self.tourelle.garnir(poste.numero, self.porte_plaquette.currentData() or "",
                              self.plaquette.currentData() or "")
-        # le rayon de bec suit la plaquette montée, tant qu'il n'a pas été corrigé à la main
+        self._reprendre_rayon_bec(poste)
+        self._enregistrer()
+
+    @staticmethod
+    def _reprendre_rayon_bec(poste) -> None:
+        """Le rayon de bec suit la plaquette montée, tant qu'il n'a pas été corrigé à la main."""
         pl = next((q for q in PLAQUETTES if q.designation == poste.plaquette), None)
         if pl is not None and not poste.correcteur.rayon_bec:
             poste.correcteur.rayon_bec = pl.rayon_bec
+
+    # -- dépôt depuis les autres volets -----------------------------------------------------
+
+    def accepte_depot(self, poste: int, type_mime: str, designation: str) -> bool:
+        """Un poste reçoit toute plaquette du catalogue, et les porte-plaquettes que son implantation tient."""
+        if not poste or not designation:
+            return False
+        if type_mime == MIME_PLAQUETTE:
+            return any(pl.designation == designation for pl in PLAQUETTES)
+        return designation in self._outils_compatibles(self.tourelle.poste(poste).implantation)
+
+    def deposer(self, poste: int, type_mime: str, designation: str) -> bool:
+        """Monte sur le poste ce qui vient d'être déposé, sans toucher à l'autre moitié du montage."""
+        if not self.accepte_depot(poste, type_mime, designation):
+            return False
+        p = self.tourelle.poste(poste)
+        if type_mime == MIME_PLAQUETTE:
+            self.tourelle.garnir(poste, p.porte_plaquette, designation)
+        else:
+            self.tourelle.garnir(poste, designation, p.plaquette)
+        self._reprendre_rayon_bec(p)
+        self.tourelle.definir_poste(poste)
         self._enregistrer()
+        self.poste_choisi.emit(poste)
+        return True
 
     def _correcteur_change(self) -> None:
         if self._blocage:

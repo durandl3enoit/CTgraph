@@ -204,6 +204,11 @@ vérification par relecture du G-code généré, réception des programmes depui
   Diamètre du disque et rayon d'implantation à relever sur le CT200 ; **la convention des codes
   d'orientation et le comptage de la correction X sont à vérifier dans le manuel NUM 750 T**, rien n'est
   écrit de mémoire.
+- **Glisser-déposer entre volets** (`ui/transfert.py`) : les listes du stock d'outils et des plaquettes sont
+  des `ArbreGlissable` qui emportent la désignation dans un format propre (`MIME_PORTE_PLAQUETTE`,
+  `MIME_PLAQUETTE`) ; le schéma de la tourelle et le tableau des postes l'accueillent (`accueillir` rend le
+  poste visé si `accepte_depot` le permet, sinon l'événement est ignoré et le curseur refuse). Déposer un
+  porte-plaquette ne touche pas à la plaquette déjà montée, et inversement. Le poste survolé s'entoure.
 - **Plaquettes** (`ctgraph/plaquettes.py`, `ui/zone_plaquettes.py`) : catalogue **ISO 1832** des tailles qui
   garnissent les porte-plaquettes, quatre familles (négatives, positives, filetage, gorge). `Plaquette.base`
   (« CNMG 1204 ») relie la plaquette au champ `plaquette` du catalogue des outils ; `pour_base` accepte la

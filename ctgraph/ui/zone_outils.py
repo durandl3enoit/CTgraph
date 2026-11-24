@@ -10,11 +10,11 @@ from typing import Dict, Iterable, List, Set
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QLineEdit, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from ..icons import icone_plaquette
 from ..outils import CATALOGUE, FAMILLES, FORMES_PLAQUETTE, QUEUE_MAXI, PortePlaquette, filtrer
+from .transfert import MIME_PORTE_PLAQUETTE, ArbreGlissable
 
 COLONNES = ["Désignation", "Plaquette", "Attaque", "Queue", "Fixation"]
 ROLE_DESIGNATION = Qt.ItemDataRole.UserRole
@@ -41,7 +41,7 @@ class ZoneOutils(QWidget):
         v.setSpacing(5)
 
         entete = QLabel(f"Porte-plaquettes montables sur porte-outils VDI 30 : queue de {QUEUE_MAXI:g} mm au plus. "
-                        "Cochez ce que l'atelier possède.")
+                        "Cochez ce que l'atelier possède, tirez une ligne sur la tourelle pour l'y monter.")
         entete.setWordWrap(True)
         v.addWidget(entete)
 
@@ -57,7 +57,8 @@ class ZoneOutils(QWidget):
         ligne.addWidget(self.case_stock)
         v.addLayout(ligne)
 
-        self.arbre = QTreeWidget()
+        self.arbre = ArbreGlissable(MIME_PORTE_PLAQUETTE, ROLE_DESIGNATION)
+        self.arbre.setToolTip("Tirez une ligne sur la tourelle pour monter l'outil sur un poste.")
         self.arbre.setColumnCount(len(COLONNES))
         self.arbre.setHeaderLabels(COLONNES)
         self.arbre.setRootIsDecorated(True)

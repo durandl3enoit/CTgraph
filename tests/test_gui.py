@@ -1408,6 +1408,86 @@ def test_zone_plaquettes(fenetre):
     win.actions_volets["plaquettes"].setChecked(False)
 
 
+def test_glisser_deposer_sur_la_tourelle(fenetre):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QDropEvent
+    from ctgraph.tourelle import Tourelle
+    from ctgraph.ui.transfert import MIME_PLAQUETTE, MIME_PORTE_PLAQUETTE, charger, lire
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE  # noqa: F401
+    win = fenetre
+    win.act_zone_atelier.setChecked(True)
+    for cle in win.zone_atelier.volets:
+        win.actions_volets[cle].setChecked(True)
+    QTest.qWait(20)
+    zone = win.zone_tourelle
+    zone.definir_tourelle(Tourelle())
+    t = zone.tourelle
+
+    def ligne(arbre, designation):
+        for i in range(arbre.topLevelItemCount()):
+            parent = arbre.topLevelItem(i)
+            for j in range(parent.childCount()):
+                if parent.child(j).text(0) == designation:
+                    return parent.child(j)
+        raise AssertionError(designation)
+
+    # une ligne du stock d'outils emporte sa désignation ; celle des plaquettes aussi, dans son format
+    mime = win.zone_outils.arbre.mimeData([ligne(win.zone_outils.arbre, "SCLCR 2020 K09")])
+    assert lire(mime) == (MIME_PORTE_PLAQUETTE, "SCLCR 2020 K09")
+    mime = win.zone_plaquettes.arbre.mimeData([ligne(win.zone_plaquettes.arbre, "CCMT 09T308")])
+    assert lire(mime) == (MIME_PLAQUETTE, "CCMT 09T308")
+
+    # ce que chaque poste accepte : les plaquettes partout, les outils selon l'implantation
+    assert zone.accepte_depot(1, MIME_PORTE_PLAQUETTE, "SCLCR 2020 K09")        # poste 1 transversal
+    assert not zone.accepte_depot(1, MIME_PORTE_PLAQUETTE, "S16Q-SCLCR 09")     # queue cylindrique
+    assert zone.accepte_depot(2, MIME_PORTE_PLAQUETTE, "S16Q-SCLCR 09")         # poste 2 axial
+    assert not zone.accepte_depot(2, MIME_PORTE_PLAQUETTE, "SCLCR 2020 K09")
+    assert zone.accepte_depot(1, MIME_PLAQUETTE, "CCMT 09T308")
+    assert not zone.accepte_depot(0, MIME_PLAQUETTE, "CCMT 09T308")
+    assert not zone.accepte_depot(1, MIME_PLAQUETTE, "PLAQUETTE INCONNUE")
+
+    def deposer(cible, point, type_mime, designation):
+        m = charger(type_mime, designation)
+        ev = QDropEvent(QPointF(point), Qt.DropAction.CopyAction, m, Qt.MouseButton.LeftButton,
+                        Qt.KeyboardModifier.NoModifier)
+        cible.dropEvent(ev)
+        return ev.isAccepted()
+
+    # dépôt sur le schéma : le logement du poste 3 (transversal)
+    x, y = t.position_poste(3)
+    cible = zone.vue._en_pixels(x, y)
+    assert deposer(zone.vue, cible, MIME_PORTE_PLAQUETTE, "SDJCR 2020 K11")
+    assert t.poste(3).porte_plaquette == "SDJCR 2020 K11" and t.poste_en_travail == 3
+    # la plaquette se dépose sur le même poste sans effacer le porte-plaquette
+    assert deposer(zone.vue, cible, MIME_PLAQUETTE, "DCMT 11T308")
+    assert t.poste(3).libelle() == "SDJCR 2020 K11 + DCMT 11T308"
+    assert t.poste(3).correcteur.rayon_bec == 0.8          # le rayon de bec suit la plaquette
+    # un outil à queue cylindrique sur un poste transversal : refusé, rien ne change
+    assert not deposer(zone.vue, cible, MIME_PORTE_PLAQUETTE, "S16Q-SCLCR 09")
+    assert t.poste(3).porte_plaquette == "SDJCR 2020 K11"
+
+    # dépôt sur le tableau des postes : la ligne du poste 4, axial
+    zone.rafraichir()
+    item = next(zone.liste.topLevelItem(i) for i in range(12) if zone.liste.topLevelItem(i).text(0) == "4")
+    rect = zone.liste.visualItemRect(item)
+    assert deposer(zone.liste, rect.center(), MIME_PORTE_PLAQUETTE, "S20R-SDUCR 11")
+    assert t.poste(4).porte_plaquette == "S20R-SDUCR 11" and t.poste_en_travail == 4
+    assert not deposer(zone.liste, rect.center(), MIME_PORTE_PLAQUETTE, "SCLCR 2020 K09")
+    assert t.poste(4).porte_plaquette == "S20R-SDUCR 11"
+    # un glisser étranger n'est pas accueilli
+    from PySide6.QtCore import QMimeData
+    etranger = QMimeData()
+    etranger.setText("bonjour")
+    ev = QDropEvent(QPointF(rect.center()), Qt.DropAction.CopyAction, etranger, Qt.MouseButton.LeftButton,
+                    Qt.KeyboardModifier.NoModifier)
+    zone.liste.dropEvent(ev)
+    assert not ev.isAccepted()
+
+    zone.definir_tourelle(Tourelle())
+    for cle in win.zone_atelier.volets:
+        win.actions_volets[cle].setChecked(cle == "outils")
+
+
 def test_suppression(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("ligne")

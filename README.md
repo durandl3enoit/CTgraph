@@ -158,6 +158,11 @@ axial ; les postes garnis sont en vert.
 Sous le dessin, la liste des douze postes donne pour chacun ce qui y est monté, **le porte-plaquette et sa
 plaquette**, et son correcteur. Le formulaire du poste choisi permet de le garnir : le choix des
 porte-plaquettes se borne à ce que l'implantation accepte, queue carrée en transversal, cylindrique en axial.
+
+**Glisser-déposer** : tirez une ligne du *Stock d'outils* ou des *Plaquettes* et lâchez-la sur un poste, soit
+sur le schéma de la tourelle, soit sur une ligne du tableau. Le poste visé s'entoure tant que le dépôt est
+possible, et le curseur refuse un outil que l'implantation du poste ne tient pas. Déposer un porte-plaquette
+ne touche pas à la plaquette déjà montée, et inversement : on garnit un poste en deux gestes.
 On y note aussi **les corrections à appliquer** : le numéro de correcteur sur la commande numérique, les
 corrections en X et en Z, le rayon de bec, qui suit la plaquette montée, et le code d'orientation du nez
 d'outil. La garniture est mémorisée avec les préférences : elle appartient à la machine, pas à la pièce.
@@ -232,7 +237,8 @@ ctgraph/
   ui/vue_esquisse.py       QGraphicsView : tracé, aimantation, sélection, élagage, dessin des cotes et des symboles
   ui/zone_atelier.py       les trois volets repliables ancrés à droite
   ui/volet_lateral.py      volet repliable latéralement : bandeau vertical cliquable
-  ui/zone_tourelle.py      tourelle vue de face, poste en travail au clic
+  ui/zone_tourelle.py      tourelle vue de face, postes garnis, corrections ; cible du glisser-déposer
+  ui/transfert.py          glisser-déposer d'un outil ou d'une plaquette vers un poste
   ui/zone_outils.py        volet « Stock d'outils » : catalogue filtrable, cases « en stock »
   ui/zone_plaquettes.py    volet « Plaquettes » : catalogue et dessin coté de la plaquette choisie
   ui/fenetre_principale.py fenêtre, menus, menu contextuel, fichiers, annulation ; contrôleur de la vue

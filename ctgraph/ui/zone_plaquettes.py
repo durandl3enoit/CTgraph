@@ -11,11 +11,12 @@ from typing import Dict, Iterable, List, Optional, Set
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPalette, QPen
-from PySide6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QTreeWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from ..icons import icone_plaquette
 from ..plaquettes import CATALOGUE, FAMILLES, FORMES_PLAQUETTE, Plaquette, filtrer, sommets_forme
+from .transfert import MIME_PLAQUETTE, ArbreGlissable
 
 COLONNES = ["Désignation", "Dépouille", "Arête", "Épaisseur", "Rayon"]
 ROLE_DESIGNATION = Qt.ItemDataRole.UserRole
@@ -225,8 +226,8 @@ class ZonePlaquettes(QWidget):
         v = QVBoxLayout(self)
         v.setContentsMargins(6, 6, 6, 6)
         v.setSpacing(5)
-        entete = QLabel("Plaquettes ISO 1832 qui garnissent les porte-plaquettes du stock. "
-                        "Cochez ce que l'atelier possède.")
+        entete = QLabel("Plaquettes ISO 1832 qui garnissent les porte-plaquettes du stock. Cochez ce que "
+                        "l'atelier possède, tirez une ligne sur la tourelle pour l'y monter.")
         entete.setWordWrap(True)
         v.addWidget(entete)
 
@@ -242,7 +243,8 @@ class ZonePlaquettes(QWidget):
         ligne.addWidget(self.case_stock)
         v.addLayout(ligne)
 
-        self.arbre = QTreeWidget()
+        self.arbre = ArbreGlissable(MIME_PLAQUETTE, ROLE_DESIGNATION)
+        self.arbre.setToolTip("Tirez une ligne sur la tourelle pour monter la plaquette sur un poste.")
         self.arbre.setColumnCount(len(COLONNES))
         self.arbre.setHeaderLabels(COLONNES)
         self.arbre.setIndentation(12)

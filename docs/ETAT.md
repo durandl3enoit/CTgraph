@@ -62,7 +62,7 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   cote), angle (coin). **Références du montage** (face de référence Z = 0 à la marge du bout du brut, face des
   mors, appui, face du mandrin, surfaces du brut) : alignement et cote depuis, par le menu contextuel ou
   l'aimantation. Cotes d'angle en arc de secteur, à la façon de SolidWorks : le secteur mesuré est celui où
-  l'étiquette est posée. Brut sans appui : cote « prise » réglable. 128 tests.
+  l'étiquette est posée. Brut sans appui : cote « prise » réglable. 133 tests.
 
 - **Stock d'outils, première version** (`ctgraph/outils.py`, `ui/zone_outils.py`) : catalogue des 105
   porte-plaquettes montables sur porte-outils VDI 30 (queue ≤ 20 mm), en cinq familles, désignations ISO 5608
@@ -75,8 +75,9 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
 - **Tourelle garnie** : douze postes VDI 30 vus de face, implantation transversale en périphérie ou axiale
   (alternées, réglables poste par poste), liste des postes avec le porte-plaquette et la plaquette montés,
   et le correcteur à appliquer (numéro, X, Z, rayon de bec, orientation). Garniture mémorisée avec les
-  préférences. Point 1 du périmètre bien engagé ; restent les porte-outils VDI eux-mêmes et la fiche de
-  réglage.
+  préférences. **Glisser-déposer** d'un outil ou d'une plaquette depuis les volets voisins, sur le schéma
+  comme sur le tableau des postes, avec refus de ce que l'implantation ne tient pas. Point 1 du périmètre
+  bien engagé ; restent les porte-outils VDI eux-mêmes et la fiche de réglage.
 
 ## En cours
 
