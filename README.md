@@ -27,8 +27,9 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
 * **Cote** (`C`) : un seul outil, le type se déduit. Cliquez un point : diamètre si la cote est posée à côté,
   position Z depuis l'origine de la pièce si elle est posée au-dessus. Un arc : rayon. Une ligne, puis
   l'endroit où poser la cote : au-dessus ou au-dessous, c'est la longueur Z ; à côté, c'est le diamètre d'une ligne
-  horizontale ou l'angle d'une ligne inclinée. Une face verticale : sa position Z si la cote est posée au-dessus,
-  sa hauteur si elle est posée à côté. Deux lignes : angle entre elles,
+  horizontale ou l'angle d'une ligne inclinée. Une ligne inclinée a aussi sa **longueur vraie** : posez la cote
+  à côté d'elle, entre ses extrémités, elle se dessine parallèle à la ligne. Une face verticale : sa position Z si
+  la cote est posée au-dessus, sa hauteur si elle est posée à côté. Deux lignes : angle entre elles,
   longueur Z entre deux faces verticales, ou écart entre deux lignes parallèles (profondeur de gorge), que l'on
   glisse le long de la première. Deux points : longueur Z. La cote suit le curseur en aperçu, le clic la pose
   et demande sa valeur, proposée à la mesure actuelle. `Ctrl+K` ou le menu du clic droit cotent la sélection.

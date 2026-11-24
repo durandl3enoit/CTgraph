@@ -1604,6 +1604,13 @@ class VueEsquisse(QGraphicsView):
                 dz_hors = max(0.0, zmin - z, z - zmax)
                 dx_hors = max(0.0, xmin - x, x - xmax)
                 famille = "cote" if (verticale or dz_hors > dx_hors) else "dessus"
+                if not horizontale and not verticale:
+                    # ligne biaise : posée à côté d'elle, entre ses extrémités (dans sa boîte, un peu élargie),
+                    # c'est sa longueur vraie, parallèle à la ligne ; au-dessus ou au-dessous, la longueur Z ;
+                    # à droite ou à gauche, l'angle
+                    marge = self.px_en_mm(12)
+                    if dz_hors <= marge and dx_hors <= marge:
+                        return TypeCote.DISTANCE, elements, self._decalage_normal(a, b, z, x)
             if verticale:
                 # une face : posée au-dessus ou au-dessous, sa position Z depuis l'origine ; à côté, sa hauteur
                 if z is None or dx_hors > 0.0:

@@ -108,6 +108,24 @@ def test_maillages_du_montage():
             assert n[1] * p[1] + n[2] * p[2] > 0.0      # surface extérieure : normale vers le dehors
 
 
+def test_cadrage_de_la_piece_entiere():
+    from ctgraph.ui.vue_3d import CHAMP_DEG, _rayon_englobant, distance_de_cadrage
+    # arbre long de 80, Ø 50 : la sphère englobante va jusqu'aux arêtes des faces, pas seulement à mi-longueur
+    poly = [(0, 0), (0, 25), (-80, 25), (-80, 0), (0, 0)]
+    data, nb = maillage_revolution([poly], segments=16)
+    centre, demi = _bornes(data, nb)
+    assert demi == pytest.approx(40.0)
+    rayon = _rayon_englobant(data, nb, centre)
+    assert rayon == pytest.approx(math.sqrt(40.0 ** 2 + 25.0 ** 2), abs=1e-4)
+    # à cette distance, la sphère tient dans la demi-ouverture verticale (vue plus large que haute)
+    d = distance_de_cadrage(rayon, 380, 270)
+    assert d * math.sin(math.radians(CHAMP_DEG / 2)) >= rayon
+    assert d > 3.2 * demi                                 # l'ancien cadrage coupait la pièce
+    # vue plus haute que large : c'est l'ouverture horizontale, plus étroite, qui compte
+    assert distance_de_cadrage(rayon, 200, 400) > d
+    assert _rayon_englobant(data, 0, centre) == 50.0
+
+
 def test_angles_des_vues_typiques():
     from ctgraph.ui.vue_3d import BIAIS_DEFAUT, angles_de_vue
     assert angles_de_vue("cote") == (0.0, 0.0)          # l'axe de la pièce à l'horizontale

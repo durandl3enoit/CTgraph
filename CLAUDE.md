@@ -99,7 +99,8 @@ vérification par relecture du G-code généré, réception des programmes depui
   si bien que l'on voit au travers du mandrin quand la caméra y entre. Le brut est translucide.
   Repère : Z pièce = X monde. `CTGRAPH_SANS_3D=1` la désactive (tests hors écran). Boutons de vues typiques
   dans le cadre (`angles_de_vue`) : de côté (lacet 0, tangage 0), de face (lacet −90), de biais réglable
-  (mémorisé dans les préférences `vue3d.biais`). L'outil sur la tourelle viendra s'y ajouter.
+  (mémorisé dans les préférences `vue3d.biais`). Recadrage (`distance_de_cadrage`) : la sphère englobante de
+  la pièce tient dans l'ouverture de 32°, quelle que soit l'orientation. L'outil sur la tourelle viendra s'y ajouter.
 - **Contours fermés remplis** d'une teinte discrète (`VueEsquisse.contours_fermes`) : chaînes dont chaque sommet
   relie exactement deux éléments, refermées sur elles-mêmes ou dont les deux bouts touchent l'axe (fermeture par
   l'axe de révolution). Deux points liés par « coïncident » comptent pour un seul sommet (union-find).
@@ -107,6 +108,8 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Les cotes sont un seul outil** (`Cote`, touche C), pas cinq boutons : le type se déduit des éléments cliqués et de
   l'endroit où la cote est posée (`VueEsquisse.deduire_cote`). Point → diamètre ; arc → rayon ; ligne → longueur Z
   si posée au-dessus ou au-dessous, sinon diamètre (horizontale), angle (inclinée) ou distance (verticale) ;
+  ligne inclinée posée à côté d'elle entre ses extrémités (dans sa boîte élargie de 12 px) → distance, sa
+  longueur vraie dessinée parallèle, comme la cote alignée des CAO ;
   deux lignes → angle, longueur Z entre deux verticales, ou écart (`TypeCote.ECART`, distance point-droite
   PlaneGCS) entre deux parallèles ; deux points → longueur Z (distance si même z).
 - **Élaguer** : un trait tiré au travers des objets, un seul comportement : la portion retirée va jusqu'aux croisements

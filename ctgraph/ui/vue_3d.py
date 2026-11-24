@@ -251,7 +251,7 @@ def maillages_montage(montage) -> List[Tuple[array, int, Tuple[float, float, flo
 
 
 def _bornes(data: array, nb: int) -> Tuple[QVector3D, float]:
-    """Centre et rayon englobant du maillage."""
+    """Centre de la boîte englobante du maillage et sa plus grande demi-étendue (échelle de la scène)."""
     if nb == 0:
         return QVector3D(0.0, 0.0, 0.0), 50.0
     xs = data[0::6]
@@ -260,6 +260,27 @@ def _bornes(data: array, nb: int) -> Tuple[QVector3D, float]:
     cx, cy, cz = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, (min(zs) + max(zs)) / 2
     r = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs)) / 2
     return QVector3D(cx, cy, cz), max(r, 1.0)
+
+
+def _rayon_englobant(data: array, nb: int, centre: QVector3D) -> float:
+    """Rayon de la sphère centrée sur `centre` qui contient tous les sommets : c'est elle qu'il faut cadrer."""
+    if nb == 0:
+        return 50.0
+    cx, cy, cz = centre.x(), centre.y(), centre.z()
+    return max(1.0, max(math.sqrt((x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2)
+                        for x, y, z in zip(data[0::6], data[1::6], data[2::6])))
+
+
+CHAMP_DEG = 32.0          # ouverture verticale de la perspective
+
+
+def distance_de_cadrage(rayon: float, largeur: int, hauteur: int, marge: float = 1.12) -> float:
+    """Distance de la caméra pour qu'une sphère de ce rayon tienne entière dans la vue, avec une petite marge.
+    La demi-ouverture limitante est la verticale, ou l'horizontale quand la vue est plus haute que large."""
+    demi = math.radians(CHAMP_DEG / 2.0)
+    if 0 < largeur < hauteur:
+        demi = math.atan(math.tan(demi) * largeur / hauteur)
+    return rayon * marge / math.sin(demi)
 
 
 class Vue3D(QOpenGLWidget):
@@ -282,6 +303,7 @@ class Vue3D(QOpenGLWidget):
         self._montage_a_televerser = False
         self._centre = QVector3D(0.0, 0.0, 0.0)
         self._rayon = 50.0
+        self._rayon_sphere = 50.0
         self._jamais_cadre = True
         self._lacet, self._tangage = BIAIS_DEFAUT
         self._biais: Tuple[float, float] = BIAIS_DEFAUT
@@ -318,6 +340,7 @@ class Vue3D(QOpenGLWidget):
     def _reconstruire_maillage(self) -> None:
         self._donnees, self._nb = maillage_revolution(self._contours)
         self._centre, self._rayon = _bornes(self._donnees, self._nb)
+        self._rayon_sphere = _rayon_englobant(self._donnees, self._nb, self._centre)
         if self._nb and self._jamais_cadre:
             self._jamais_cadre = False
             self.recadrer()
@@ -336,7 +359,8 @@ class Vue3D(QOpenGLWidget):
             self.message.hide()
 
     def recadrer(self) -> None:
-        self._distance = self._rayon * 3.2
+        """La pièce entière dans la vue, quelle que soit l'orientation : on cadre sa sphère englobante."""
+        self._distance = distance_de_cadrage(self._rayon_sphere, self.width(), self.height())
         self._pan = QVector3D(0.0, 0.0, 0.0)
         self.update()
 
@@ -432,7 +456,7 @@ class Vue3D(QOpenGLWidget):
     def _matrices(self) -> Tuple[QMatrix4x4, QMatrix4x4]:
         w, h = max(self.width(), 1), max(self.height(), 1)
         proj = QMatrix4x4()
-        proj.perspective(32.0, w / h, max(self._distance * 0.02, 0.1), self._distance * 6.0 + self._rayon * 8.0)
+        proj.perspective(CHAMP_DEG, w / h, max(self._distance * 0.02, 0.1), self._distance * 6.0 + self._rayon * 8.0)
         vue = QMatrix4x4()
         vue.lookAt(QVector3D(0.0, 0.0, self._distance), QVector3D(0.0, 0.0, 0.0), QVector3D(0.0, 1.0, 0.0))
         modele = QMatrix4x4()

@@ -514,6 +514,39 @@ def test_glisser_droit_suit_la_ligne_de_cote(fenetre):
     assert abs(sx) > 0.1 and abs(sy) > 0.1                   # bien en diagonale
 
 
+def test_cote_de_ligne_biaise(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win.choisir_outil("ligne")
+    clic(vue, 0, 0)
+    clic(vue, -30, 20)          # ligne biaise de (0, 0) à (-30, 20)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    e = win.esquisse
+    li = next(iter(e.lignes.values()))
+    assert not vue.est_horizontale(li.id) and not vue.est_verticale(li.id)
+    # à côté de la ligne, entre ses extrémités : sa longueur vraie, posée parallèlement
+    t, els, dec = vue.deduire_cote([li.id], pos(vue, -10, 15))
+    assert t == TypeCote.DISTANCE and els == (li.id,)
+    # au-dessus de sa boîte : la longueur Z ; à droite : l'angle
+    assert vue.deduire_cote([li.id], pos(vue, -15, 40))[0] == TypeCote.LONGUEUR_Z
+    assert vue.deduire_cote([li.id], pos(vue, 20, 10))[0] == TypeCote.ANGLE
+    # avec l'outil Cote : clic sur la ligne, puis à côté d'elle ; la valeur demandée est la longueur vraie
+    demandes = []
+
+    def demander(libelle, unite, defaut, mini):
+        demandes.append((libelle, defaut))
+        return 40.0, True
+
+    win._demander_valeur = demander
+    win.choisir_outil("cote")
+    clic(vue, -15, 10)          # sur la ligne
+    clic(vue, -10, 15)          # à côté
+    cote = list(e.cotes.values())[-1]
+    assert cote.type == TypeCote.DISTANCE and cote.valeur == pytest.approx(40.0)
+    assert demandes and demandes[0][1] == pytest.approx(math.hypot(30, 20), abs=0.3)   # tracé à la souris, au pixel
+    a, b = (e.points[i] for i in e.extremites(li.id))
+    assert math.hypot(b.z - a.z, b.x - a.x) == pytest.approx(40.0, abs=1e-6)
+
+
 def test_curseur_suit_l_outil(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("selection")
