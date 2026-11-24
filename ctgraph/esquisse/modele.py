@@ -104,6 +104,8 @@ class Point:
     id: int
     z: float
     x: float
+    construction: bool = False   # point de construction : le sommet théorique d'un arrondi ou d'un chanfrein,
+                                 # hors profil, conservé pour que les cotes voisines gardent leur sens
 
 
 @dataclass
@@ -293,13 +295,13 @@ class Esquisse:
         return [c for c in self.cotes.values() if ident in c.elements]
 
     def points_orphelins(self) -> List[int]:
-        """Points qui ne tiennent à aucune ligne ni aucun arc."""
+        """Points qui ne tiennent à aucune ligne ni aucun arc, points de construction exceptés."""
         utilises = set()
         for li in self.lignes.values():
             utilises.update((li.p1, li.p2))
         for a in self.arcs.values():
             utilises.update((a.centre, a.debut, a.fin))
-        return [pid for pid in self.points if pid not in utilises]
+        return [pid for pid, p in self.points.items() if pid not in utilises and not p.construction]
 
     def est_vide(self) -> bool:
         return not (self.points or self.lignes or self.arcs)
@@ -427,7 +429,7 @@ class Esquisse:
             "format": FORMAT,
             "version": VERSION_FORMAT,
             "prochain_id": self._prochain_id,
-            "points": [{"id": p.id, "z": p.z, "x": p.x} for p in self.points.values()],
+            "points": [{"id": p.id, "z": p.z, "x": p.x, "construction": p.construction} for p in self.points.values()],
             "lignes": [{"id": li.id, "p1": li.p1, "p2": li.p2} for li in self.lignes.values()],
             "arcs": [{"id": a.id, "centre": a.centre, "debut": a.debut, "fin": a.fin, "horaire": a.horaire}
                      for a in self.arcs.values()],
@@ -445,7 +447,7 @@ class Esquisse:
             raise ErreurEsquisse("esquisse enregistrée par une version plus récente de CTgraph")
         e = cls()
         for p in d.get("points", []):
-            e.points[int(p["id"])] = Point(int(p["id"]), float(p["z"]), float(p["x"]))
+            e.points[int(p["id"])] = Point(int(p["id"]), float(p["z"]), float(p["x"]), bool(p.get("construction", False)))
         for li in d.get("lignes", []):
             e.lignes[int(li["id"])] = Ligne(int(li["id"]), int(li["p1"]), int(li["p2"]))
         for a in d.get("arcs", []):

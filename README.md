@@ -42,9 +42,10 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
 * **Ligne** (`L`) : cliquez le départ puis chaque sommet ; la chaîne continue jusqu'au clic droit ou `Échap`.
 * **Arc 3 points** (`A`) : départ, arrivée, puis un point par où passe l'arc.
 * **Arrondi** (`R`) et **Chanfrein** (`H`) : cliquez le sommet entre deux lignes, donnez le rayon ou la longueur
-  du pan ; la dernière valeur est proposée la fois suivante. L'arrondi est tangent aux deux lignes et porte sa
-  cote de rayon ; le chanfrein porte son angle et sa longueur Z, à lire « 1 × 45° ». Les cotes de longueur des
-  deux lignes raccourcies sont retirées.
+  du pan ; la dernière valeur est proposée la fois suivante. Le sommet reste comme coin théorique, une petite croix
+  hors profil tenue sur le prolongement des deux lignes : les cotes de longueur voisines s'y rattachent, et changer
+  le rayon ou le chanfrein ne déplace rien d'autre. L'arrondi est tangent aux deux lignes et porte sa cote de rayon ;
+  le chanfrein porte sa longueur depuis le coin théorique et son angle, à lire « 1 × 45° ».
 * **Régler une cote à la molette** : clic droit maintenu sur la valeur d'une cote, puis molette : un millimètre ou
   un degré par cran, un dixième avec `Maj`. Sur le « R » d'un diamètre, c'est le rayon qui change. Le relâchement
   du bouton n'ouvre pas le menu et ne fait qu'une étape d'annulation.
@@ -66,8 +67,8 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   en continu en respectant relations et cotes. Tirez une valeur de cote pour déplacer son étiquette ; double-cliquez-la
   pour changer sa valeur. `Suppr` supprime la sélection.
 * **Clic droit** : menu contextuel avec, en première ligne, les relations possibles pour la sélection sous forme
-  d'icônes (le nom en infobulle), puis la cote déduite, la suppression, les outils et « Tout voir ». Pendant un
-  tracé, le clic droit termine la chaîne.
+  d'icônes (le nom en infobulle), puis la cote déduite, Arrondi et Chanfrein si la sélection est un coin ou deux
+  lignes concourantes, la suppression, les outils et « Tout voir ». Pendant un tracé, le clic droit termine la chaîne.
 * **Relations** : sélectionnez les éléments concernés puis cliquez le bouton (ou le menu du clic droit).
   Une relation ou une cote en conflit est affichée en rouge, une relation redondante en jaune.
 * **État** : « sous-contraint » avec le nombre de degrés de liberté, « entièrement contraint » (profil en vert),

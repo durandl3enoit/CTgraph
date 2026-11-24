@@ -274,6 +274,7 @@ class FenetrePrincipale(QMainWindow):
         possibles = False
         encre, fond = self._encre, self._fond_icone
         menu.relations_proposees = []
+        menu.coin_propose = None
         if sel:
             types = [t for t in ORDRE_RELATIONS if self.esquisse.relation_possible(t, sel) or (
                 t == TypeRelation.POINT_SUR_LIGNE and self.esquisse.relation_possible(TypeRelation.POINT_SUR_ARC, sel))]
@@ -304,6 +305,13 @@ class FenetrePrincipale(QMainWindow):
                 menu.addAction(self.actions_outils["cote"].icon(),
                                f"Coter la sélection ({LIBELLES_COTE[deduction[0]]})", self.coter_selection)
                 possibles = True
+            coin = self.coin_depuis_selection(sel)
+            menu.coin_propose = coin
+            if coin is not None:
+                menu.addAction(self.actions_outils["arrondi"].icon(), "Arrondi…", lambda pid=coin: self.arrondir(pid))
+                menu.addAction(self.actions_outils["chanfrein"].icon(), "Chanfrein…",
+                               lambda pid=coin: self.chanfreiner(pid))
+                possibles = True
             cotes_sel = [self.esquisse.cotes[i] for i in sel if i in self.esquisse.cotes]
             for co in cotes_sel:
                 texte = "Rendre la cote pilotante" if co.pilotee else "Rendre la cote pilotée (mesurée)"
@@ -326,6 +334,24 @@ class FenetrePrincipale(QMainWindow):
             m_outils.addAction(act)
         menu.addAction(self.act_tout_voir.icon(), "Tout voir", self.vue.tout_voir)
         return menu
+
+    def coin_depuis_selection(self, sel) -> Optional[int]:
+        """Le sommet à arrondir ou chanfreiner : un point entre deux lignes, ou deux lignes concourantes."""
+        e = self.esquisse
+        genres = [e.genre(i) for i in sel]
+        if genres == ["point"]:
+            pid = sel[0]
+        elif sorted(genres) == ["ligne", "ligne"]:
+            l1, l2 = (e.lignes[i] for i in sel)
+            commun = {l1.p1, l1.p2} & {l2.p1, l2.p2}
+            if len(commun) != 1:
+                return None
+            pid = commun.pop()
+        else:
+            return None
+        if e.points[pid].construction or len(e.lignes_du_point(pid)) != 2 or e.arcs_du_point(pid):
+            return None
+        return pid
 
     def menu_contextuel(self, pos_globale) -> None:
         self.construire_menu_contextuel().exec(pos_globale)

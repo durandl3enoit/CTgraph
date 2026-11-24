@@ -417,7 +417,9 @@ class VueEsquisse(QGraphicsView):
         for a in e.arcs.values():
             extremites.update((a.debut, a.fin))
         for p in e.points.values():
-            if p.id in centres and p.id not in extremites:
+            if p.construction:
+                it = self._croix(p, c["relation"], p.id in sel, c, diagonale=True)   # coin théorique, hors profil
+            elif p.id in centres and p.id not in extremites:
                 it = self._croix(p, c["centre"], p.id in sel, c)
             else:
                 r = 4.5 if p.id in sel else 3.5
@@ -465,12 +467,19 @@ class VueEsquisse(QGraphicsView):
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         return pen
 
-    def _croix(self, p, couleur: QColor, selectionne: bool, c: Dict[str, QColor]) -> QGraphicsPathItem:
+    def _croix(self, p, couleur: QColor, selectionne: bool, c: Dict[str, QColor],
+               diagonale: bool = False) -> QGraphicsPathItem:
         path = QPainterPath()
-        path.moveTo(-5, 0)
-        path.lineTo(5, 0)
-        path.moveTo(0, -5)
-        path.lineTo(0, 5)
+        if diagonale:
+            path.moveTo(-4, -4)
+            path.lineTo(4, 4)
+            path.moveTo(-4, 4)
+            path.lineTo(4, -4)
+        else:
+            path.moveTo(-5, 0)
+            path.lineTo(5, 0)
+            path.moveTo(0, -5)
+            path.lineTo(0, 5)
         it = QGraphicsPathItem(path)
         it.setPos(p.z, p.x)
         it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)

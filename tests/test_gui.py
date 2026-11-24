@@ -376,7 +376,7 @@ def test_outils_arrondi_et_chanfrein(fenetre):
     win._demander_valeur = lambda libelle, unite, defaut, mini: (3.0, True)
     win.choisir_outil("arrondi")
     clic(vue, coin.z, coin.x)
-    assert coin.id not in e.points and len(e.arcs) == 1
+    assert e.points[coin.id].construction and len(e.arcs) == 1
     arc = next(iter(e.arcs.values()))
     assert e.rayon(arc.id) == pytest.approx(3.0, abs=1e-6)
     assert sum(1 for r in e.relations.values() if r.type == TypeRelation.TANGENT) == 2
@@ -387,13 +387,13 @@ def test_outils_arrondi_et_chanfrein(fenetre):
     win._demander_valeur = lambda libelle, unite, defaut, mini: (1.5, True)
     win.choisir_outil("chanfrein")
     clic(vue, coin2.z, coin2.x)
-    assert coin2.id not in e.points
+    assert e.points[coin2.id].construction
     assert any(c.type == TypeCote.ANGLE for c in e.cotes.values())
-    assert any(c.type == TypeCote.LONGUEUR_Z and c.valeur == pytest.approx(1.5, abs=1e-6) for c in e.cotes.values())
+    assert any(c.type == TypeCote.DISTANCE and c.valeur == pytest.approx(1.5, abs=1e-6) for c in e.cotes.values())
     assert win.resultat.succes and not win.resultat.conflits
     ecran(win, "coins")
     win.annuler()
-    assert coin2.id in win.esquisse.points
+    assert not win.esquisse.points[coin2.id].construction
 
 
 def test_molette_sur_une_etiquette_regle_la_cote(fenetre):
@@ -454,6 +454,33 @@ def test_menu_contextuel_a_des_icones(fenetre):
     actions = [a for a in menu.actions() if not a.isSeparator() and a.isEnabled() and not isinstance(a, QWidgetAction)]
     assert actions and all(not a.icon().isNull() for a in actions)
     assert menu.relations_proposees
+
+
+def test_menu_contextuel_propose_arrondi_et_chanfrein_sur_un_coin(fenetre):
+    win, vue = fenetre, fenetre.vue
+    rectangle(win)
+    e = win.esquisse
+    coin = next(p for p in e.points.values() if p.z < -30 and p.x > 10)
+    haut = next(li for li in e.lignes.values() if all(e.points[p].x > 10 for p in (li.p1, li.p2)))
+    fond = next(li for li in e.lignes.values() if all(e.points[p].z < -30 for p in (li.p1, li.p2)))
+    face = next(li for li in e.lignes.values() if all(abs(e.points[p].z) < 1e-6 for p in (li.p1, li.p2)))
+    # un coin sélectionné
+    vue.selection = [coin.id]
+    menu = win.construire_menu_contextuel()
+    textes = [a.text() for a in menu.actions()]
+    assert menu.coin_propose == coin.id and "Arrondi…" in textes and "Chanfrein…" in textes
+    # deux lignes concourantes
+    vue.selection = [haut.id, fond.id]
+    assert win.construire_menu_contextuel().coin_propose == coin.id
+    # deux lignes qui ne se touchent pas : rien
+    vue.selection = [face.id, fond.id]
+    menu = win.construire_menu_contextuel()
+    assert menu.coin_propose is None and "Arrondi…" not in [a.text() for a in menu.actions()]
+    # depuis le menu, l'arrondi s'applique au coin
+    vue.selection = [coin.id]
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (2.0, True)
+    next(a for a in win.construire_menu_contextuel().actions() if a.text() == "Arrondi…").trigger()
+    assert e.points[coin.id].construction and len(e.arcs) == 1
 
 
 def test_zone_relations_repliee_par_defaut(fenetre):

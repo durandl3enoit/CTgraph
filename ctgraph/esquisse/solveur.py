@@ -284,24 +284,73 @@ class AdaptateurSolveur:
         return res
 
     def modifier_cote(self, cote_id: int, valeur: float) -> Resultat:
-        """Change la valeur d'une cote et résout. Revient à l'ancienne valeur en cas d'échec."""
+        """Change la valeur d'une cote et résout. Revient à l'ancienne valeur en cas d'échec.
+
+        Le reste du dessin ne doit pas se déplacer : si le solveur a répondu par une translation d'ensemble,
+        ce qu'il fait volontiers quand rien n'ancre l'esquisse, elle est annulée (voir `_compenser_derive`).
+        """
         c = self.esquisse.cotes[cote_id]
         if c.pilotee:
             return Resultat(False, "pilotee")      # une cote pilotée se lit, elle ne se règle pas
         ancienne = c.valeur
         c.valeur = float(valeur)
+        positions = {pid: (p.z, p.x) for pid, p in self.esquisse.points.items()}
         param = self._params_cotes.get(cote_id)
         if param is None:
             self.construire()
-            res = self.resoudre()
+            res = self.resoudre(diagnostiquer=False)
         else:
             self._s.set_param(param, self._valeur_param(c))
-            res = self.resoudre()
+            res = self.resoudre(diagnostiquer=False)
         if not res.succes:
             c.valeur = ancienne
             if param is not None:
                 self._s.set_param(param, self._valeur_param(c))
-        return res
+        else:
+            self._compenser_derive(self._points_de_cote(c), positions)
+        return self.diagnostiquer(res)
+
+    def _points_de_cote(self, c: Cote) -> set:
+        """Les points qu'une cote fait légitimement bouger : ses éléments, centre d'arc compris."""
+        e = self.esquisse
+        pts = set()
+        for ident in c.elements:
+            g = e.genre(ident)
+            if g == "point":
+                pts.add(ident)
+            elif g == "ligne":
+                pts.update(e.extremites(ident))
+            elif g == "arc":
+                a = e.arcs[ident]
+                pts.update((a.debut, a.fin, a.centre))
+        return pts
+
+    def _compenser_derive(self, exclus: set, avant: Dict[int, Tuple[float, float]]) -> None:
+        """Annule la translation d'ensemble choisie par le solveur quand l'esquisse n'est pas ancrée.
+
+        On mesure le déplacement médian des points étrangers à la cote modifiée. S'il n'est pas nul, tout
+        le dessin est ramené d'autant et le système est résolu à nouveau : sans référence absolue, cette
+        position est une solution et tout reste en place ; avec une référence absolue, le solveur revient
+        de lui-même à la bonne position.
+        """
+        deltas = [(p.z - avant[pid][0], p.x - avant[pid][1])
+                  for pid, p in self.esquisse.points.items() if pid not in exclus and pid in avant]
+        if not deltas:
+            return
+        dzs = sorted(d[0] for d in deltas)
+        dxs = sorted(d[1] for d in deltas)
+        dz, dx = dzs[len(dzs) // 2], dxs[len(dxs) // 2]
+        if abs(dz) < 1e-9 and abs(dx) < 1e-9:
+            return
+        instantane = self._instantane()
+        for pz, px in self._params_pts.values():
+            self._s.set_param(pz, self._s.get_param(pz) - dz)
+            self._s.set_param(px, self._s.get_param(px) - dx)
+        if self._s.solve() in _OK:
+            self._ecrire_positions()
+        else:
+            self._restaurer(instantane)
+            self._ecrire_positions()
 
     def glisser(self, point_id: int, z: float, x: float) -> bool:
         """Amène un point vers (z, x) en respectant les contraintes. Vrai si quelque chose a bougé.
