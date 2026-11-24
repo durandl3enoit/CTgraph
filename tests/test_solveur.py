@@ -301,6 +301,61 @@ def test_references_du_montage_et_longueur_x():
     assert e2.points[p.id].z == pytest.approx(-105.0)
 
 
+def test_cote_d_angle_par_secteur_pilote_et_mesure():
+    e = Esquisse()
+    o = e.ajouter_point(0, 0)
+    a = e.ajouter_point(10, 0)
+    b = e.ajouter_point(5, 8.0)
+    l1 = e.ajouter_ligne(o.id, a.id)
+    l2 = e.ajouter_ligne(o.id, b.id)
+    e.ajouter_relation(TypeRelation.FIXE, (o.id,))
+    e.ajouter_relation(TypeRelation.FIXE, (a.id,))
+    e.ajouter_cote(TypeCote.DISTANCE, (l2.id,), 10.0)
+    # le supplément (secteur 1, sous l1) imposé à 120° : l2 fait 60° avec l1
+    c = e.ajouter_cote(TypeCote.ANGLE, (l1.id, l2.id), 120.0, secteur=1)
+    s = AdaptateurSolveur(e)
+    res = s.resoudre()
+    assert res.succes and res.dof == 0, res
+    assert e.points[b.id].z == pytest.approx(5.0, abs=1e-6) and e.points[b.id].x == pytest.approx(8.660254, abs=1e-6)
+    assert s.modifier_cote(c.id, 150.0).succes                     # 30° entre les segments
+    assert e.points[b.id].x == pytest.approx(5.0, abs=1e-6) and e.points[b.id].z == pytest.approx(8.660254, abs=1e-6)
+    # la même cote, posée dans l'autre sens des lignes, se lit pareil
+    e2 = Esquisse()
+    o2 = e2.ajouter_point(0, 0)
+    a2 = e2.ajouter_point(10, 0)
+    b2 = e2.ajouter_point(5, 8.0)
+    m1 = e2.ajouter_ligne(a2.id, o2.id)                             # vers le sommet
+    m2 = e2.ajouter_ligne(o2.id, b2.id)
+    e2.ajouter_relation(TypeRelation.FIXE, (o2.id,))
+    e2.ajouter_relation(TypeRelation.FIXE, (a2.id,))
+    e2.ajouter_cote(TypeCote.DISTANCE, (m2.id,), 10.0)
+    c2 = e2.ajouter_cote(TypeCote.ANGLE, (m1.id, m2.id), 45.0)      # secteur 0, entre les segments
+    s2 = AdaptateurSolveur(e2)
+    assert s2.resoudre().succes
+    assert e2.points[b2.id].z == pytest.approx(7.0710678, abs=1e-6)
+    assert e2.angle_secteur((m1.id, m2.id), 0) == pytest.approx(45.0)
+    # pilotée : elle relit l'angle du secteur, jamais l'angle orienté
+    c2.pilotee = True
+    s2.construire()
+    s2.resoudre()
+    assert c2.valeur == pytest.approx(45.0)
+    # ligne seule : depuis p2 vers −Z (secteur 3), 30°
+    e3 = Esquisse()
+    p = e3.ajouter_point(0, 0)
+    q = e3.ajouter_point(-10, 5)
+    lg = e3.ajouter_ligne(p.id, q.id)
+    e3.ajouter_relation(TypeRelation.FIXE, (q.id,))
+    e3.ajouter_cote(TypeCote.DISTANCE, (lg.id,), 10.0)
+    c3 = e3.ajouter_cote(TypeCote.ANGLE, (lg.id,), 30.0, secteur=3)
+    s3 = AdaptateurSolveur(e3)
+    assert s3.resoudre().succes
+    assert e3.angle_secteur((lg.id,), 3) == pytest.approx(30.0, abs=1e-6)
+    # p est parti à 30° de −Z depuis q, du côté où il était (sous q)
+    assert e3.points[p.id].z == pytest.approx(-10 - 10 * math.cos(math.radians(30)), abs=1e-6)
+    assert e3.points[p.id].x == pytest.approx(5 - 10 * math.sin(math.radians(30)), abs=1e-6)
+    assert c3.valeur == 30.0
+
+
 def test_relations_diverses():
     e = Esquisse()
     a = e.ajouter_point(0, 0)

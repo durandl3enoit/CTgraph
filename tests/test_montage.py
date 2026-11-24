@@ -121,7 +121,8 @@ def test_mors_retournes_et_serrage_interieur():
     assert m.prise.appui == 1
     assert m.face_etagee_en_contact() and m.etage_de_serrage() == 1 and m.z_brut_arriere() == -120.0
     assert m.blocs_mors() == [(-120.0, -100.0, 6.0, 30.0), (-140.0, -120.0, 6.0, 38.0), (-170.0, -140.0, 6.0, 46.0)]
-    assert m.appuis_possibles() == [(0, "Face du mandrin"), (1, "Épaulement de l'étage 1"), (2, "Épaulement de l'étage 2")]
+    assert m.appuis_possibles() == [(-1, "Aucun appui (prise réglable)"), (0, "Face du mandrin"),
+                                    (1, "Épaulement de l'étage 1"), (2, "Épaulement de l'étage 2")]
     # mors normaux en serrage intérieur : la face plate dehors, le fond (40 d'épaisseur) ne tient pas dans Ø 60 ;
     # refusé, et rien ne change
     with pytest.raises(ErreurEsquisse):
@@ -136,7 +137,35 @@ def test_mors_retournes_et_serrage_interieur():
     m.brut.forme = "rond"
     with pytest.raises(ErreurEsquisse):
         m.verifier()
-    assert m.appuis_possibles() == [(0, "Face du mandrin")]
+    assert m.appuis_possibles() == [(-1, "Aucun appui (prise réglable)"), (0, "Face du mandrin")]
+
+
+def test_prise_libre_sans_appui():
+    m = Montage(brut=Brut(diametre=60.0), prise=PriseDePiece(depassement=100.0))
+    # régler la prise renonce à l'appui ; le brut est tenu à cette longueur de la face des mors
+    m.definir_valeur("prise", 30.0)
+    assert m.prise.appui == -1 and m.prise.prise_libre == 30.0
+    assert m.z_brut_arriere() == -130.0 and m.profondeur_prise() == 30.0 and m.texte("prise") == "prise 30"
+    # l'étage qui serre : le plus profond atteint (étage 1 jusqu'à 20, étage 2 jusqu'à 40, puis le fond)
+    assert m.etage_de_serrage() == 2
+    m.definir_valeur("prise", 15.0)
+    assert m.etage_de_serrage() == 1 and m.blocs_mors()[0][2] == 30.0
+    m.definir_valeur("prise", 55.0)
+    assert m.etage_de_serrage() == 3 and m.blocs_mors()[2][2] == 30.0
+    assert "sans appui, prise de 55" in m.description_prise()
+    assert m.appuis_possibles()[0] == (-1, "Aucun appui (prise réglable)")
+    assert "appui_mors" not in {r.nom for r in m.references()}
+    # au-delà de la hauteur des mors : refusé, rien ne change
+    with pytest.raises(ErreurEsquisse):
+        m.definir_valeur("prise", 80.0)
+    assert m.prise.prise_libre == 55.0
+    # revenir à un appui : la prise redevient celle de l'épaulement
+    m.definir_appui(1)
+    assert m.profondeur_prise() == 20.0 and m.valeur("prise") == 20.0
+    # la longueur du brut se règle aussi en prise libre, sur le dépassement
+    m.definir_valeur("prise", 25.0)
+    m.definir_valeur("longueur", 150.0)
+    assert m.prise.depassement == pytest.approx(150.0 - 25.0 - 2.0) and m.profondeur_prise() == 25.0
 
 
 def test_cles_inconnues_ignorees():

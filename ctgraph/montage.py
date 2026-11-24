@@ -113,7 +113,9 @@ class PriseDePiece:
     serrage: str = "exterieur"       # "exterieur" : les mors serrent le brut par l'extérieur ;
                                      # "interieur" : ils s'écartent dans l'alésage d'un tube
     mors_retournes: bool = False     # face étagée vers l'axe (False) ou vers l'extérieur (True)
-    appui: int = 1                   # 0 : face du mandrin ; k : épaulement derrière l'étage k (depuis le bout)
+    appui: int = 1                   # 0 : face du mandrin ; k : épaulement derrière l'étage k (depuis le bout) ;
+                                     # -1 : aucun appui, le brut est tenu à `prise_libre` de la face des mors
+    prise_libre: float = 20.0        # longueur engagée dans les mors quand rien n'appuie le brut (appui = -1)
 
 
 def _depuis_dict(cls, d: Dict[str, Any]):
@@ -162,8 +164,11 @@ class Montage:
         return self.z_face_mors() - sum(e.longueur for e in self.mandrin.etages[:k])
 
     def z_appui(self) -> float:
-        """Où s'appuie l'arrière du brut : face du mandrin ou épaulement derrière l'étage `appui`."""
-        return self.z_face_mandrin() if self.prise.appui <= 0 else self.z_fond_etage(self.prise.appui)
+        """Où est l'arrière du brut : face du mandrin, épaulement derrière l'étage `appui`, ou nulle part en
+        particulier (prise libre, à `prise_libre` de la face des mors)."""
+        if self.prise.appui < 0:
+            return self.z_face_mors() - self.prise.prise_libre
+        return self.z_face_mandrin() if self.prise.appui == 0 else self.z_fond_etage(self.prise.appui)
 
     def z_brut_avant(self) -> float:
         return self.prise.surepaisseur_face
@@ -193,10 +198,17 @@ class Montage:
         return self.prise.mors_retournes == (self.prise.serrage == "interieur")
 
     def etage_de_serrage(self) -> int:
-        """L'étage qui touche le brut (1 = bout) : celui de l'appui, ou le fond quand le brut va jusqu'au mandrin."""
+        """L'étage qui touche le brut (1 = bout) : celui de l'appui ; en prise libre, le plus profond que le brut
+        atteint (les étages se rapprochent du brut vers le fond) ; le fond quand le brut va jusqu'au mandrin."""
         n = self.mandrin.nb_etages()
-        if self.face_etagee_en_contact() and 1 <= self.prise.appui <= n:
+        if not self.face_etagee_en_contact():
+            return n
+        if 1 <= self.prise.appui <= n:
             return self.prise.appui
+        if self.prise.appui < 0:
+            arriere = self.z_appui()
+            atteints = [i for i in range(1, n + 1) if self.z_fond_etage(i - 1) > arriere + 1e-9]
+            return max(atteints) if atteints else 1
         return n
 
     def blocs_mors(self) -> List[Tuple[float, float, float, float]]:
@@ -262,7 +274,9 @@ class Montage:
         qui l'est, la face du mandrin d'abord puis les épaulements depuis le bout (un tube serré par l'intérieur
         n'accepte souvent que les étages minces du bout)."""
         actuel = self.prise.appui
-        for appui in [actuel] + [a for a, _ in self.appuis_possibles() if a != actuel]:
+        # on garde l'appui actuel s'il tient, sinon un appui réel (mandrin, puis épaulements), la prise libre en dernier
+        ordre = [a for a, _ in self.appuis_possibles() if a >= 0] + [-1]
+        for appui in [actuel] + [a for a in ordre if a != actuel]:
             self.prise.appui = appui
             try:
                 self.verifier()
@@ -290,8 +304,9 @@ class Montage:
         self._modifier(faire)
 
     def appuis_possibles(self) -> List[Tuple[int, str]]:
-        """(valeur, libellé) des appuis : la face du mandrin, puis chaque épaulement si la face étagée serre."""
-        out = [(0, "Face du mandrin")]
+        """(valeur, libellé) des appuis : aucun (prise réglable), la face du mandrin, puis chaque épaulement si
+        la face étagée serre."""
+        out = [(-1, "Aucun appui (prise réglable)"), (0, "Face du mandrin")]
         if self.face_etagee_en_contact():
             out += [(k, f"Épaulement de l'étage {k}") for k in range(1, self.mandrin.nb_etages())]
         return out
@@ -300,14 +315,20 @@ class Montage:
         p = self.prise
         mors = "mors retournés" if p.mors_retournes else "mors normaux"
         serrage = "serrage intérieur" if p.serrage == "interieur" else "serrage extérieur"
-        appui = "appui sur la face du mandrin" if p.appui <= 0 else f"appui sur l'épaulement de l'étage {p.appui}"
+        if p.appui < 0:
+            appui = f"sans appui, prise de {self.profondeur_prise():g}"
+        elif p.appui == 0:
+            appui = "appui sur la face du mandrin"
+        else:
+            appui = f"appui sur l'épaulement de l'étage {p.appui}"
         return f"{mors}, {serrage} par l'étage {self.etage_de_serrage()}, {appui}"
 
     # -- valeurs éditables dans l'esquisse : les trois du brut, et les cotes du mors --------------------
 
-    CLES_BRUT = ("diametre", "longueur", "marge")
+    CLES_BRUT = ("diametre", "longueur", "marge", "prise")
     LIBELLES_BRUT = {"diametre": "Diamètre du brut", "longueur": "Longueur du brut",
-                     "marge": "Marge en bout (face brute → face finie)"}
+                     "marge": "Marge en bout (face brute → face finie)",
+                     "prise": "Prise dans les mors (face des mors → arrière du brut), sans appui"}
 
     def cles_mors(self) -> List[str]:
         """Les cotes du mors : épaisseur au fond, puis par étage sa longueur et l'épaulement derrière lui."""
@@ -342,6 +363,8 @@ class Montage:
             return self.longueur_brut()
         if cle == "marge":
             return self.prise.surepaisseur_face
+        if cle == "prise":
+            return self.profondeur_prise()
         if cle == "mors.epaisseur":
             return self.mandrin.epaisseur_mors
         i, champ = self._etage_de_cle(cle)
@@ -359,6 +382,10 @@ class Montage:
                 self.prise.depassement = float(valeur) - self.profondeur_prise() - self.prise.surepaisseur_face
             elif cle == "marge":
                 self.prise.surepaisseur_face = float(valeur)
+            elif cle == "prise":
+                # régler la prise, c'est renoncer à l'appui : le brut est tenu à cette longueur de la face des mors
+                self.prise.appui = -1
+                self.prise.prise_libre = float(valeur)
             elif cle == "mors.epaisseur":
                 self.mandrin.epaisseur_mors = float(valeur)
             else:
@@ -370,7 +397,7 @@ class Montage:
         v = self.valeur(cle)
         texte = f"{v:.2f}".rstrip("0").rstrip(".")
         if cle in self.CLES_BRUT:
-            return {"diametre": "Ø brut ", "longueur": "L brut ", "marge": "marge "}[cle] + texte
+            return {"diametre": "Ø brut ", "longueur": "L brut ", "marge": "marge ", "prise": "prise "}[cle] + texte
         if cle == "mors.epaisseur":
             return "E " + texte
         i, champ = self._etage_de_cle(cle)
@@ -411,8 +438,11 @@ class Montage:
             raise ErreurEsquisse("serrage : « exterieur » ou « interieur »")
         if p.serrage == "interieur" and b.forme != "tube":
             raise ErreurEsquisse("le serrage intérieur demande un brut en tube")
-        if not 0 <= p.appui < m.nb_etages():
-            raise ErreurEsquisse("l'appui est la face du mandrin (0) ou l'épaulement derrière un étage avant le fond")
+        if not (p.appui == -1 or 0 <= p.appui < m.nb_etages()):
+            raise ErreurEsquisse("l'appui est la face du mandrin (0), l'épaulement derrière un étage avant le fond, "
+                                 "ou aucun (-1)")
+        if p.appui == -1 and not 0 < p.prise_libre <= m.hauteur_mors():
+            raise ErreurEsquisse("sans appui, la prise doit être positive et ne pas dépasser la hauteur des mors")
         if p.appui >= 1 and not self.face_etagee_en_contact():
             raise ErreurEsquisse("la face plate des mors serre le brut : l'appui ne peut être que la face du mandrin")
         if p.serrage == "interieur":

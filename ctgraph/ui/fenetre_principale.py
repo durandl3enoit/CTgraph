@@ -837,11 +837,22 @@ class FenetrePrincipale(QMainWindow):
         self._appliquer_resultat(res)
 
     def deplacer_etiquette(self, cote_id: int, dz: float, dx: float) -> None:
-        c = self.esquisse.cotes.get(cote_id)
+        e = self.esquisse
+        c = e.cotes.get(cote_id)
         if c is None:
             return
         c.decalage = (c.decalage[0] + dz, c.decalage[1] + dx)
         self._marquer_modifie(True)
+        if c.type == TypeCote.ANGLE:
+            # l'étiquette passée dans un autre secteur : la cote mesure désormais celui-là (le supplément, ou
+            # l'angle depuis l'autre bout), sans que la géométrie bouge
+            ancre = e.ancre_angle(c.elements)
+            secteur = e.secteur_angle(c.elements, (ancre[0] + c.decalage[0], ancre[1] + c.decalage[1]))
+            if secteur != c.secteur:
+                c.secteur = secteur
+                c.valeur = e.angle_secteur(c.elements, secteur)
+                self._appliquer_resultat(self._resoudre_apres_construction())
+                return
         self.vue.reconstruire()
 
     def editer_cote(self, cote_id: int, variante: str = "valeur") -> None:
@@ -928,9 +939,14 @@ class FenetrePrincipale(QMainWindow):
         sinon la valeur est demandée. Appelé par l'outil Cote, par « Coter : … » et « Coter depuis … »."""
         e = self.esquisse
         sel = tuple(elements)
+        secteur = 0
         try:
             e.verifier_cote(type_, sel)
-            mesure = e.mesurer(type_, sel, reference)
+            if type_ == TypeCote.ANGLE:
+                # le secteur mesuré est celui où l'étiquette est posée, comme dans une esquisse de CAO
+                ancre = e.ancre_angle(sel)
+                secteur = e.secteur_angle(sel, (ancre[0] + decalage[0], ancre[1] + decalage[1]))
+            mesure = e.mesurer(type_, sel, reference, secteur)
         except ErreurEsquisse as exc:
             self.statusBar().showMessage(str(exc), 6000)
             return
@@ -939,7 +955,7 @@ class FenetrePrincipale(QMainWindow):
             libelle = f"Écart depuis : {e.references[reference].libelle}"
         avant = e.to_json()
         try:
-            c = e.ajouter_cote(type_, sel, mesure, decalage, reference)
+            c = e.ajouter_cote(type_, sel, mesure, decalage, reference, secteur)
         except ErreurEsquisse as exc:
             self.statusBar().showMessage(str(exc), 6000)
             return

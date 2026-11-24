@@ -30,7 +30,12 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
   horizontale. Une **ligne inclinée** se cote selon l'endroit : à côté d'elle, entre ses extrémités, sa longueur
   vraie, dessinée parallèle ; au-dessus ou au-dessous, sa longueur Z ; à droite ou à gauche, sa longueur X
   (l'écart radial entre ses bouts) ; en diagonale au-delà d'un coin, son angle. Deux points se cotent de même.
-  Une face verticale : sa position Z si la cote est posée au-dessus, sa hauteur si elle est posée à côté. Deux lignes : angle entre elles,
+  Une face verticale : sa position Z si la cote est posée au-dessus, sa hauteur si elle est posée à côté.
+  Une **cote d'angle** se dessine comme dans une esquisse de CAO : un arc centré sur le croisement des deux
+  lignes (ou sur le bout de la ligne seule, par rapport à l'axe Z), flèches aux deux bouts, rayons de rappel
+  au besoin. Le secteur mesuré est celui où vous posez l'étiquette : entre les deux segments, ou son supplément
+  de l'autre côté ; un chanfrein se lit 45°, pas 135°. Tirer l'étiquette dans un autre secteur change la lecture
+  sans bouger le dessin. Deux lignes : angle entre elles,
   longueur Z entre deux faces verticales, ou écart entre deux lignes parallèles (profondeur de gorge), que l'on
   glisse le long de la première. Deux points : longueur Z. La cote suit le curseur en aperçu, le clic la pose
   et demande sa valeur, proposée à la mesure actuelle. `Ctrl+K` ou le menu du clic droit cotent la sélection.
@@ -98,6 +103,8 @@ le passage de barre de 42 mm est une caractéristique du mandrin, affichée mais
 gravées « 210 BH-FC » et « 12082030 (1/16"x90°) » sont rappelées discrètement sur le dessin),
 le brut (rond plein ou tube, diamètre, matière), la prise de pièce (serrage, mors retournés ou non, appui du
 brut, dépassement de la face des mors à la face finie, surépaisseur de la face avant) et la contre-pointe.
+Le brut peut aussi n'appuyer sur rien : choisissez *Aucun appui*, et la cote « prise » de l'esquisse (face des
+mors → arrière du brut) se règle alors directement ; la régler fait d'office renoncer à l'appui.
 
 Les **mors** sont des mors durs étagés et réversibles : chaque étage, numéroté depuis le bout, a une longueur et
 un épaulement derrière lui ; le mors est le plus épais au fond. Mors normaux, la face étagée regarde l'axe et
@@ -114,7 +121,8 @@ Le repère est celui de la pièce :
 Z = 0 sur la face avant finie, Z négatif vers le mandrin. Le montage est enregistré avec la pièce et le dernier
 réglé sert de défaut aux nouvelles pièces. Il se dessine en retrait dans l'esquisse, brut en pointillés et mors
 hachurés, et dans la vue 3D, brut translucide ; la touche `M` le masque. Trois cotes du brut restent toujours
-affichées en ambre : « Ø brut », « L brut » et « marge », la marge en bout entre la face brute et la face finie.
+affichées en ambre : « Ø brut », « L brut », « marge » (en bout, entre la face brute et la face finie) et
+« prise » (face des mors → arrière du brut).
 Double-clic ou clic droit + molette pour les changer ; une longueur de brut se répartit sur le dépassement, la
 prise dans les mors et la marge ne bougent pas.
 

@@ -98,5 +98,7 @@ def chanfreiner(e: Esquisse, point_id: int, distance: float, decalage=(0.0, 0.0)
     pan = e.ajouter_ligne(a_id, b_id)
     # lecture « longueur × angle » : longueur du côté depuis le coin théorique, angle du pan
     e.ajouter_cote(TypeCote.DISTANCE, (point_id, a_id), distance, (0.0, decalage[1]))
-    e.ajouter_cote(TypeCote.ANGLE, (pan.id,), None, decalage)
+    # le secteur aigu du pan par rapport à l'axe Z, depuis le bout qui donne l'angle le plus petit (45° plutôt que 135°)
+    secteur = min(range(4), key=lambda k: (round(e.angle_secteur((pan.id,), k), 6), k))
+    e.ajouter_cote(TypeCote.ANGLE, (pan.id,), None, decalage, secteur=secteur)
     return pan.id

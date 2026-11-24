@@ -194,6 +194,40 @@ def test_longueur_x_et_references_du_montage():
     assert "reference" not in e.to_dict()["cotes"][0]
 
 
+def test_cote_d_angle_par_secteur():
+    e = Esquisse()
+    o = e.ajouter_point(0, 0)
+    p = e.ajouter_point(10, 10)
+    li = e.ajouter_ligne(o.id, p.id)
+    # ligne seule à 45° : depuis p1 vers +Z (secteur 0) 45°, vers −Z (2) 135° ; depuis p2 : 135° puis 45°
+    assert [round(e.angle_secteur((li.id,), k), 6) for k in range(4)] == [45.0, 135.0, 135.0, 45.0]
+    assert e.angle_dirige((li.id,)) == pytest.approx(45.0)
+    # l'étiquette désigne le secteur : près de p1 côté +Z, près de p1 côté −Z, près de p2 sous la ligne
+    # (grand secteur vers +Z), près de p2 dans le petit secteur vers −Z
+    assert e.secteur_angle((li.id,), (3.0, 1.0)) == 0
+    assert e.secteur_angle((li.id,), (-3.0, 1.0)) == 2
+    assert e.secteur_angle((li.id,), (12.0, 9.0)) == 1
+    assert e.secteur_angle((li.id,), (7.0, 9.6)) == 3
+    # deux lignes en V à 60° : le secteur entre les segments, ses suppléments, l'opposé
+    q = e.ajouter_point(5, 8.660254)
+    l2 = e.ajouter_ligne(o.id, q.id)
+    l1 = e.ajouter_ligne(o.id, e.ajouter_point(10, 0).id)
+    assert e.ancre_angle((l1.id, l2.id)) == pytest.approx((0.0, 0.0))
+    assert [round(e.angle_secteur((l1.id, l2.id), k), 4) for k in range(4)] == [60.0, 120.0, 60.0, 120.0]
+    assert e.secteur_angle((l1.id, l2.id), (4.0, 2.0)) == 0          # entre les deux segments
+    assert e.secteur_angle((l1.id, l2.id), (3.0, -1.0)) == 1         # sous l1 : le supplément
+    assert e.secteur_angle((l1.id, l2.id), (-4.0, -2.0)) == 2        # à l'opposé
+    assert e.secteur_angle((l1.id, l2.id), (-1.0, 4.0)) == 3
+    c = e.ajouter_cote(TypeCote.ANGLE, (l1.id, l2.id), secteur=1)
+    assert c.valeur == pytest.approx(120.0) and c.secteur == 1
+    assert Esquisse.from_json(e.to_json()).cotes[c.id].secteur == 1
+    # deux lignes qui ne se touchent pas : le croisement de leurs droites sert de centre
+    m = e.ajouter_ligne(e.ajouter_point(20, 5).id, e.ajouter_point(30, 5).id)
+    n = e.ajouter_ligne(e.ajouter_point(25, 10).id, e.ajouter_point(25, 20).id)
+    assert e.ancre_angle((m.id, n.id)) == pytest.approx((25.0, 5.0))
+    assert e.angle_secteur((m.id, n.id), 0) == pytest.approx(90.0)
+
+
 def test_copier_est_independant():
     e = arbre_epaule()
     e2 = e.copier()

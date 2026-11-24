@@ -170,6 +170,15 @@ class Cote:
     decalage: Tuple[float, float] = (0.0, 0.0)   # position de l'étiquette par rapport à son point d'ancrage
     pilotee: bool = False                        # cote pilotée : mesurée par le solveur, elle n'impose rien
     reference: str = ""                          # nom de la référence du montage (DEPUIS_REFERENCE)
+    secteur: int = 0                             # cote d'angle : le secteur mesuré, choisi par la position de l'étiquette
+                                                 # (ligne) : bit 0 = bout (p1 ou p2), bit 1 = axe Z vers + ou vers − ;
+                                                 # (ligne, ligne) : 0 entre les segments, 1 et 3 supplémentaires, 2 opposé
+
+
+def _normaliser_deg(angle: float) -> float:
+    """Ramène un angle dans ]-180, 180]."""
+    a = (angle + 180.0) % 360.0 - 180.0
+    return 180.0 if a == -180.0 else a
 
 
 class Esquisse:
@@ -300,9 +309,9 @@ class Esquisse:
         return True
 
     def ajouter_cote(self, type_: TypeCote, elements: Iterable[int], valeur: Optional[float] = None,
-                     decalage: Tuple[float, float] = (0.0, 0.0), reference: str = "") -> Cote:
+                     decalage: Tuple[float, float] = (0.0, 0.0), reference: str = "", secteur: int = 0) -> Cote:
         """Ajoute une cote. Sans `valeur`, la cote prend la mesure actuelle. `reference` : le plan du montage
-        visé par une cote « depuis une référence »."""
+        visé par une cote « depuis une référence ». `secteur` : le secteur mesuré par une cote d'angle."""
         type_ = TypeCote(type_)
         elements = tuple(int(e) for e in elements)
         self._verifier_forme(_FORMES_COTE[type_], elements, LIBELLES_COTE[type_])
@@ -310,8 +319,9 @@ class Esquisse:
             self.reference_de(reference)
         else:
             reference = ""
+        secteur = int(secteur) % 4 if type_ == TypeCote.ANGLE else 0
         if valeur is None:
-            valeur = self.mesurer(type_, elements, reference)
+            valeur = self.mesurer(type_, elements, reference, secteur)
         valeur = float(valeur)
         if type_ in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE, TypeCote.LONGUEUR_X) and len(elements) == 2:
             # ordre canonique : du plus petit z (ou x) au plus grand, la valeur est positive
@@ -322,7 +332,7 @@ class Esquisse:
         if type_ not in COTES_SIGNEES and valeur < 0:
             raise ErreurEsquisse(f"{LIBELLES_COTE[type_]} : valeur négative refusée")
         c = Cote(self._nouvel_id(), type_, elements, valeur, (float(decalage[0]), float(decalage[1])),
-                 reference=reference)
+                 reference=reference, secteur=secteur)
         self.cotes[c.id] = c
         return c
 
@@ -427,13 +437,103 @@ class Esquisse:
         a, b = self._points_de((ligne_id,))
         return math.degrees(math.atan2(b.x - a.x, b.z - a.z))
 
+    # -- cotes d'angle : secteur entre deux rayons, à la façon des esquisses de CAO -----------------
+
+    def ancre_angle(self, elements: Tuple[int, ...]) -> Tuple[float, float]:
+        """Le point auquel le décalage de l'étiquette d'une cote d'angle se rapporte : le croisement des deux
+        lignes, ou le milieu de la ligne seule."""
+        if len(elements) == 2:
+            croisement = self._croisement(elements[0], elements[1])
+            if croisement is not None:
+                return croisement
+            m1, m2 = self._milieu_ligne(elements[0]), self._milieu_ligne(elements[1])
+            return ((m1[0] + m2[0]) / 2, (m1[1] + m2[1]) / 2)
+        return self._milieu_ligne(elements[0])
+
+    def _milieu_ligne(self, ligne_id: int) -> Tuple[float, float]:
+        a, b = self._points_de((ligne_id,))
+        return ((a.z + b.z) / 2, (a.x + b.x) / 2)
+
+    def _croisement(self, l1: int, l2: int) -> Optional[Tuple[float, float]]:
+        """Le point où les droites portant deux lignes se croisent, None si elles sont parallèles."""
+        a, b = self._points_de((l1,))
+        c, d = self._points_de((l2,))
+        d1z, d1x = b.z - a.z, b.x - a.x
+        d2z, d2x = d.z - c.z, d.x - c.x
+        den = d1z * d2x - d1x * d2z
+        if abs(den) < 1e-12:
+            return None
+        t = ((c.z - a.z) * d2x - (c.x - a.x) * d2z) / den
+        return (a.z + t * d1z, a.x + t * d1x)
+
+    def rayons_angle(self, elements: Tuple[int, ...], secteur: int = 0):
+        """(centre, a, b) d'une cote d'angle : le centre de l'arc et les deux directions unitaires qui bordent
+        le secteur `secteur`. Ligne seule : depuis le bout choisi, le long de la ligne puis le long de l'axe Z
+        (vers + ou vers −). Deux lignes : au croisement, vers chaque segment ou son prolongement."""
+        if len(elements) == 1:
+            p1, p2 = self._points_de((elements[0],))
+            centre, autre = (p2, p1) if secteur & 1 else (p1, p2)
+            n = math.hypot(autre.z - centre.z, autre.x - centre.x) or 1.0
+            a = ((autre.z - centre.z) / n, (autre.x - centre.x) / n)
+            b = (-1.0, 0.0) if secteur & 2 else (1.0, 0.0)
+            return (centre.z, centre.x), a, b
+        croisement = self._croisement(elements[0], elements[1])
+        if croisement is None:
+            # lignes parallèles : pas de secteur, les directions des lignes elles-mêmes
+            rayons = []
+            for ident in elements:
+                p, q = self._points_de((ident,))
+                n = math.hypot(q.z - p.z, q.x - p.x) or 1.0
+                rayons.append(((q.z - p.z) / n, (q.x - p.x) / n))
+            return self.ancre_angle(elements), rayons[0], rayons[1]
+        cz, cx = croisement
+        rayons = []
+        for ident in elements:
+            mz, mx = self._milieu_ligne(ident)
+            n = math.hypot(mz - cz, mx - cx) or 1.0
+            rayons.append(((mz - cz) / n, (mx - cx) / n))
+        e1, e2 = {0: (1, 1), 1: (1, -1), 2: (-1, -1), 3: (-1, 1)}[secteur % 4]
+        return (cz, cx), (e1 * rayons[0][0], e1 * rayons[0][1]), (e2 * rayons[1][0], e2 * rayons[1][1])
+
+    def angle_secteur(self, elements: Tuple[int, ...], secteur: int = 0) -> float:
+        """L'angle, dans [0, 180], du secteur d'une cote d'angle."""
+        _, a, b = self.rayons_angle(elements, secteur)
+        return abs(_normaliser_deg(math.degrees(math.atan2(b[1], b[0]) - math.atan2(a[1], a[0]))))
+
+    def secteur_angle(self, elements: Tuple[int, ...], position: Tuple[float, float]) -> int:
+        """Le secteur que désigne une position (z, x), celle de l'étiquette : pour une ligne seule, depuis le bout
+        le plus proche ; celui qui contient la direction du centre vers la position, sinon le plus proche."""
+        if len(elements) == 1:
+            p1, p2 = self._points_de((elements[0],))
+            bout = 1 if math.hypot(position[0] - p2.z, position[1] - p2.x) \
+                < math.hypot(position[0] - p1.z, position[1] - p1.x) else 0
+            candidats = [bout, bout + 2]
+        else:
+            candidats = [0, 1, 2, 3]
+        meilleur, ecart_min = candidats[0], float("inf")
+        for k in candidats:
+            (cz, cx), a, b = self.rayons_angle(elements, k)
+            wz, wx = position[0] - cz, position[1] - cx
+            if math.hypot(wz, wx) < 1e-9:
+                return candidats[0]
+            a0 = math.degrees(math.atan2(a[1], a[0]))
+            delta = _normaliser_deg(math.degrees(math.atan2(b[1], b[0])) - a0)
+            phi = _normaliser_deg(math.degrees(math.atan2(wx, wz)) - a0)
+            if (delta >= 0 and 0.0 <= phi <= delta) or (delta < 0 and delta <= phi <= 0.0):
+                return k
+            ecart = abs(_normaliser_deg(phi - delta / 2.0))      # distance angulaire à la bissectrice
+            if ecart < ecart_min:
+                meilleur, ecart_min = k, ecart
+        return meilleur
+
     def verifier_cote(self, type_: TypeCote, elements: Tuple[int, ...]) -> None:
         """Lève ErreurEsquisse si ces éléments ne peuvent pas porter une cote de ce type."""
         type_ = TypeCote(type_)
         self._verifier_forme(_FORMES_COTE[type_], tuple(int(e) for e in elements), LIBELLES_COTE[type_])
 
-    def mesurer(self, type_: TypeCote, elements: Tuple[int, ...], reference: str = "") -> float:
-        """Valeur actuelle de la grandeur qu'une cote de ce type imposerait."""
+    def mesurer(self, type_: TypeCote, elements: Tuple[int, ...], reference: str = "", secteur: int = 0) -> float:
+        """Valeur actuelle de la grandeur qu'une cote de ce type imposerait. Un angle est celui du secteur
+        `secteur` (voir `rayons_angle`), dans [0, 180]."""
         type_ = TypeCote(type_)
         self.verifier_cote(type_, elements)
         if type_ == TypeCote.LONGUEUR_Z:
@@ -460,13 +560,15 @@ class Esquisse:
         if type_ == TypeCote.POSITION_Z:
             return self.points[self.point_reference(elements[0])].z
         if type_ == TypeCote.ANGLE:
-            if len(elements) == 1:
-                return self.angle_ligne(elements[0])
-            a1 = self.angle_ligne(elements[0])
-            a2 = self.angle_ligne(elements[1])
-            d = (a2 - a1) % 360.0
-            return d if d <= 180.0 else d - 360.0
+            return self.angle_secteur(elements, secteur)
         raise ErreurEsquisse(f"type de cote inconnu : {type_}")
+
+    def angle_dirige(self, elements: Tuple[int, ...]) -> float:
+        """Angle orienté, dans ]-180, 180] : d'une ligne (p1 vers p2) par rapport à l'axe Z, ou de la première
+        ligne vers la seconde. C'est la grandeur que le solveur contraint."""
+        if len(elements) == 1:
+            return self.angle_ligne(elements[0])
+        return _normaliser_deg(self.angle_ligne(elements[1]) - self.angle_ligne(elements[0]))
 
     @staticmethod
     def _formater(valeur: float, decimales: int) -> str:
@@ -511,7 +613,8 @@ class Esquisse:
                           for r in self.relations.values()],
             "cotes": [{"id": c.id, "type": c.type.value, "elements": list(c.elements), "valeur": c.valeur,
                        "decalage": list(c.decalage), "pilotee": c.pilotee,
-                       **({"reference": c.reference} if c.reference else {})} for c in self.cotes.values()],
+                       **({"reference": c.reference} if c.reference else {}),
+                       **({"secteur": c.secteur} if c.secteur else {})} for c in self.cotes.values()],
         }
 
     @classmethod
@@ -535,7 +638,8 @@ class Esquisse:
             dec = c.get("decalage") or [0.0, 0.0]
             e.cotes[int(c["id"])] = Cote(int(c["id"]), TypeCote(c["type"]), tuple(int(x) for x in c["elements"]),
                                          float(c["valeur"]), (float(dec[0]), float(dec[1])),
-                                         bool(c.get("pilotee", False)), str(c.get("reference", "")))
+                                         bool(c.get("pilotee", False)), str(c.get("reference", "")),
+                                         int(c.get("secteur", 0)) % 4)
         ids = list(e.points) + list(e.lignes) + list(e.arcs) + list(e.relations) + list(e.cotes)
         e._prochain_id = max([int(d.get("prochain_id", 1))] + [i + 1 for i in ids])
         e._verifier_coherence()

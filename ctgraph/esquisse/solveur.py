@@ -216,13 +216,33 @@ class AdaptateurSolveur:
         va, vb = (pa.z, pb.z) if axe == 0 else (pa.x, pb.x)
         return (a, b) if va <= vb else (b, a)
 
-    @staticmethod
-    def _valeur_param(c: Cote) -> float:
+    def _valeur_param(self, c: Cote) -> float:
         if c.type == TypeCote.DIAMETRE:
             return c.valeur / 2.0
         if c.type == TypeCote.ANGLE:
-            return math.radians(c.valeur)
+            return self._param_angle(c)
         return c.valeur
+
+    def _param_angle(self, c: Cote) -> float:
+        """L'angle orienté (radians) que PlaneGCS contraint, déduit de l'angle du secteur de la cote et de la
+        géométrie actuelle : de quel côté du centre partent les lignes, et dans quel sens tourne le secteur."""
+        e, els = self.esquisse, c.elements
+        _, a, b = e.rayons_angle(els, c.secteur)
+        delta = math.degrees(math.atan2(b[1], b[0]) - math.atan2(a[1], a[0]))
+        delta = (delta + 180.0) % 360.0 - 180.0
+        sigma = 1.0 if delta >= 0 else -1.0
+        if len(els) == 1:
+            # a : le long de la ligne depuis le bout choisi ; la ligne p1 -> p2 est a, ou son opposé si le bout est p2
+            angle_b = math.degrees(math.atan2(b[1], b[0]))
+            angle_dir = angle_b - sigma * c.valeur + (180.0 if c.secteur & 1 else 0.0)
+        else:
+            # les lignes p1 -> p2 portent les rayons a et b, dans leur sens ou à l'opposé
+            retournes = []
+            for ident, rayon in zip(els, (a, b)):
+                p, q = e._points_de((ident,))
+                retournes.append((q.z - p.z) * rayon[0] + (q.x - p.x) * rayon[1] < 0)
+            angle_dir = sigma * c.valeur + 180.0 * (int(retournes[1]) - int(retournes[0]))
+        return math.radians((angle_dir + 180.0) % 360.0 - 180.0)
 
     @staticmethod
     def _valeur_depuis_param(c: Cote, v: float) -> float:
@@ -287,6 +307,10 @@ class AdaptateurSolveur:
         for cid, param in self._params_cotes.items():
             c = self.esquisse.cotes.get(cid)
             if c is not None and (c.pilotee or cid in self._liees):
+                if c.type == TypeCote.ANGLE:
+                    # l'angle du secteur se relit sur la géométrie : le paramètre est l'angle orienté
+                    c.valeur = self.esquisse.angle_secteur(c.elements, c.secteur)
+                    continue
                 c.valeur = self._valeur_depuis_param(c, float(self._s.get_param(param)))
                 if c.type not in COTES_SIGNEES:
                     c.valeur = abs(c.valeur)

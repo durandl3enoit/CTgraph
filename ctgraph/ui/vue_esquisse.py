@@ -634,6 +634,12 @@ class VueEsquisse(QGraphicsView):
                                  [((0.0, 0.0), (0.0, xm - self.px_en_mm(4))), ((z2, 0.0), (z2, xm - self.px_en_mm(4)))],
                                  (z2 / 2.0 + self.px_en_mm(26), xm), ambre, c,
                                  fleches=((0.0, xm, (-1.0, 0.0)), (z2, xm, (1.0, 0.0))) if z2 > 1e-9 else ())
+        # la prise dans les mors, de leur face à l'arrière du brut ; la régler, c'est renoncer à l'appui
+        zm = m.z_face_mors()
+        self._dessiner_cote_brut("prise", [(z1, xm), (zm, xm)],
+                                 [((z1, 0.0), (z1, xm - self.px_en_mm(4))), ((zm, 0.0), (zm, xm - self.px_en_mm(4)))],
+                                 ((z1 + zm) / 2.0, xm), ambre, c,
+                                 fleches=((z1, xm, (-1.0, 0.0)), (zm, xm, (1.0, 0.0))) if zm - z1 > 1e-9 else ())
         # contre-pointe
         cp = m.contre_pointe
         if cp.presente:
@@ -1120,23 +1126,37 @@ class VueEsquisse(QGraphicsView):
                 self._fleche(path, (bz, bx), (bz - az, bx - ax))
                 direction = (bz - az, bx - ax, False)
             pos = ((az + bz) / 2, (ax + bx) / 2)
-        else:  # angle
-            if len(co.elements) == 1:
-                mz, mx = self._milieu(co.elements[0])
-            else:
-                l1, l2 = (e.lignes[i] for i in co.elements)
-                commun = {l1.p1, l1.p2} & {l2.p1, l2.p2}
-                if commun:
-                    p = e.points[commun.pop()]
-                    mz, mx = p.z, p.x
-                else:
-                    m1, m2 = self._milieu(l1.id), self._milieu(l2.id)
-                    mz, mx = (m1[0] + m2[0]) / 2, (m1[1] + m2[1]) / 2
-            path.moveTo(mz, mx)
-            path.lineTo(mz + dz, mx + dx)
-            pos = (mz + dz, mx + dx)
-            if math.hypot(dz, dx) > 1e-9:
-                direction = (dz, dx, False)             # le long de la ligne de rappel
+        else:  # angle : arc de secteur centré au croisement (ou au bout choisi), flèches aux deux bouts
+            (cz, cx), a, b = e.rayons_angle(co.elements, co.secteur)
+            az_, ax_ = e.ancre_angle(co.elements)
+            pos = (az_ + dz, ax_ + dx)
+            rayon = max(math.hypot(pos[0] - cz, pos[1] - cx), self.px_en_mm(18))
+            a0 = math.atan2(a[1], a[0])
+            delta = math.atan2(b[1], b[0]) - a0
+            delta = (delta + math.pi) % (2 * math.pi) - math.pi
+            n = max(8, int(abs(math.degrees(delta)) / 4) + 1)
+            arc = [(cz + rayon * math.cos(a0 + delta * i / n), cx + rayon * math.sin(a0 + delta * i / n))
+                   for i in range(n + 1)]
+            path.moveTo(*arc[0])
+            for q in arc[1:]:
+                path.lineTo(*q)
+            if abs(delta) > 1e-9:
+                sens = 1.0 if delta > 0 else -1.0
+                self._fleche(path, arc[0], (sens * math.sin(a0), -sens * math.cos(a0)))        # tangente, vers l'extérieur
+                af = a0 + delta
+                self._fleche(path, arc[-1], (-sens * math.sin(af), sens * math.cos(af)))
+            # rayons de rappel : jusqu'à l'arc, depuis le bout du segment s'il est plus court, ou depuis le
+            # centre pour l'axe Z et les prolongements
+            for ident, rayon_u in zip(list(co.elements) + [None], (a, b)):
+                portee = 0.0
+                if ident is not None:
+                    for p in e._points_de((ident,)):
+                        portee = max(portee, (p.z - cz) * rayon_u[0] + (p.x - cx) * rayon_u[1])
+                if portee < rayon + ext:
+                    path.moveTo(cz + rayon_u[0] * portee, cx + rayon_u[1] * portee)
+                    path.lineTo(cz + rayon_u[0] * (rayon + ext), cx + rayon_u[1] * (rayon + ext))
+            w = (pos[0] - cz, pos[1] - cx)
+            direction = (-w[1], w[0], False)            # le long de l'arc, au droit de l'étiquette
         it = QGraphicsPathItem(path)
         pen = QPen(couleur, 1, Qt.PenStyle.DashLine if apercu else Qt.PenStyle.SolidLine)
         pen.setCosmetic(True)
@@ -1729,13 +1749,7 @@ class VueEsquisse(QGraphicsView):
                 m = self._milieu(l1.id)
                 dec = (0.0, 0.0) if z is None else (z - m[0], x - m[1])
                 return TypeCote.ECART, elements, dec
-            commun = {l1.p1, l1.p2} & {l2.p1, l2.p2}
-            if commun:
-                p = e.points[commun.pop()]
-                mz, mx = p.z, p.x
-            else:
-                m1, m2 = self._milieu(l1.id), self._milieu(l2.id)
-                mz, mx = (m1[0] + m2[0]) / 2, (m1[1] + m2[1]) / 2
+            mz, mx = e.ancre_angle(elements)              # le croisement des deux lignes
             dec = (d * 0.6, d * 0.6) if z is None else (z - mz, x - mx)
             return TypeCote.ANGLE, elements, dec
         if genres == ["point", "point"]:
@@ -1870,11 +1884,15 @@ class VueEsquisse(QGraphicsView):
         if deduction is None:
             return
         type_, elements, decalage = deduction
+        secteur = 0
         try:
-            valeur = e.mesurer(type_, elements)
+            if type_ == TypeCote.ANGLE:
+                ancre = e.ancre_angle(elements)
+                secteur = e.secteur_angle(elements, (ancre[0] + decalage[0], ancre[1] + decalage[1]))
+            valeur = e.mesurer(type_, elements, secteur=secteur)
         except Exception:
             return
-        provisoire = Cote(-1, type_, elements, valeur, decalage)
+        provisoire = Cote(-1, type_, elements, valeur, decalage, secteur=secteur)
         self._dessiner_cote(provisoire, c["cote"], c, apercu=True)
 
     def mouseMoveEvent(self, event) -> None:

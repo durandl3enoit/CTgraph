@@ -605,6 +605,29 @@ def test_references_du_montage_alignement_et_cote(fenetre):
     win.act_voir_montage.setChecked(False)
 
 
+def test_etiquette_d_angle_choisit_le_secteur(fenetre):
+    win, vue = fenetre, fenetre.vue
+    win.choisir_outil("ligne")
+    clic(vue, 0, 0)
+    clic(vue, 20, 20)            # ligne à 45°
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    e = win.esquisse
+    li = next(iter(e.lignes.values()))
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (defaut, True)
+    # posée près du départ, côté +Z : 45° ; l'arc est dessiné (pas de simple ligne de rappel)
+    win.poser_cote(TypeCote.ANGLE, (li.id,), (6.0 - 10.0, 1.0 - 10.0))     # décalage depuis le milieu (10, 10)
+    c = list(e.cotes.values())[-1]
+    assert c.secteur == 0 and c.valeur == pytest.approx(45.0, abs=0.5)
+    # l'étiquette tirée de l'autre côté de la ligne, vers −Z : le secteur change, la cote lit 135°
+    win.deplacer_etiquette(c.id, -12.0, 0.0)
+    c = e.cotes[c.id]
+    assert c.secteur == 2 and c.valeur == pytest.approx(135.0, abs=0.5)
+    assert win.resultat.succes and not win.resultat.conflits
+    # la géométrie n'a pas bougé
+    a, b = (e.points[i] for i in e.extremites(li.id))
+    assert (b.z - a.z, b.x - a.x) == pytest.approx((20.0, 20.0), abs=0.3)
+
+
 def test_curseur_suit_l_outil(fenetre):
     win, vue = fenetre, fenetre.vue
     win.choisir_outil("selection")
@@ -978,8 +1001,14 @@ def test_cotes_du_brut_affichees_et_editables(fenetre):
     win.definir_montage(Montage())                  # pas le dernier montage mémorisé par un autre test
     win.act_voir_montage.setChecked(True)
     etiquettes = {it.data(ROLE_ID): it for it in vue._items if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "brut"}
-    assert set(etiquettes) == {"diametre", "longueur", "marge"}
+    assert set(etiquettes) == {"diametre", "longueur", "marge", "prise"}
     assert etiquettes["diametre"].texte == "Ø brut 60" and etiquettes["marge"].texte == "marge 2"
+    assert etiquettes["prise"].texte == "prise 20"
+    # régler la prise : le brut n'appuie plus sur rien, il est tenu à cette longueur de la face des mors
+    assert win.ajuster_brut("prise", 1, False) == "prise 21"
+    assert win.montage.prise.appui == -1 and win.montage.profondeur_prise() == 21.0
+    win.definir_appui(1)
+    assert win.montage.profondeur_prise() == 20.0
     assert etiquettes["longueur"].texte == f"L brut {win.montage.longueur_brut():g}"
     # double-clic : la valeur est demandée et appliquée
     win._demander_valeur = lambda libelle, unite, defaut, mini: (70.0, True)
@@ -1013,11 +1042,11 @@ def test_dialogue_montage_et_dessin(fenetre):
     n_sans = len(vue._items)                   # montage masqué par la fixture : esquisse vide, rien à dessiner
     assert not win.vue.montage_visible and n_sans == 0
     win.act_voir_montage.setChecked(True)
-    # brut, mors, corps du mandrin, trois cotes du brut (trait + étiquette), trois inscriptions gravées,
+    # brut, mors, corps du mandrin, quatre cotes du brut (trait + étiquette), trois inscriptions gravées,
     # cinq plans de référence (trait + nom)
     n_refs = len(win.montage.references())
     assert n_refs == 5
-    assert len(vue._items) == 3 + 6 + 3 + 2 * n_refs
+    assert len(vue._items) == 3 + 8 + 3 + 2 * n_refs
     dlg = DialogueMontage(win.montage, win)
     dlg.brut_diametre.setValue(70.0)
     dlg.depassement.setValue(120.0)
@@ -1033,7 +1062,7 @@ def test_dialogue_montage_et_dessin(fenetre):
     win.definir_montage(m)
     assert win.montage.z_face_mors() == -120.0 and win._modifie
     # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés, plus les cotes, inscriptions et plans
-    assert len(vue._items) == 4 + 6 + 3 + 2 * n_refs
+    assert len(vue._items) == 4 + 8 + 3 + 2 * n_refs
     win.act_voir_montage.setChecked(False)
     assert not vue.montage_visible and len(vue._items) == 0
     # les étages se saisissent dans le dialogue : deux étages de 25 et 45, un seul épaulement
@@ -1072,7 +1101,7 @@ def test_reglages_directement_sur_le_mors(fenetre):
     menu = win.construire_menu_contextuel(montage="mors")
     assert menu.actions_montage["retourner"].isChecked()
     assert not menu.actions_montage["interieur"].isEnabled()         # pas de tube
-    assert set(menu.actions_montage) == {"cotes_mors", "retourner", "exterieur", "interieur", "appui0"}
+    assert set(menu.actions_montage) == {"cotes_mors", "retourner", "exterieur", "interieur", "appui-1", "appui0"}
     assert win.retourner_mors()
     menu = win.construire_menu_contextuel(montage="mors")
     assert {"appui0", "appui1", "appui2"} <= set(menu.actions_montage)

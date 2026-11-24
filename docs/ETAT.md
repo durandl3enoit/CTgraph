@@ -61,7 +61,8 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   entière. Ligne biaise : longueur vraie (à côté), longueur Z (dessus), longueur X (côté, nouveau type de
   cote), angle (coin). **Références du montage** (face de référence Z = 0 à la marge du bout du brut, face des
   mors, appui, face du mandrin, surfaces du brut) : alignement et cote depuis, par le menu contextuel ou
-  l'aimantation. 105 tests.
+  l'aimantation. Cotes d'angle en arc de secteur, à la façon de SolidWorks : le secteur mesuré est celui où
+  l'étiquette est posée. Brut sans appui : cote « prise » réglable. 109 tests.
 
 ## En cours
 

@@ -127,7 +127,9 @@ vérification par relecture du G-code généré, réception des programmes depui
   gravées sont inscrites discrètement sur le dessin (`Inscription`, sans cadre ni interaction).
   Repère pièce : Z = 0 face avant finie, Z négatif vers le mandrin ; prise décrite par dépassement (face des mors →
   face finie), surépaisseur de face, serrage extérieur ou intérieur (tube), mors retournés ou non, et **appui**
-  de l'arrière du brut : face du mandrin (0) ou épaulement derrière l'étage k ; la longueur engagée en découle.
+  de l'arrière du brut : face du mandrin (0), épaulement derrière l'étage k, ou aucun (−1 : prise libre
+  `prise_libre`, réglable par la cote « prise » de l'esquisse, qui serre alors l'étage le plus profond atteint) ;
+  la longueur engagée en découle.
   **Mors durs étagés réversibles** (`Mandrin.etages`, depuis le bout : longueur + épaulement derrière ; le mors est le
   plus épais au fond, `epaisseur_mors`). La face étagée serre quand (mors normaux ∧ extérieur) ou (retournés ∧
   intérieur) ; sinon c'est la face plate, et l'appui ne peut être que le mandrin. `Montage.blocs_mors` (un bloc par
@@ -150,6 +152,14 @@ vérification par relecture du G-code généré, réception des programmes depui
   plan (`difference` avec un paramètre fixe), texte « court valeur ». Menu contextuel d'un point ou d'une face :
   « Aligner sur une référence », « Coter depuis une référence ». Aimantation « axe Z » étendue aux plans
   (`Accroche.reference` → relation posée d'office). Dessin en trait mixte nommé (genre « reference »).
+- **Cotes d'angle par secteur, à la façon de SolidWorks** : la valeur d'une cote d'angle est l'angle, dans
+  [0, 180], du secteur désigné par l'étiquette (`Cote.secteur`, choisi par `Esquisse.secteur_angle` à la pose et
+  à chaque déplacement d'étiquette, enregistré). Ligne seule : bit 0 = bout (p1/p2), bit 1 = axe Z vers + ou − ;
+  deux lignes : 0 entre les segments (au croisement des droites, `ancre_angle`), 1 et 3 suppléments, 2 opposé.
+  `rayons_angle` donne centre et rayons bordants ; le solveur contraint toujours l'angle orienté
+  (`_param_angle` fait la conversion d'après la géométrie courante) et une cote pilotée relit l'angle du
+  secteur. Dessin : arc centré, flèches tangentes, rayons de rappel. Limite connue : « égal » entre deux cotes
+  d'angle égalise les angles orientés, pas les secteurs.
 - **Survol** : sans bouton enfoncé, l'élément que le clic prendrait (`GENRES_SURVOL`) luit en magenta
   (`c["lueur"]`, distinct de l'orange de sélection) : stylo épaissi, point grossi, étiquette recolorée, aspect
   rendu au départ du curseur (`_survoler`). Un élément sélectionné garde sa couleur de sélection.
