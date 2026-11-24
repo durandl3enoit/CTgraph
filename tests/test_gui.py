@@ -565,7 +565,8 @@ def test_references_du_montage_alignement_et_cote(fenetre):
     win.act_voir_montage.setChecked(True)
     rectangle(win)
     e = win.esquisse
-    assert set(e.references) == {"brut_avant", "face_mors", "appui_mors", "face_mandrin", "brut_ext"}
+    assert set(e.references) == {"face_reference", "face_mors", "appui_mors", "face_mandrin", "brut_ext"}
+    assert e.references["face_reference"].valeur == 0.0 and "à 2 du bout du brut" in e.references["face_reference"].libelle
     # un point sélectionné : le menu propose de l'aligner sur chaque référence, ou d'en coter l'écart
     coin = next(p for p in e.points.values() if p.z < -10 and p.x > 10)
     vue.selection = [coin.id]
@@ -1028,7 +1029,7 @@ def test_dialogue_montage_et_dessin(fenetre):
     # les références gravées sont inscrites sur le dessin du montage
     from ctgraph.ui.vue_esquisse import Inscription
     textes = {it.texte for it in vue._items if isinstance(it, Inscription)}
-    assert textes >= {"210 BH-FC", "passage Ø 42", "12082030 (1/16\"x90°)", "mors", "mandrin", "bout", "appui", "brut"}
+    assert textes >= {"210 BH-FC", "passage Ø 42", "12082030 (1/16\"x90°)", "mors", "mandrin", "réf", "appui", "brut"}
     win.definir_montage(m)
     assert win.montage.z_face_mors() == -120.0 and win._modifie
     # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés, plus les cotes, inscriptions et plans

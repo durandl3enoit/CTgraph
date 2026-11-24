@@ -216,10 +216,11 @@ class Montage:
                 for i in range(1, n + 1)]
 
     def references(self) -> List[Reference]:
-        """Les plans du montage que l'esquisse peut viser (cote « depuis », relation « sur ») : bout du brut, face
-        des mors, épaulement d'appui, face du mandrin, puis les surfaces de révolution du brut. La face finie
-        (Z = 0) a déjà « origine Z » et « position Z »."""
-        refs = [Reference("brut_avant", "z", self.z_brut_avant(), "Bout du brut (face brute)", "bout"),
+        """Les plans du montage que l'esquisse peut viser (cote « depuis », relation « sur ») : la face de
+        référence (Z = 0, en retrait de la marge par rapport au bout du brut), la face des mors, l'épaulement
+        d'appui, la face du mandrin, puis les surfaces de révolution du brut."""
+        refs = [Reference("face_reference", "z", 0.0,
+                          f"Face de référence (Z = 0, à {self.prise.surepaisseur_face:g} du bout du brut)", "réf"),
                 Reference("face_mors", "z", self.z_face_mors(), "Face avant des mors", "mors")]
         if self.prise.appui >= 1:
             refs.append(Reference("appui_mors", "z", self.z_appui(),

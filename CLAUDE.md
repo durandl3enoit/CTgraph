@@ -141,7 +141,9 @@ vérification par relecture du G-code généré, réception des programmes depui
   annuler rend le montage d'avant. Les valeurs éditables du montage passent toutes par `Montage.valeur`,
   `definir_valeur`, `texte`, `libelle` (brut et mors), appliquées en direct par `definir_montage`.
 - **Références du montage** (`Montage.references()` → `modele.Reference(nom, axe "z"|"x", valeur, libellé,
-  court)`) : bout du brut, face des mors, épaulement d'appui, face du mandrin, surface du brut, alésage d'un tube.
+  court)`) : face de référence (Z = 0, en retrait de la marge par rapport au bout du brut ; demandée par
+  l'utilisateur, pas le bout du brut), face des mors, épaulement d'appui, face du mandrin, surface du brut,
+  alésage d'un tube.
   Le contrôleur les pose dans `Esquisse.references` (non enregistrées, relues du montage à chaque changement,
   puis reconstruction et résolution). Relation `SUR_REFERENCE` (point ou ligne, champ `Relation.reference`) :
   coordonnée figée à la valeur du plan ; cote `DEPUIS_REFERENCE` (`Cote.reference`) : écart signé depuis le

@@ -118,9 +118,9 @@ affichées en ambre : « Ø brut », « L brut » et « marge », la marge en bo
 Double-clic ou clic droit + molette pour les changer ; une longueur de brut se répartit sur le dépassement, la
 prise dans les mors et la marge ne bougent pas.
 
-**Références du montage** : le bout du brut, la face avant des mors, l'épaulement d'appui, la face du mandrin
-et les surfaces du brut (extérieure, alésage d'un tube) sont tracés en trait mixte et nommés. La face finie
-(Z = 0, à la marge du bout du brut) reste la ligne de référence de la pièce, avec « origine Z » et « position Z ».
+**Références du montage** : la face de référence (Z = 0, en retrait de la marge par rapport au bout du brut),
+la face avant des mors, l'épaulement d'appui, la face du mandrin et les surfaces du brut (extérieure, alésage
+d'un tube) sont tracés en trait mixte et nommés.
 Sélectionnez un point ou une face, puis clic droit : *Aligner sur une référence* pose la relation « sur une
 référence » (le point ou la face y reste, et suit le montage quand il change), *Coter depuis une référence* pose
 l'écart signé depuis ce plan, lu « mors 15 » ou « mandrin 190 ». Avec l'aimantation *Axe Z*, un tracé qui

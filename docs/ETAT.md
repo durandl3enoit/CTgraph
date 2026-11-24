@@ -59,8 +59,9 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   Survol : l'élément sous le curseur luit en magenta avant le clic. Le glisser du clic droit suit la direction
   de la ligne de cote (horizontale, verticale, diagonale, rayon vers l'extérieur). Les vues 3D cadrent la pièce
   entière. Ligne biaise : longueur vraie (à côté), longueur Z (dessus), longueur X (côté, nouveau type de
-  cote), angle (coin). **Références du montage** (bout du brut, face des mors, appui, face du mandrin,
-  surfaces du brut) : alignement et cote depuis, par le menu contextuel ou l'aimantation. 105 tests.
+  cote), angle (coin). **Références du montage** (face de référence Z = 0 à la marge du bout du brut, face des
+  mors, appui, face du mandrin, surfaces du brut) : alignement et cote depuis, par le menu contextuel ou
+  l'aimantation. 105 tests.
 
 ## En cours
 

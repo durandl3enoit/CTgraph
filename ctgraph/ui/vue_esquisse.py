@@ -602,8 +602,9 @@ class VueEsquisse(QGraphicsView):
         for ref in m.references():
             path = QPainterPath()
             if ref.axe == "z":
-                path.moveTo(ref.valeur, -self.px_en_mm(12))
-                path.lineTo(ref.valeur, haut)
+                if abs(ref.valeur) > 1e-9:       # la face de référence Z = 0 est déjà la verticale pointillée
+                    path.moveTo(ref.valeur, -self.px_en_mm(12))
+                    path.lineTo(ref.valeur, haut)
                 pos_nom = (ref.valeur, haut + self.px_en_mm(8))
             else:
                 path.moveTo(m.z_face_mandrin(), ref.valeur)
