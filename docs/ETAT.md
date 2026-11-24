@@ -39,7 +39,10 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
 
 - **Séance du 24 novembre** : cotes pilotées, écart entre parallèles, contours fermés remplis, vue 3D lisse,
   icônes sobres et icônes de relations, couple Ø/R, curseurs par outil, menu contextuel à icônes, origine Z et
-  position Z, un seul élagage, zone Relations repliable, réglage des cotes à la molette, outils Arrondi et Chanfrein.
+  position Z, un seul élagage, zone Relations repliable, réglage des cotes à la molette, outils Arrondi et Chanfrein
+  avec coin théorique conservé, dessin immobile quand une cote change, menu contextuel avec toutes les cotes
+  possibles et Arrondi/Chanfrein sur un coin, cote pilotée posée sans demander de valeur, « égal » entre deux
+  cotes, contour fermé par une relation coïncidente, icône de l'application sur la grille. 83 tests.
 
 ## En cours
 
@@ -47,9 +50,10 @@ Mis à jour le 23 novembre 2026 (fin de la troisième séance, poste de la semai
 
 ## Prochaines étapes
 
-1. **Second essai de l'esquisse** avec les retours traités. Manques connus : pas de cote entre deux lignes parallèles,
-   pas de symétrie, pas de miroir, pas de construction (lignes d'aide), pas de prolongement jusqu'à un objet,
-   pas de profil intérieur distinct, pas d'export DXF.
+1. **L'esquisse est utilisable** : les retours de deux essais sont traités. Manques connus : pas de symétrie ni de
+   miroir, pas de lignes de construction tracées par l'utilisateur, pas de prolongement jusqu'à un objet,
+   pas de profil intérieur distinct, pas d'export DXF, pas de contour passant par un sommet à trois branches.
+   Module suivant proposé : **machine, brut et prise de pièce**, puis la bibliothèque d'outils minimale.
 2. **Dépôt distant privé** : créer le dépôt (GitHub ou autre), `git remote add origin …`, `git push -u origin main`.
    Sur le poste du week-end : installer Git, cloner, créer `.venv` avec `requirements.txt`.
 3. **Installeur** : reprendre `installer/` et `tools/make_installer.ps1` de DXFgraph en remplaçant le nom et
