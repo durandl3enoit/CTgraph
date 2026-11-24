@@ -27,10 +27,38 @@ Ce catalogue dit ce qu'il est **possible** de monter, pas ce que l'atelier poss�
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 QUEUE_MAXI = 20.0        # VDI 30 : queue carrée 20 × 20 ou queue cylindrique Ø 20 au plus
+
+# Forme de la plaquette : la lettre ISO de la désignation, ou la nature de l'outil quand il n'y en a pas.
+# `icons.icone_plaquette` dessine chacune de ces clés.
+FORMES_PLAQUETTE: Dict[str, str] = {
+    "C": "Losange 80°",
+    "D": "Losange 55°",
+    "V": "Losange 35°",
+    "W": "Trigon 80°",
+    "T": "Triangle 60°",
+    "S": "Carré",
+    "R": "Ronde",
+    "filetage": "Plaquette de filetage",
+    "gorge": "Plaquette de gorge",
+    "lame": "Lame de tronçonnage",
+}
+
+
+def forme_plaquette(plaquette: str) -> str:
+    """La clé de forme déduite d'une désignation de plaquette (« CNMG 1204.. » → « C »). Vide si inconnue."""
+    if plaquette.startswith("MGMN"):
+        return "gorge"
+    if plaquette.startswith("Lame"):
+        return "lame"
+    if re.match(r"\d+[EI][RL]", plaquette):
+        return "filetage"
+    lettre = plaquette[:1].upper()
+    return lettre if lettre in FORMES_PLAQUETTE and len(lettre) == 1 else ""
 
 FAMILLES: Dict[str, str] = {
     "ext_neg": "Extérieur — plaquette négative (ébauche)",
@@ -58,6 +86,11 @@ class PortePlaquette:
     norme: str
     usage: str
     alesage_mini: float = 0.0    # barres et outils intérieurs : plus petit alésage praticable
+    forme: str = ""              # clé de `FORMES_PLAQUETTE` : la forme de la plaquette, pour l'icône
+
+    @property
+    def texte_forme(self) -> str:
+        return FORMES_PLAQUETTE.get(self.forme, "")
 
     @property
     def texte_attaque(self) -> str:
@@ -69,7 +102,8 @@ class PortePlaquette:
 
     def description(self) -> str:
         """Phrase d'infobulle : à quoi sert l'outil et ce qu'il demande."""
-        bouts = [self.usage, f"Plaquette {self.plaquette}", f"Fixation par {self.fixation}",
+        forme = f" ({self.texte_forme.lower()})" if self.texte_forme else ""
+        bouts = [self.usage, f"Plaquette {self.plaquette}{forme}", f"Fixation par {self.fixation}",
                  f"Queue {self.queue}, longueur {self.texte_longueur}", self.norme]
         if self.alesage_mini:
             bouts.insert(1, f"Alésage minimal {self.alesage_mini:g} mm")
@@ -81,9 +115,10 @@ def _ajouter(cat: List[PortePlaquette], gabarit: str, famille: str, plaquette: s
              mains: str = "RL", cylindrique: bool = False, alesage_mini: float = 0.0) -> None:
     """Ajoute une référence, une ligne par main : le gabarit porte « _ » à la place de la lettre de main."""
     queue = f"Ø {queue_mm:g}" if cylindrique else f"{queue_mm:g} × {queue_mm:g}"
+    forme = forme_plaquette(plaquette)
     for lettre in mains:
         cat.append(PortePlaquette(gabarit.replace("_", lettre), famille, plaquette, attaque, MAINS[lettre],
-                                  queue, queue_mm, longueur, fixation, norme, usage, alesage_mini))
+                                  queue, queue_mm, longueur, fixation, norme, usage, alesage_mini, forme))
 
 
 def _construire() -> List[PortePlaquette]:
@@ -236,7 +271,7 @@ def filtrer(texte: str, catalogue: Optional[List[PortePlaquette]] = None) -> Lis
     retenus = []
     for pp in source:
         champs = " ".join((pp.designation, pp.plaquette, pp.queue, pp.usage, pp.main, pp.fixation,
-                           FAMILLES[pp.famille], pp.texte_attaque)).lower()
+                           FAMILLES[pp.famille], pp.texte_attaque, pp.texte_forme)).lower()
         if all(m in champs for m in mots):
             retenus.append(pp)
     return retenus

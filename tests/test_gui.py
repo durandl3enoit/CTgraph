@@ -1193,7 +1193,7 @@ def test_survol_fait_luire_l_element(fenetre):
 
 def test_zone_stock_d_outils(fenetre):
     from PySide6.QtWidgets import QTreeWidgetItem
-    from ctgraph.outils import CATALOGUE, FAMILLES
+    from ctgraph.outils import CATALOGUE, FAMILLES, FORMES_PLAQUETTE
     win = fenetre
     zone = win.zone_outils
     win.act_zone_outils.setChecked(True)        # la fixture la masque pour laisser la vue au large
@@ -1216,6 +1216,10 @@ def test_zone_stock_d_outils(fenetre):
     it = ligne("SCLCR 2020 K09")
     assert [it.text(c) for c in range(5)] == ["SCLCR 2020 K09", "CCMT 09T3..", "95°", "20 × 20", "vis"]
     assert "ISO 5608" in it.toolTip(0)
+    # la forme de la plaquette est dessinée juste avant sa désignation
+    assert not it.icon(1).isNull() and it.icon(0).isNull()
+    formes = {it2.icon(1).cacheKey() for it2 in lignes()}
+    assert len(formes) == len(FORMES_PLAQUETTE)       # une icône distincte par forme, et toutes présentes
     # le filtre restreint la liste et vide les familles sans réponse
     zone.filtre.setText("barre alésage")
     assert lignes() and all(it.text(0).startswith(("S", "A")) for it in lignes())

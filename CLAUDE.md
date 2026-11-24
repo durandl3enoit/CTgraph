@@ -176,6 +176,10 @@ vérification par relecture du G-code généré, réception des programmes depui
   et **ISO 6261** (barres) ; filetage, gorge et tronçonnage portent une référence du commerce, marquée « hors
   ISO ». Les gabarits portent « _ » à la place de la lettre de main, `_ajouter` crée une ligne par main. La clé
   de lecture des codes est en tête du module : à garder à jour si des références s'ajoutent.
+  La **forme de la plaquette** est déduite de sa désignation (`forme_plaquette`, clés `FORMES_PLAQUETTE` :
+  lettre ISO C/D/V/W/T/S/R, ou filetage / gorge / lame) et dessinée par `icons.icone_plaquette`, devant la
+  désignation de la plaquette. Les icônes sont construites une fois par zone, pas par ligne : le filtre
+  reconstruit la liste à chaque frappe.
   La zone est un `QDockWidget` ancré à droite, avec filtre et case « en stock » par référence (préférence
   `outils.stock`, visibilité `outils.visible`, touche `O`). Le catalogue dit ce qui est montable, les coches
   disent ce que l'atelier possède. Les tests d'interface masquent la zone : elle rétrécit la vue d'esquisse et

@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Set
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (QCheckBox, QDockWidget, QHBoxLayout, QLabel, QLineEdit, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from ..outils import CATALOGUE, FAMILLES, QUEUE_MAXI, PortePlaquette, filtrer
+from ..icons import icone_plaquette
+from ..outils import CATALOGUE, FAMILLES, FORMES_PLAQUETTE, QUEUE_MAXI, PortePlaquette, filtrer
 
 COLONNES = ["Désignation", "Plaquette", "Attaque", "Queue", "Fixation"]
 ROLE_DESIGNATION = Qt.ItemDataRole.UserRole
@@ -29,6 +31,11 @@ class ZoneOutils(QDockWidget):
         self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         self._stock: Set[str] = set()
         self._blocage = False
+        # une icône par forme de plaquette, dessinée une fois : le filtre reconstruit la liste à chaque frappe
+        pal = self.palette()
+        encre = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Text)
+        fond = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Base)
+        self._icones = {forme: icone_plaquette(forme, encre, fond) for forme in FORMES_PLAQUETTE}
 
         contenu = QWidget(self)
         v = QVBoxLayout(contenu)
@@ -59,6 +66,7 @@ class ZoneOutils(QDockWidget):
         self.arbre.setIndentation(12)
         self.arbre.setUniformRowHeights(True)
         self.arbre.setAlternatingRowColors(True)
+        self.arbre.setIconSize(QSize(18, 18))
         self.arbre.itemChanged.connect(self._case_changee)
         v.addWidget(self.arbre, 1)
 
@@ -113,6 +121,8 @@ class ZoneOutils(QDockWidget):
                 it.setCheckState(0, Qt.CheckState.Checked if pp.designation in self._stock
                                  else Qt.CheckState.Unchecked)
                 it.setData(0, ROLE_DESIGNATION, pp.designation)
+                if pp.forme in self._icones:
+                    it.setIcon(1, self._icones[pp.forme])     # la forme, juste avant la désignation
                 infobulle = pp.description()
                 for col in range(len(COLONNES)):
                     it.setToolTip(col, infobulle)

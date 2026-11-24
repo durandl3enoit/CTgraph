@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from ctgraph.outils import CATALOGUE, FAMILLES, MAINS, QUEUE_MAXI, filtrer, par_famille
+from ctgraph.outils import (CATALOGUE, FAMILLES, FORMES_PLAQUETTE, MAINS, QUEUE_MAXI, filtrer, forme_plaquette,
+                            par_famille)
 
 
 def test_catalogue_coherent():
@@ -53,6 +54,40 @@ def test_angle_d_attaque_et_textes():
     assert "Alésage minimal 20 mm" in barre.description() and "ISO 6261" in barre.description()
     sdq = next(pp for pp in CATALOGUE if pp.designation == "SDQCR 2020 K11")
     assert sdq.texte_attaque == "107,5°"
+
+
+def test_forme_de_la_plaquette():
+    # la lettre ISO de la désignation, ou la nature de l'outil quand il n'y en a pas
+    assert forme_plaquette("CNMG 1204..") == "C" and forme_plaquette("CCMT 09T3..") == "C"
+    assert forme_plaquette("DNMG 1504..") == "D" and forme_plaquette("WNMG 0804..") == "W"
+    assert forme_plaquette("TNMG 1604..") == "T" and forme_plaquette("SNMG 1204..") == "S"
+    assert forme_plaquette("VBMT 1604..") == "V" and forme_plaquette("RCMT 10T3..") == "R"
+    assert forme_plaquette("16ER / 16EL") == "filetage" and forme_plaquette("11IR / 11IL") == "filetage"
+    assert forme_plaquette("MGMN 300") == "gorge"
+    assert forme_plaquette("Lame 26 mm (GTN / ZQMX)") == "lame"
+    assert forme_plaquette("XYZ 12") == "" and forme_plaquette("") == ""
+    # chaque référence du catalogue porte une forme connue, et toutes les formes servent
+    assert all(pp.forme in FORMES_PLAQUETTE for pp in CATALOGUE)
+    assert {pp.forme for pp in CATALOGUE} == set(FORMES_PLAQUETTE)
+    scl = next(pp for pp in CATALOGUE if pp.designation == "SCLCR 2020 K09")
+    assert scl.forme == "C" and scl.texte_forme == "Losange 80°"
+    assert "CCMT 09T3.. (losange 80°)" in scl.description()
+    # le filtre trouve aussi par la forme
+    assert filtrer("trigon") and all(pp.forme == "W" for pp in filtrer("trigon"))
+
+
+def test_icones_de_toutes_les_formes():
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QColor, QGuiApplication
+    from PySide6.QtWidgets import QApplication
+    from ctgraph.icons import icone_plaquette
+    app = QApplication.instance() or QGuiApplication([])  # noqa: F841
+    encre, fond = QColor(230, 230, 230), QColor(40, 40, 40)
+    for forme in FORMES_PLAQUETTE:
+        icone = icone_plaquette(forme, encre, fond)
+        assert not icone.isNull() and not icone.pixmap(24, 24).isNull()
+    assert icone_plaquette("inconnue", encre, fond).isNull()
 
 
 def test_filtrage():

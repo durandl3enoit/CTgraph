@@ -217,7 +217,7 @@ class FenetrePrincipale(QMainWindow):
         self.zone_outils = ZoneOutils(self)
         self.zone_outils.setMinimumWidth(340)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.zone_outils)
-        self.resizeDocks([self.zone_outils], [470], Qt.Orientation.Horizontal)
+        self.resizeDocks([self.zone_outils], [540], Qt.Orientation.Horizontal)
         stock = self.reglages.get("outils.stock", []) or []
         self.zone_outils.definir_stock([stock] if isinstance(stock, str) else stock)
         self.zone_outils.stock_change.connect(lambda s: self.reglages.set("outils.stock", sorted(s)))

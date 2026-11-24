@@ -140,8 +140,9 @@ Zone ancrée à droite (*Affichage → Stock d'outils*, touche `O`) : les **port
 porte-outils VDI 30** du CT200, c'est-à-dire de queue 20 mm au plus, carrée (16 × 16, 20 × 20) ou cylindrique
 (Ø 10 à Ø 20). Ils sont rangés en cinq familles : extérieur en plaquette négative (ébauche), extérieur en
 plaquette positive (finition), barres d'alésage, filetage, gorge et tronçonnage. Chaque ligne donne la
-désignation, la plaquette, l'angle d'attaque, la queue et la fixation ; l'infobulle ajoute l'usage, l'alésage
-minimal des outils intérieurs et la norme.
+désignation, la plaquette précédée d'une **icône de sa forme** (losange 80°, 55° ou 35°, trigon, triangle,
+carré, ronde, plaquette de filetage, de gorge, lame), l'angle d'attaque, la queue et la fixation ; l'infobulle
+ajoute l'usage, l'alésage minimal des outils intérieurs et la norme.
 
 Les désignations suivent l'**ISO 5608** (queue carrée) et l'**ISO 6261** (barres) ; les outils de filetage, de
 gorge et de tronçonnage portent leur référence du commerce, signalée comme telle. Le détail de la lecture d'un
