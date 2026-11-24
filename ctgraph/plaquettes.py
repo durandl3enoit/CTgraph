@@ -167,9 +167,10 @@ class Plaquette:
 def _ajouter(cat: List[Plaquette], base: str, forme: str, famille: str, depouille: float, tolerance: str,
              type_iso: str, arete: float, cercle: float, epaisseur: float, rayons, usage: str,
              pas: str = "") -> None:
-    """Une ligne par rayon de bec : la désignation complète est la base suivie du code du rayon."""
+    """Une ligne par rayon de bec : la désignation complète est la base suivie du code du rayon, en
+    dixièmes de millimètre. Une plaquette ronde n'a pas de bec à elle : son code est « 00 »."""
     for r in rayons:
-        code = f"{round(r * 10):02d}"
+        code = "00" if forme == "R" else f"{round(r * 10):02d}"
         cat.append(Plaquette(f"{base}{code}", base, forme, famille, depouille, tolerance, type_iso,
                              arete, cercle, epaisseur, r, usage, pas))
 

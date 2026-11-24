@@ -215,8 +215,13 @@ vérification par relecture du G-code généré, réception des programmes depui
   notation « CNMG 1204.. » et « 16ER / 16EL ». `FORMES_PLAQUETTE`, `forme_plaquette` et `sommets_forme` vivent
   ici : `outils.py` les réexporte et `icons.icone_plaquette` dessine les contours à partir de `sommets_forme`
   (losanges à grande diagonale au diamètre, pour qu'ils se comparent). Le volet dessine la plaquette choisie
-  cotée, de face et de profil ; les valeurs sont en légende sous le dessin, le dessin ne porte que les
-  lettres r, s et α. Nombres à la française (`Plaquette.nombre`, virgule décimale).
+  cotée, de face et de profil. **Chaque élément porte sa valeur** (`DessinPlaquette.cotes_portees` :
+  « l 12,9 », « IC 12,7 », « r 0,8 », « s 4,76 », « α 0° ») ; la ligne sous le dessin ne dit que ce que les
+  cotes ne disent pas (négative ou positive, type, pas). De même pour les porte-plaquettes
+  (`DessinPorteOutil`, `PortePlaquette.cotes`) : vue de dessus avec la queue, la plaquette et l'arc
+  d'attaque, coupe de queue, valeurs portées « l1 125 », « h × b 20 × 20 » ou « d Ø 16 », « κr 95° », et
+  l'alésage minimal d'une barre en cercle pointillé. La cote `f` (flanc de queue à la pointe) dépend du
+  modèle : à relever, pas inventée. Nombres à la française (`nombre`, virgule décimale).
 
 ## Points ouverts
 

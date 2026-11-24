@@ -1219,6 +1219,18 @@ def test_zone_stock_d_outils(fenetre):
     it = ligne("SCLCR 2020 K09")
     assert [it.text(c) for c in range(5)] == ["SCLCR 2020 K09", "CCMT 09T3..", "95°", "20 × 20", "vis"]
     assert "ISO 5608" in it.toolTip(0)
+    # choisir une ligne dessine le porte-plaquette coté
+    assert zone.dessin.outil is None
+    zone.arbre.setCurrentItem(it)
+    QTest.qWait(10)
+    assert zone.dessin.outil is not None and zone.dessin.outil.designation == "SCLCR 2020 K09"
+    assert zone.dessin.outil.cotes() == [("h × b", "20 × 20"), ("l1", "125"), ("κr", "95°")]
+    # une barre d'alésage est cotée par son diamètre de queue et l'alésage où elle passe
+    barre = ligne("S16Q-SCLCR 09")
+    zone.arbre.setCurrentItem(barre)
+    assert zone.dessin.outil.cylindrique
+    assert zone.dessin.outil.cotes() == [("d", "Ø 16"), ("l1", "180"), ("κr", "95°"), ("alésage mini", "20")]
+    zone.arbre.setCurrentItem(it)
     # la forme de la plaquette est dessinée juste avant sa désignation
     assert not it.icon(1).isNull() and it.icon(0).isNull()
     formes = {it2.icon(1).cacheKey() for it2 in lignes()}
@@ -1389,10 +1401,15 @@ def test_zone_plaquettes(fenetre):
     zone.arbre.setCurrentItem(it)
     QTest.qWait(10)
     assert zone.dessin.plaquette is not None and zone.dessin.plaquette.designation == "CNMG 120408"
-    # les cotes sous le dessin disent ce qui sert à choisir
-    legende = zone.dessin.legende()
-    assert "arête 12,9 mm" in legende[0] and "rayon de bec r 0,8 mm" in legende[0]
-    assert "épaisseur s 4,76 mm" in legende[1] and "deux faces utilisables" in legende[1]
+    # les cotes sont portées sur les éléments du dessin, avec les valeurs de la plaquette choisie
+    assert zone.dessin.cotes_portees() == ["l 12,9", "IC 12,7", "r 0,8", "s 4,76", "α 0°"]
+    assert "deux faces utilisables" in zone.dessin.legende()[0]
+    # une plaquette ronde est cotée par son diamètre, une barrette de gorge par sa largeur
+    zone.arbre.setCurrentItem(next(x for x in lignes() if x.text(0) == "RCMT 10T300"))
+    assert zone.dessin.cotes_portees()[:2] == ["Ø 10", "r 5"]
+    zone.arbre.setCurrentItem(next(x for x in lignes() if x.text(0) == "MGMN 300-G"))
+    assert zone.dessin.cotes_portees()[:2] == ["largeur 3", "r 0,2"]
+    zone.arbre.setCurrentItem(it)
     # le filtre et la case « en stock » marchent comme dans le stock d'outils
     zone.filtre.setText("ronde")
     assert lignes() and all("RNMG" in x.text(0) or "RCMT" in x.text(0) for x in lignes())

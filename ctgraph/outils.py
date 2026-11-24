@@ -28,7 +28,7 @@ Ce catalogue dit ce qu'il est **possible** de monter, pas ce que l'atelier poss�
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from .plaquettes import FORMES_PLAQUETTE, forme_plaquette   # noqa: F401  (réexportés : la forme vient des plaquettes)
 
@@ -66,13 +66,42 @@ class PortePlaquette:
     def texte_forme(self) -> str:
         return FORMES_PLAQUETTE.get(self.forme, "")
 
+    @staticmethod
+    def nombre(valeur: float) -> str:
+        """Un nombre à la française : virgule décimale, zéros inutiles enlevés."""
+        return f"{valeur:g}".replace(".", ",")
+
+    @property
+    def cylindrique(self) -> bool:
+        """Queue cylindrique (barre d'alésage, outil intérieur) plutôt que carrée."""
+        return self.queue.startswith("Ø")
+
     @property
     def texte_attaque(self) -> str:
-        return "—" if self.attaque is None else f"{self.attaque:g}°".replace(".", ",")
+        return "—" if self.attaque is None else self.nombre(self.attaque) + "°"
 
     @property
     def texte_longueur(self) -> str:
         return f"{self.longueur:g} mm"
+
+    def cotes(self) -> List[Tuple[str, str]]:
+        """Les grandeurs qui servent à monter l'outil : (symbole, valeur), pour le dessin et l'infobulle.
+
+        `h` et `b` sont la hauteur et la largeur de la queue carrée, `d` son diamètre si elle est
+        cylindrique, `l1` la longueur hors tout, `κr` l'angle d'attaque. La cote `f`, du flanc de la queue
+        à la pointe, dépend du modèle : elle n'est pas donnée ici tant qu'elle n'est pas relevée.
+        """
+        cotes: List[Tuple[str, str]] = []
+        if self.cylindrique:
+            cotes.append(("d", f"Ø {self.nombre(self.queue_mm)}"))
+        else:
+            cotes.append(("h × b", f"{self.nombre(self.queue_mm)} × {self.nombre(self.queue_mm)}"))
+        cotes.append(("l1", self.nombre(self.longueur)))
+        if self.attaque is not None:
+            cotes.append(("κr", self.texte_attaque))
+        if self.alesage_mini:
+            cotes.append(("alésage mini", self.nombre(self.alesage_mini)))
+        return cotes
 
     def description(self) -> str:
         """Phrase d'infobulle : à quoi sert l'outil et ce qu'il demande."""

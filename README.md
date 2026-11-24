@@ -189,6 +189,12 @@ Le catalogue dit ce qu'il est **possible** de monter. Cochez la case d'une ligne
 possède : les coches sont mémorisées, et le filtre *En stock* n'affiche plus qu'elles. Le champ de filtre
 cherche dans la désignation, la plaquette, la queue, la main et l'usage.
 
+Choisissez une ligne : le porte-plaquette est **dessiné coté** en dessous, vu de dessus avec sa queue, sa
+plaquette au bout et son angle d'attaque, et en coupe de queue. Les valeurs sont portées sur les éléments :
+`l1` la longueur hors tout, `h × b` la queue carrée ou `d` son diamètre, `κr` l'angle d'attaque, et pour une
+barre l'alésage minimal où elle passe, tracé en cercle pointillé. La cote `f`, du flanc de la queue à la
+pointe, dépend du modèle : elle n'est pas donnée tant qu'elle n'est pas relevée.
+
 ### Plaquettes
 
 Les plaquettes **ISO 1832** qui garnissent ces porte-plaquettes, rangées en quatre familles : négatives
@@ -197,9 +203,11 @@ tronçonnage. Même principe que le stock d'outils : filtre, cases « en stock �
 Les colonnes donnent la dépouille, la longueur d'arête, l'épaisseur et le rayon de bec.
 
 Choisissez une ligne : la plaquette est **dessinée cotée** en dessous, de face avec son contour, ses becs
-arrondis et son cercle inscrit, de profil avec son épaisseur `s` et son angle de dépouille `α` ; le bec est
-entouré et repéré `r`. Les deux lignes sous le dessin donnent les valeurs. La lecture d'un code ISO 1832 est
-détaillée en tête de `ctgraph/plaquettes.py`.
+arrondis et son cercle inscrit, de profil avec son épaisseur et son angle de dépouille. Chaque élément porte
+sa valeur, celle de la plaquette choisie : `l 12,9` sur l'arête, `IC 12,7` dans le cercle inscrit, `r 0,8`
+au bec entouré, `s 4,76` sur l'épaisseur, `α 0°` sur l'angle de dépouille. Une plaquette ronde est cotée par
+son diamètre, une barrette de gorge par sa largeur de coupe. La lecture d'un code ISO 1832 est détaillée en
+tête de `ctgraph/plaquettes.py`.
 
 ## Lancer
 

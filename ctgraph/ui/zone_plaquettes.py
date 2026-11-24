@@ -59,22 +59,29 @@ class DessinPlaquette(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def legende(self) -> List[str]:
-        """Les deux lignes de cotes sous le dessin : ce qui sert à choisir une plaquette."""
+        """La ligne sous le dessin : ce que les cotes portées ne disent pas déjà."""
+        pl = self.plaquette
+        if pl is None:
+            return []
+        ligne = "négative : deux faces utilisables" if pl.depouille < 0.1 else "positive : coupe libre"
+        if pl.type_iso in ("A", "G", "M", "N", "T", "W"):
+            ligne += f"    type {pl.type_iso}"          # le détail du type est dans l'infobulle de la liste
+        if pl.pas:
+            ligne += f"    pas {pl.pas}"
+        return [ligne]
+
+    def cotes_portees(self) -> List[str]:
+        """Les cotes écrites sur les éléments du dessin, dans l'ordre où elles y figurent."""
         pl = self.plaquette
         if pl is None:
             return []
         if pl.famille == "gorge":
-            premiere = f"largeur de coupe {pl.texte_arete} mm    rayon de bec r {pl.texte_rayon} mm"
+            portees = [f"largeur {pl.texte_arete}"]
         elif pl.forme == "R":
-            premiere = f"Ø {pl.texte_cercle} mm    rayon de bec r {pl.texte_rayon} mm (son propre rayon)"
+            portees = [f"Ø {pl.texte_cercle}"]
         else:
-            premiere = (f"arête {pl.texte_arete} mm    cercle inscrit {pl.texte_cercle} mm    "
-                        f"rayon de bec r {pl.texte_rayon} mm")
-        seconde = f"épaisseur s {pl.texte_epaisseur} mm    dépouille α {pl.texte_depouille}"
-        seconde += " (négative : deux faces utilisables)" if pl.depouille < 0.1 else " (positive : coupe libre)"
-        if pl.pas:
-            seconde += f"    pas {pl.pas}"
-        return [premiere, seconde]
+            portees = [f"l {pl.texte_arete}", f"IC {pl.texte_cercle}"]
+        return portees + [f"r {pl.texte_rayon}", f"s {pl.texte_epaisseur}", f"α {pl.texte_depouille}"]
 
     def definir(self, plaquette: Optional[Plaquette]) -> None:
         self.plaquette = plaquette
@@ -137,9 +144,13 @@ class DessinPlaquette(QWidget):
             p.drawPath(_contour_arrondi([(-demi, -haut), (demi, -haut), (demi, haut), (-demi, haut)],
                                         min(pl.rayon_bec * k, demi * 0.6)))
             bec = (demi, -haut)
+            p.setPen(QPen(cote, 1.1))
+            self._coter_horizontal(p, -demi, demi, -haut - 12, f"largeur {pl.texte_arete}")
         elif pl.forme == "R":
             p.drawEllipse(QPointF(0, 0), rayon_dessin, rayon_dessin)
             bec = None
+            p.setPen(QPen(cote, 1.1))
+            self._coter_horizontal(p, -rayon_dessin, rayon_dessin, -rayon_dessin - 12, f"Ø {pl.texte_cercle}")
         else:
             sommets = sommets_forme(pl.forme, 1.0)
             if not sommets:
@@ -153,22 +164,40 @@ class DessinPlaquette(QWidget):
             p.setPen(QPen(muet, 1.0, Qt.PenStyle.DashDotLine))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QPointF(0, 0), r_inscrit, r_inscrit)
+            # le cercle inscrit porte sa valeur en son centre, l'arête la sienne le long d'un côté
+            p.setPen(QPen(muet))
+            p.drawText(QRectF(-40, -7, 80, 14), int(Qt.AlignmentFlag.AlignCenter), f"IC {pl.texte_cercle}")
             bec = max(points, key=lambda q: q[1])
+            a, b = min(points, key=lambda q: q[0]), min(points, key=lambda q: q[1])
+            p.setPen(QPen(cote, 1.2))
+            milieu = QPointF((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+            p.drawLine(QPointF(*a), QPointF(*b))
+            p.drawText(QRectF(milieu.x() - 56, milieu.y() - 16, 52, 14),
+                       int(Qt.AlignmentFlag.AlignRight), f"l {pl.texte_arete}")
 
         if bec is not None:
-            # le bec, entouré : à cette échelle le rayon est minuscule, on le montre plutôt qu'on ne le cote
+            # le bec, entouré : à cette échelle le rayon est minuscule, on le montre et on l'écrit
             p.setPen(QPen(cote, 1.6))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QPointF(*bec), 6.0, 6.0)
-            p.drawText(QRectF(bec[0] - 4, bec[1] + 6, 24, 13), int(Qt.AlignmentFlag.AlignLeft), "r")
+            p.drawText(QRectF(bec[0] + 7, bec[1] - 2, 60, 14), int(Qt.AlignmentFlag.AlignLeft),
+                       f"r {pl.texte_rayon}")
         p.restore()
+
+    @staticmethod
+    def _coter_horizontal(p: QPainter, x1: float, x2: float, y: float, texte: str) -> None:
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawLine(QPointF(x1, y), QPointF(x2, y))
+        for x in (x1, x2):
+            p.drawLine(QPointF(x, y - 3), QPointF(x, y + 3))
+        p.drawText(QRectF((x1 + x2) / 2 - 50, y - 16, 100, 14), int(Qt.AlignmentFlag.AlignCenter), texte)
 
     def _dessiner_profil(self, p: QPainter, pl: Plaquette, zone: QRectF, encre, cote, muet) -> None:
         """Vue de profil : l'épaisseur « s » et l'angle de dépouille « α », qui dit si elle se retourne."""
         remplissage = QColor(encre.red(), encre.green(), encre.blue(), 40)
-        largeur = min(zone.width() * 0.52, 68.0)
+        largeur = min(zone.width() * 0.42, 54.0)
         hauteur = min(zone.height() * 0.44, 48.0)
-        cx, cy = zone.center().x() + 8, zone.center().y()
+        cx, cy = zone.center().x() + 4, zone.center().y()
         recul = hauteur * math.tan(math.radians(pl.depouille))
         haut_g, haut_d = cx - largeur / 2, cx + largeur / 2
         p.setPen(QPen(encre, 1.5))
@@ -182,9 +211,10 @@ class DessinPlaquette(QWidget):
         p.setPen(QPen(cote, 1.3))
         if pl.depouille > 0.1:
             p.drawArc(QRectF(haut_d - 14, cy - hauteur / 2 - 14, 28, 28), -90 * 16, -int(pl.depouille * 16))
-        p.drawText(QRectF(haut_d + 3, cy - hauteur / 2, 20, 13), int(Qt.AlignmentFlag.AlignLeft), "α")
-        # cote d'épaisseur à gauche, lettre seule : la valeur est en légende
-        self._coter(p, QPointF(haut_g - 9, cy - hauteur / 2), QPointF(haut_g - 9, cy + hauteur / 2), "s", cote)
+        p.drawText(QRectF(haut_d + 4, cy - 7, 56, 14), int(Qt.AlignmentFlag.AlignLeft),
+                   f"α {pl.texte_depouille}")
+        self._coter(p, QPointF(haut_g - 9, cy - hauteur / 2), QPointF(haut_g - 9, cy + hauteur / 2),
+                    f"s {pl.texte_epaisseur}", cote)
 
     @staticmethod
     def _coter(p: QPainter, a: QPointF, b: QPointF, texte: str, couleur) -> None:
@@ -192,7 +222,7 @@ class DessinPlaquette(QWidget):
         p.drawLine(a, b)
         for q in (a, b):
             p.drawLine(QPointF(q.x() - 3, q.y()), QPointF(q.x() + 3, q.y()))
-        p.drawText(QRectF(a.x() - 20, (a.y() + b.y()) / 2 - 7, 16, 14),
+        p.drawText(QRectF(a.x() - 72, (a.y() + b.y()) / 2 - 7, 68, 14),
                    int(Qt.AlignmentFlag.AlignRight), texte)
 
 

@@ -6,18 +6,163 @@ les préférences).
 """
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, List, Optional, Set
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QLineEdit, QTreeWidgetItem, QVBoxLayout, QWidget
+import math
+
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPalette, QPen
+from PySide6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QTreeWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from ..icons import icone_plaquette
 from ..outils import CATALOGUE, FAMILLES, FORMES_PLAQUETTE, QUEUE_MAXI, PortePlaquette, filtrer
+from ..plaquettes import sommets_forme
 from .transfert import MIME_PORTE_PLAQUETTE, ArbreGlissable
 
 COLONNES = ["Désignation", "Plaquette", "Attaque", "Queue", "Fixation"]
 ROLE_DESIGNATION = Qt.ItemDataRole.UserRole
+
+
+class DessinPorteOutil(QWidget):
+    """Le porte-plaquette choisi, vu de dessus et en coupe de queue, avec ses cotes portées sur le dessin."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.outil: Optional[PortePlaquette] = None
+        self.setMinimumHeight(150)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def definir(self, outil: Optional[PortePlaquette]) -> None:
+        self.outil = outil
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        pal = self.palette()
+        encre = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText)
+        fond = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Base)
+        p.fillRect(self.rect(), fond)
+        police = QFont()
+        police.setPointSizeF(8.0)
+        p.setFont(police)
+        pp = self.outil
+        if pp is None:
+            p.setPen(QPen(QColor(encre.red(), encre.green(), encre.blue(), 150)))
+            p.drawText(self.rect(), int(Qt.AlignmentFlag.AlignCenter),
+                       "Choisissez un porte-plaquette pour le voir coté")
+            p.end()
+            return
+        cote = QColor(110, 170, 255) if fond.lightness() < 128 else QColor(25, 95, 190)
+        muet = QColor(encre.red(), encre.green(), encre.blue(), 110)
+        remplissage = QColor(encre.red(), encre.green(), encre.blue(), 40)
+
+        p.setPen(QPen(encre))
+        p.drawText(QRectF(4, 1, self.width() - 8, 14), int(Qt.AlignmentFlag.AlignLeft), pp.designation)
+        p.setPen(QPen(muet))
+        p.drawText(QRectF(4, 1, self.width() - 8, 14), int(Qt.AlignmentFlag.AlignRight),
+                   f"plaquette {pp.plaquette}")
+
+        largeur_vue = self.width() * 0.72
+        self._dessiner_dessus(p, pp, QRectF(6, 18, largeur_vue - 12, self.height() - 24),
+                              encre, cote, muet, remplissage)
+        self._dessiner_section(p, pp, QRectF(largeur_vue, 18, self.width() - largeur_vue - 6,
+                                             self.height() - 24), encre, cote, muet, remplissage)
+        p.end()
+
+    def _dessiner_dessus(self, p, pp, zone, encre, cote, muet, remplissage) -> None:
+        """Vue de dessus : la queue, la plaquette au bout, l'angle d'attaque par rapport à l'axe Z."""
+        marge = 62.0        # place pour l'arête, l'arc d'attaque et sa valeur, à gauche de la pointe
+        k = min((zone.width() - marge - 16) / max(pp.longueur, 1.0),
+                (zone.height() - 46) / max(pp.queue_mm * 1.9, 1.0))
+        k = max(k, 0.2)
+        lg, larg = pp.longueur * k, pp.queue_mm * k
+        # la pointe est à gauche, la queue part vers la droite ; le tranchant est devant (en bas)
+        x0 = zone.left() + marge
+        y_axe = zone.top() + zone.height() * 0.46
+        haut, bas = y_axe - larg / 2.0, y_axe + larg / 2.0
+        p.setPen(QPen(encre, 1.5))
+        p.setBrush(QBrush(remplissage))
+        p.drawRect(QRectF(x0, haut, lg, larg))
+        if pp.cylindrique:
+            p.setPen(QPen(muet, 1.0, Qt.PenStyle.DashDotLine))
+            p.drawLine(QPointF(x0 - 10, y_axe), QPointF(x0 + lg + 6, y_axe))
+
+        # la plaquette au bout, du côté du tranchant
+        forme = sommets_forme(pp.forme, max(larg * 0.26, 4.0))
+        cx = x0 + max(larg * 0.3, 5.0)
+        cy = bas - max(larg * 0.26, 4.0) if not pp.cylindrique else y_axe - max(larg * 0.22, 4.0)
+        p.setPen(QPen(cote, 1.4))
+        p.setBrush(QBrush(QColor(cote.red(), cote.green(), cote.blue(), 60)))
+        if forme:
+            p.drawPolygon([QPointF(cx + z, cy + x) for z, x in forme])
+        else:
+            p.drawEllipse(QPointF(cx, cy), max(larg * 0.24, 4.0), max(larg * 0.24, 4.0))
+
+        # angle d'attaque : entre l'axe Z (le sens d'avance, vers la gauche) et l'arête principale
+        if pp.attaque is not None:
+            pointe = QPointF(x0, bas if not pp.cylindrique else y_axe)
+            a = math.radians(180.0 - pp.attaque)
+            longueur_arete = max(larg * 0.9, 18.0)
+            bout = QPointF(pointe.x() - longueur_arete * math.cos(a), pointe.y() + longueur_arete * math.sin(a))
+            p.setPen(QPen(cote, 1.4))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawLine(pointe, bout)
+            p.setPen(QPen(muet, 1.0, Qt.PenStyle.DashLine))
+            p.drawLine(pointe, QPointF(pointe.x() - longueur_arete - 8, pointe.y()))
+            p.setPen(QPen(cote, 1.2))
+            r_arc = max(larg * 0.55, 13.0)
+            p.drawArc(QRectF(pointe.x() - r_arc, pointe.y() - r_arc, 2 * r_arc, 2 * r_arc),
+                      180 * 16, -int(pp.attaque * 16))
+            # la valeur au bout de la ligne de rappel, sur toute la marge laissée à gauche
+            p.setPen(QPen(cote))
+            p.drawText(QRectF(zone.left(), pointe.y() - 17, marge - 8, 14),
+                       int(Qt.AlignmentFlag.AlignRight), f"κr {pp.texte_attaque}")
+
+        # alésage minimal d'une barre : le plus petit trou où elle passe
+        if pp.alesage_mini:
+            r = pp.alesage_mini / 2.0 * k
+            p.setPen(QPen(muet, 1.0, Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(x0 + max(larg * 0.3, 5.0), y_axe), r, r)
+            p.setPen(QPen(muet))
+            p.drawText(QRectF(x0 - 20, y_axe - r - 15, 140, 14), int(Qt.AlignmentFlag.AlignLeft),
+                       f"alésage mini {pp.nombre(pp.alesage_mini)}")
+
+        # cote de longueur sous la queue
+        y_cote = min(bas + 20, zone.bottom() - 4)
+        self._coter(p, QPointF(x0, y_cote), QPointF(x0 + lg, y_cote), f"l1 {pp.nombre(pp.longueur)}", cote)
+
+    def _dessiner_section(self, p, pp, zone, encre, cote, muet, remplissage) -> None:
+        """Section de la queue : carrée h × b, ou ronde Ø d, avec sa cote."""
+        cote_section = min(zone.width() - 18, zone.height() - 34, 58.0)
+        cx, cy = zone.center().x(), zone.center().y() - 6
+        p.setPen(QPen(encre, 1.5))
+        p.setBrush(QBrush(remplissage))
+        if pp.cylindrique:
+            p.drawEllipse(QPointF(cx, cy), cote_section / 2.0, cote_section / 2.0)
+            texte = f"d Ø {pp.nombre(pp.queue_mm)}"
+        else:
+            p.drawRect(QRectF(cx - cote_section / 2.0, cy - cote_section / 2.0, cote_section, cote_section))
+            texte = f"h × b  {pp.nombre(pp.queue_mm)} × {pp.nombre(pp.queue_mm)}"
+        p.setPen(QPen(cote))
+        p.drawText(QRectF(zone.left(), cy + cote_section / 2.0 + 6, zone.width(), 14),
+                   int(Qt.AlignmentFlag.AlignHCenter), texte)
+        p.setPen(QPen(muet))
+        p.drawText(QRectF(zone.left(), cy + cote_section / 2.0 + 20, zone.width(), 14),
+                   int(Qt.AlignmentFlag.AlignHCenter), "section de queue")
+
+    @staticmethod
+    def _coter(p, a: QPointF, b: QPointF, texte: str, couleur) -> None:
+        p.setPen(QPen(couleur, 1.1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawLine(a, b)
+        for q in (a, b):
+            p.drawLine(QPointF(q.x(), q.y() - 3), QPointF(q.x(), q.y() + 3))
+        p.drawText(QRectF((a.x() + b.x()) / 2 - 50, a.y() - 15, 100, 14),
+                   int(Qt.AlignmentFlag.AlignCenter), texte)
 
 
 class ZoneOutils(QWidget):
@@ -67,8 +212,11 @@ class ZoneOutils(QWidget):
         self.arbre.setAlternatingRowColors(True)
         self.arbre.setIconSize(QSize(18, 18))
         self.arbre.itemChanged.connect(self._case_changee)
+        self.arbre.currentItemChanged.connect(self._choix_change)
         v.addWidget(self.arbre, 1)
 
+        self.dessin = DessinPorteOutil(self)
+        v.addWidget(self.dessin)
         self.lbl_total = QLabel("")
         self.lbl_total.setWordWrap(True)
         v.addWidget(self.lbl_total)
@@ -127,6 +275,13 @@ class ZoneOutils(QWidget):
             self.arbre.resizeColumnToContents(col)
         total, montres = len(CATALOGUE), sum(len(lot) for lot in groupes.values())
         self.lbl_total.setText(f"{montres} référence(s) affichée(s) sur {total} — {len(self._stock)} en stock")
+
+    def _outil(self, designation: str) -> Optional[PortePlaquette]:
+        return next((pp for pp in CATALOGUE if pp.designation == designation), None)
+
+    def _choix_change(self, item: Optional[QTreeWidgetItem], _precedent=None) -> None:
+        designation = item.data(0, ROLE_DESIGNATION) if item is not None else None
+        self.dessin.definir(self._outil(designation) if designation else None)
 
     def _case_changee(self, item: QTreeWidgetItem, colonne: int) -> None:
         if self._blocage or colonne != 0:

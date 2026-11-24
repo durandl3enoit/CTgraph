@@ -38,6 +38,10 @@ def test_designation_iso_1832():
     assert ccmt.depouille == 7.0 and ccmt.epaisseur == 3.97 and ccmt.type_iso == "T"
     # la base relie la plaquette au porte-plaquette, dont le catalogue note « CCMT 09T3.. »
     assert pour_base("CCMT 09T3..") == pour_base("CCMT 09T3")
+    # une plaquette ronde n'a pas de bec à elle : son code de rayon est « 00 », son rayon est le sien
+    ronde = next(pl for pl in CATALOGUE if pl.base == "RNMG 1204")
+    assert ronde.designation == "RNMG 120400" and ronde.rayon_bec == 6.35
+    assert {pl.designation for pl in CATALOGUE if pl.forme == "R"} == {"RNMG 120400", "RCMT 10T300"}
 
 
 def test_chaque_porte_plaquette_trouve_ses_plaquettes():
