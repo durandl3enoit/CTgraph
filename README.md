@@ -27,9 +27,10 @@ L'axe est tracé en tiret-point ; les diamètres se lisent directement dans les 
 * **Cote** (`C`) : un seul outil, le type se déduit. Cliquez un point : diamètre si la cote est posée à côté,
   position Z depuis l'origine de la pièce si elle est posée au-dessus. Un arc : rayon. Une ligne, puis
   l'endroit où poser la cote : au-dessus ou au-dessous, c'est la longueur Z ; à côté, c'est le diamètre d'une ligne
-  horizontale ou l'angle d'une ligne inclinée. Une ligne inclinée a aussi sa **longueur vraie** : posez la cote
-  à côté d'elle, entre ses extrémités, elle se dessine parallèle à la ligne. Une face verticale : sa position Z si
-  la cote est posée au-dessus, sa hauteur si elle est posée à côté. Deux lignes : angle entre elles,
+  horizontale. Une **ligne inclinée** se cote selon l'endroit : à côté d'elle, entre ses extrémités, sa longueur
+  vraie, dessinée parallèle ; au-dessus ou au-dessous, sa longueur Z ; à droite ou à gauche, sa longueur X
+  (l'écart radial entre ses bouts) ; en diagonale au-delà d'un coin, son angle. Deux points se cotent de même.
+  Une face verticale : sa position Z si la cote est posée au-dessus, sa hauteur si elle est posée à côté. Deux lignes : angle entre elles,
   longueur Z entre deux faces verticales, ou écart entre deux lignes parallèles (profondeur de gorge), que l'on
   glisse le long de la première. Deux points : longueur Z. La cote suit le curseur en aperçu, le clic la pose
   et demande sa valeur, proposée à la mesure actuelle. `Ctrl+K` ou le menu du clic droit cotent la sélection.
@@ -116,6 +117,14 @@ hachurés, et dans la vue 3D, brut translucide ; la touche `M` le masque. Trois 
 affichées en ambre : « Ø brut », « L brut » et « marge », la marge en bout entre la face brute et la face finie.
 Double-clic ou clic droit + molette pour les changer ; une longueur de brut se répartit sur le dépassement, la
 prise dans les mors et la marge ne bougent pas.
+
+**Références du montage** : le bout du brut, la face avant des mors, l'épaulement d'appui, la face du mandrin
+et les surfaces du brut (extérieure, alésage d'un tube) sont tracés en trait mixte et nommés. La face finie
+(Z = 0, à la marge du bout du brut) reste la ligne de référence de la pièce, avec « origine Z » et « position Z ».
+Sélectionnez un point ou une face, puis clic droit : *Aligner sur une référence* pose la relation « sur une
+référence » (le point ou la face y reste, et suit le montage quand il change), *Coter depuis une référence* pose
+l'écart signé depuis ce plan, lu « mors 15 » ou « mandrin 190 ». Avec l'aimantation *Axe Z*, un tracé qui
+s'approche d'une référence s'y accroche et reçoit la relation d'office.
 
 ## Lancer
 

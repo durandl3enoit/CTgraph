@@ -104,7 +104,7 @@ def _nettoyer_apres_raccourci(e: Esquisse, ident: int, ancien: int) -> None:
             if ancien in e.extremites(autre):
                 e.relations.pop(r.id, None)
     for c in e.cotes_de(ident):
-        if c.type in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE):
+        if c.type in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE, TypeCote.LONGUEUR_X):
             e.cotes.pop(c.id, None)
     if not _est_utilise(e, ancien) and not e.points[ancien].construction:
         e.supprimer(ancien, nettoyer_points=False)

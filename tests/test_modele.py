@@ -160,6 +160,40 @@ def test_verifier_cote():
         e.verifier_cote(TypeCote.RAYON, (7,))
 
 
+def test_longueur_x_et_references_du_montage():
+    from ctgraph.esquisse.modele import Reference
+    e = Esquisse()
+    a = e.ajouter_point(0, 10)
+    b = e.ajouter_point(-30, 25)
+    li = e.ajouter_ligne(a.id, b.id)
+    # longueur X : l'écart radial, rangé du plus petit x au plus grand, jamais négatif
+    assert e.mesurer(TypeCote.LONGUEUR_X, (li.id,)) == 15.0
+    c = e.ajouter_cote(TypeCote.LONGUEUR_X, (b.id, a.id))
+    assert c.elements == (a.id, b.id) and c.valeur == 15.0
+    with pytest.raises(ErreurEsquisse):
+        e.ajouter_cote(TypeCote.LONGUEUR_X, (li.id,), -3.0)
+    # les références du montage : inconnues tant que le contrôleur ne les a pas posées
+    with pytest.raises(ErreurEsquisse):
+        e.ajouter_relation(TypeRelation.SUR_REFERENCE, (a.id,), reference="face_mors")
+    with pytest.raises(ErreurEsquisse):
+        e.mesurer(TypeCote.DEPUIS_REFERENCE, (a.id,), "face_mors")
+    e.references = {"face_mors": Reference("face_mors", "z", -95.0, "Face avant des mors", "mors"),
+                    "brut_ext": Reference("brut_ext", "x", 28.0, "Surface du brut", "brut")}
+    r = e.ajouter_relation(TypeRelation.SUR_REFERENCE, (li.id,), reference="face_mors")
+    assert r.reference == "face_mors"
+    # écart signé depuis le plan, selon son axe
+    assert e.mesurer(TypeCote.DEPUIS_REFERENCE, (b.id,), "face_mors") == 65.0
+    assert e.mesurer(TypeCote.DEPUIS_REFERENCE, (a.id,), "brut_ext") == -18.0
+    c = e.ajouter_cote(TypeCote.DEPUIS_REFERENCE, (a.id,), reference="brut_ext")
+    assert c.valeur == -18.0 and e.texte_cote(c) == "brut -18"
+    with pytest.raises(ErreurEsquisse):
+        e.ajouter_cote(TypeCote.DEPUIS_REFERENCE, (a.id,))          # la référence manque
+    # la référence voyage dans le fichier ; une cote ordinaire n'en garde pas
+    e2 = Esquisse.from_json(e.to_json())
+    assert e2.relations[r.id].reference == "face_mors" and e2.cotes[c.id].reference == "brut_ext"
+    assert "reference" not in e.to_dict()["cotes"][0]
+
+
 def test_copier_est_independant():
     e = arbre_epaule()
     e2 = e.copier()

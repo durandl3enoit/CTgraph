@@ -255,6 +255,52 @@ def test_egal_entre_cotes_refuse_les_types_differents_et_les_chaines():
     assert not e.relation_possible(TypeRelation.EGAL, (n["l_total"].id, n["l_petit"].id))   # boucle
 
 
+def test_references_du_montage_et_longueur_x():
+    from ctgraph.esquisse.modele import Reference
+    e = Esquisse()
+    e.references = {"face_mors": Reference("face_mors", "z", -95.0, "Face avant des mors", "mors"),
+                    "brut_ext": Reference("brut_ext", "x", 28.0, "Surface du brut", "brut")}
+    a = e.ajouter_point(0, 0)
+    b = e.ajouter_point(0, 20)
+    c = e.ajouter_point(-40, 20)
+    d = e.ajouter_point(-40, 0)
+    for p, q in ((a, b), (b, c), (c, d), (d, a)):
+        e.ajouter_ligne(p.id, q.id)
+    e.ajouter_relation(TypeRelation.SUR_AXE, (a.id,))
+    e.ajouter_relation(TypeRelation.ORIGINE_Z, (a.id,))
+    e.ajouter_relation(TypeRelation.VERTICAL, (e.lignes[1 + 4].id,) if False else (list(e.lignes)[0],))
+    e.ajouter_relation(TypeRelation.HORIZONTAL, (list(e.lignes)[1],))
+    e.ajouter_relation(TypeRelation.VERTICAL, (list(e.lignes)[2],))
+    # la face arrière alignée sur la face des mors : ses deux points vont à z = -95
+    e.ajouter_relation(TypeRelation.SUR_REFERENCE, (list(e.lignes)[2],), reference="face_mors")
+    # le dessus sur la surface du brut : x = 28 ; la relation « vertical » sur la face arrière devient redondante
+    e.ajouter_relation(TypeRelation.SUR_REFERENCE, (b.id,), reference="brut_ext")
+    s = AdaptateurSolveur(e)
+    res = s.resoudre()
+    assert res.succes
+    assert e.points[c.id].z == pytest.approx(-95.0) and e.points[d.id].z == pytest.approx(-95.0)
+    assert e.points[b.id].x == pytest.approx(28.0) and e.points[c.id].x == pytest.approx(28.0)
+    # cote depuis une référence : écart signé réglable
+    e2 = Esquisse()
+    e2.references = dict(e.references)
+    p = e2.ajouter_point(-80, 15)
+    q = e2.ajouter_point(-50, 30)
+    e2.ajouter_ligne(p.id, q.id)
+    e2.ajouter_relation(TypeRelation.FIXE, (q.id,))
+    co = e2.ajouter_cote(TypeCote.DEPUIS_REFERENCE, (p.id,), reference="face_mors")
+    assert co.valeur == 15.0
+    cx = e2.ajouter_cote(TypeCote.LONGUEUR_X, (p.id, q.id))
+    assert cx.valeur == 15.0
+    s2 = AdaptateurSolveur(e2)
+    assert s2.resoudre().succes and s2.resoudre().dof == 0
+    assert s2.modifier_cote(co.id, 25.0).succes
+    assert e2.points[p.id].z == pytest.approx(-70.0)
+    assert s2.modifier_cote(cx.id, 5.0).succes
+    assert e2.points[p.id].x == pytest.approx(25.0)
+    assert s2.modifier_cote(co.id, -10.0).succes            # derrière la face des mors : écart négatif
+    assert e2.points[p.id].z == pytest.approx(-105.0)
+
+
 def test_relations_diverses():
     e = Esquisse()
     a = e.ajouter_point(0, 0)

@@ -28,7 +28,7 @@ import re
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Dict, List, Tuple
 
-from .esquisse.modele import ErreurEsquisse, Esquisse
+from .esquisse.modele import ErreurEsquisse, Esquisse, Reference
 
 FORMAT_PIECE = "ctgraph-piece"
 VERSION_PIECE = 1
@@ -214,6 +214,22 @@ class Montage:
         plat = max(rc - ek, 0.0) if self.face_etagee_en_contact() else rc    # face plate, vers l'axe
         return [(self.z_fond_etage(i), self.z_fond_etage(i - 1), plat, plat + md.epaisseur_etage(i))
                 for i in range(1, n + 1)]
+
+    def references(self) -> List[Reference]:
+        """Les plans du montage que l'esquisse peut viser (cote « depuis », relation « sur ») : bout du brut, face
+        des mors, épaulement d'appui, face du mandrin, puis les surfaces de révolution du brut. La face finie
+        (Z = 0) a déjà « origine Z » et « position Z »."""
+        refs = [Reference("brut_avant", "z", self.z_brut_avant(), "Bout du brut (face brute)", "bout"),
+                Reference("face_mors", "z", self.z_face_mors(), "Face avant des mors", "mors")]
+        if self.prise.appui >= 1:
+            refs.append(Reference("appui_mors", "z", self.z_appui(),
+                                  f"Épaulement d'appui du brut (étage {self.prise.appui})", "appui"))
+        refs.append(Reference("face_mandrin", "z", self.z_face_mandrin(), "Face du mandrin", "mandrin"))
+        refs.append(Reference("brut_ext", "x", self.rayon_brut(), "Surface extérieure du brut (rayon)", "brut"))
+        if self.brut.forme == "tube":
+            refs.append(Reference("alesage_brut", "x", self.rayon_interieur_brut(), "Alésage du tube (rayon)",
+                                  "alésage"))
+        return refs
 
     def profil_mors(self) -> List[Tuple[float, float]]:
         """Le contour (z, r) d'un mors dans le plan de l'esquisse : la face plate, puis l'escalier des étages."""

@@ -51,7 +51,7 @@ def _poser_points(e: Esquisse, p, lignes, u1, u2, t: float, lg1: float, lg2: flo
     for li in lignes:
         q = li.p2 if li.p1 == pid else li.p1
         for co in e.cotes_de(li.id):
-            if co.type in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE) and co.elements == (li.id,):
+            if co.type in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE, TypeCote.LONGUEUR_X) and co.elements == (li.id,):
                 a, b = e.points[q], e.points[pid]
                 co.elements = (q, pid) if a.z <= b.z else (pid, q)
     p.construction = True

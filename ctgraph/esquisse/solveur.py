@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple
 
 from planegcs import Sketch, SolveStatus
 
-from .modele import Cote, Esquisse, Relation, TypeCote, TypeRelation
+from .modele import COTES_SIGNEES, Cote, Esquisse, Relation, TypeCote, TypeRelation
 
 _OK = (SolveStatus.Success, SolveStatus.Converged)
 
@@ -197,16 +197,24 @@ class AdaptateurSolveur:
             if T.SUR_AXE not in types:
                 tags.append(s.coordinate_y(self._pts[p.id], s.add_fixed_param(p.x)))
             return tags
+        if r.type == T.SUR_REFERENCE:
+            # sur un plan du montage : coordonnée figée à la valeur de la référence, pour le point ou les deux
+            # points de la ligne (qui devient de fait verticale ou horizontale)
+            ref = e.reference_de(r.reference)
+            pts = [els[0]] if genres == ["point"] else list(e.extremites(els[0]))
+            figer = s.coordinate_x if ref.axe == "z" else s.coordinate_y
+            return [figer(self._pts[p], s.add_fixed_param(ref.valeur)) for p in pts]
         raise ValueError(f"relation inconnue : {r.type}")
 
-    def _points_cote(self, els: Tuple[int, ...]) -> Tuple[int, int]:
-        """Les deux points d'une cote (point, point) ou (ligne), rangés par z croissant."""
+    def _points_cote(self, els: Tuple[int, ...], axe: int = 0) -> Tuple[int, int]:
+        """Les deux points d'une cote (point, point) ou (ligne), rangés par z croissant (axe 0) ou x (axe 1)."""
         if len(els) == 1:
             a, b = self.esquisse.extremites(els[0])
         else:
             a, b = els
         pa, pb = self.esquisse.points[a], self.esquisse.points[b]
-        return (a, b) if pa.z <= pb.z else (b, a)
+        va, vb = (pa.z, pb.z) if axe == 0 else (pa.x, pb.x)
+        return (a, b) if va <= vb else (b, a)
 
     @staticmethod
     def _valeur_param(c: Cote) -> float:
@@ -246,6 +254,15 @@ class AdaptateurSolveur:
             return s.p2l_distance(self._pts[e.lignes[els[0]].p1], self._lignes[els[1]], param, driving=pilote)
         if c.type == TypeCote.POSITION_Z:
             return s.coordinate_x(self._pts[e.point_reference(els[0])], param, driving=pilote)
+        if c.type == TypeCote.LONGUEUR_X:
+            a, b = self._points_cote(els, axe=1)
+            return s.difference(self._params_pts[a][1], self._params_pts[b][1], param, driving=pilote)  # x(b) - x(a)
+        if c.type == TypeCote.DEPUIS_REFERENCE:
+            # coordonnée du point moins la valeur de la référence : écart signé, comme la position Z
+            ref = e.reference_de(c.reference)
+            pid = e.point_reference(els[0])
+            coord = self._params_pts[pid][0 if ref.axe == "z" else 1]
+            return s.difference(s.add_fixed_param(ref.valeur), coord, param, driving=pilote)
         if c.type == TypeCote.ANGLE:
             if len(els) == 1:
                 li = e.lignes[els[0]]
@@ -271,7 +288,7 @@ class AdaptateurSolveur:
             c = self.esquisse.cotes.get(cid)
             if c is not None and (c.pilotee or cid in self._liees):
                 c.valeur = self._valeur_depuis_param(c, float(self._s.get_param(param)))
-                if c.type not in (TypeCote.ANGLE, TypeCote.POSITION_Z):
+                if c.type not in COTES_SIGNEES:
                     c.valeur = abs(c.valeur)
 
     def resoudre(self, diagnostiquer: bool = True) -> Resultat:

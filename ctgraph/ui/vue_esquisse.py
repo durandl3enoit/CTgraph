@@ -47,6 +47,7 @@ GLYPHES: Dict[TypeRelation, str] = {
     TypeRelation.SUR_AXE: "axe",
     TypeRelation.ORIGINE_Z: "z0",
     TypeRelation.FIXE: "F",
+    TypeRelation.SUR_REFERENCE: "réf",
 }
 
 TOLERANCE_PX = 9          # rayon d'accrochage et de sélection, en pixels
@@ -70,6 +71,7 @@ class Accroche:
     point: Optional[int] = None            # point existant sous le curseur
     sur_axe: bool = False                  # sur l'axe de la pièce (x = 0)
     sur_origine: bool = False              # sur la face d'origine (z = 0) : pose la relation « origine Z »
+    reference: str = ""                    # sur un plan du montage (face des mors…) : relation « sur une référence »
     courbe: Optional[int] = None           # sur une ligne ou un arc existant
     auto: Optional[TypeRelation] = None    # relation à poser d'office sur le trait en cours (horizontal, vertical)
     guides: List[Tuple[Tuple[float, float], Tuple[float, float]]] = field(default_factory=list)
@@ -593,6 +595,28 @@ class VueEsquisse(QGraphicsView):
             self._items_mors.append(ref)
         if self.mode_mors:
             self._dessiner_cotes_mors(blocs, c)
+        # les plans de référence du montage, en trait mixte discret, nommés : on peut s'y aligner et en coter
+        haut = max(rb, max(b[3] for b in blocs)) + self.px_en_mm(60)
+        mixte = QPen(QColor(muet.red(), muet.green(), muet.blue(), 110), 1, Qt.PenStyle.DashDotLine)
+        mixte.setCosmetic(True)
+        for ref in m.references():
+            path = QPainterPath()
+            if ref.axe == "z":
+                path.moveTo(ref.valeur, -self.px_en_mm(12))
+                path.lineTo(ref.valeur, haut)
+                pos_nom = (ref.valeur, haut + self.px_en_mm(8))
+            else:
+                path.moveTo(m.z_face_mandrin(), ref.valeur)
+                path.lineTo(z2 + self.px_en_mm(24), ref.valeur)
+                pos_nom = (z2 + self.px_en_mm(24), ref.valeur)
+            trait = QGraphicsPathItem(path)
+            trait.setPen(mixte)
+            trait.setData(ROLE_GENRE, "reference")
+            trait.setData(ROLE_ID, ref.nom)
+            trait.setToolTip(f"{ref.libelle} : sélectionnez un point ou une face, puis clic droit pour s'y aligner "
+                             "ou en coter l'écart")
+            ajouter(trait, 0.4)
+            ajouter(self._inscrire(ref.court, pos_nom, grave, c, "centre" if ref.axe == "z" else "bas_gauche"), 0.4)
         # les trois valeurs du brut, toujours affichées et éditables : Ø, longueur, marge en bout
         d = self.px_en_mm(30)
         ambre = QColor(205, 175, 95)
@@ -940,6 +964,10 @@ class VueEsquisse(QGraphicsView):
             return (d, 0.0)
         if type_ == TypeCote.DISTANCE:
             return (0.0, d)
+        if type_ == TypeCote.LONGUEUR_X:
+            return (d, 0.0)
+        if type_ == TypeCote.DEPUIS_REFERENCE:
+            return (0.0, d)
         return (d * 0.6, d * 0.6)
 
     def _fleche(self, path: QPainterPath, pointe: Tuple[float, float], direction: Tuple[float, float]) -> None:
@@ -1018,26 +1046,60 @@ class VueEsquisse(QGraphicsView):
             self._fleche(path, (mz, mx), (mz - ce.z, mx - ce.x))
             pos = (mz + dz, mx + dx)
             direction = (mz - ce.z, mx - ce.x, True)     # vers l'extérieur de l'arc = plus grand
-        elif co.type == TypeCote.POSITION_Z:
-            # de la face d'origine (z = 0) au point visé, sur une horizontale au-dessus du point ou de la face
+        elif co.type in (TypeCote.POSITION_Z, TypeCote.DEPUIS_REFERENCE):
+            # de la face d'origine (z = 0), ou d'un plan du montage, au point visé : sur une horizontale au-dessus
+            # du point ou de la face pour un plan Z, sur une verticale à côté pour une surface de révolution
             el = co.elements[0]
             p = e.points[e.point_reference(el)]
+            ref = e.references.get(co.reference) if co.type == TypeCote.DEPUIS_REFERENCE else None
+            origine = 0.0 if ref is None else ref.valeur
             if e.genre(el) == "ligne":
                 a, b = (e.points[i] for i in e.extremites(el))
-                base_x = max(a.x, b.x)
+                base_x, base_z = max(a.x, b.x), max(a.z, b.z)
             else:
-                base_x = p.x
-            xl = base_x + dx
-            path.moveTo(p.z, base_x)
-            path.lineTo(p.z, xl + math.copysign(ext, dx or 1.0))
-            path.moveTo(0.0, xl - ext)
-            path.lineTo(0.0, xl + ext)
-            path.moveTo(0.0, xl)
-            path.lineTo(p.z, xl)
-            if abs(p.z) > 1e-9:
-                self._fleche(path, (0.0, xl), (-p.z, 0.0))
-                self._fleche(path, (p.z, xl), (p.z, 0.0))
-            pos = (p.z / 2 + dz, xl)
+                base_x, base_z = p.x, p.z
+            if ref is None or ref.axe == "z":
+                xl = base_x + dx
+                path.moveTo(p.z, base_x)
+                path.lineTo(p.z, xl + math.copysign(ext, dx or 1.0))
+                path.moveTo(origine, xl - ext)
+                path.lineTo(origine, xl + ext)
+                path.moveTo(origine, xl)
+                path.lineTo(p.z, xl)
+                if abs(p.z - origine) > 1e-9:
+                    self._fleche(path, (origine, xl), (origine - p.z, 0.0))
+                    self._fleche(path, (p.z, xl), (p.z - origine, 0.0))
+                pos = ((p.z + origine) / 2 + dz, xl)
+            else:
+                zl = base_z + dz
+                path.moveTo(base_z, p.x)
+                path.lineTo(zl + math.copysign(ext, dz or 1.0), p.x)
+                path.moveTo(zl - ext, origine)
+                path.lineTo(zl + ext, origine)
+                path.moveTo(zl, origine)
+                path.lineTo(zl, p.x)
+                if abs(p.x - origine) > 1e-9:
+                    self._fleche(path, (zl, origine), (0.0, origine - p.x))
+                    self._fleche(path, (zl, p.x), (0.0, p.x - origine))
+                pos = (zl, (p.x + origine) / 2 + dx)
+                direction = (0.0, 1.0, False)
+        elif co.type == TypeCote.LONGUEUR_X:
+            # écart radial entre deux points, ou entre les bouts d'une ligne : verticale à côté
+            if len(co.elements) == 1:
+                a, b = (e.points[i] for i in e.extremites(co.elements[0]))
+            else:
+                a, b = (e.points[i] for i in co.elements)
+            zl = max(a.z, b.z) + dz
+            path.moveTo(a.z, a.x)
+            path.lineTo(zl + math.copysign(ext, dz or 1.0), a.x)
+            path.moveTo(b.z, b.x)
+            path.lineTo(zl + math.copysign(ext, dz or 1.0), b.x)
+            path.moveTo(zl, a.x)
+            path.lineTo(zl, b.x)
+            self._fleche(path, (zl, a.x), (0.0, a.x - b.x))
+            self._fleche(path, (zl, b.x), (0.0, b.x - a.x))
+            pos = (zl, (a.x + b.x) / 2 + dx)
+            direction = (0.0, 1.0, False)
         elif co.type == TypeCote.ECART:
             # segment perpendiculaire entre les deux lignes, glissé le long de la première selon le décalage
             l1, l2 = (e.lignes[i] for i in co.elements)
@@ -1166,7 +1228,7 @@ class VueEsquisse(QGraphicsView):
                 path.lineTo(taille, taille)
                 path.moveTo(-taille, taille)
                 path.lineTo(taille, -taille)
-            elif curseur.sur_axe or curseur.sur_origine:
+            elif curseur.sur_axe or curseur.sur_origine or curseur.reference:
                 path.moveTo(-taille, 0)
                 path.lineTo(taille, 0)
                 path.moveTo(0, -taille)
@@ -1230,6 +1292,13 @@ class VueEsquisse(QGraphicsView):
                 acc.x = 0.0
             if self.aimants["axe"] and abs(acc.z) <= tol:
                 acc.z = 0.0                      # face d'origine de la pièce
+            elif self.aimants["axe"] and self.montage is not None and self.montage_visible:
+                # les plans du montage : face des mors, du mandrin, bout du brut, surfaces du brut
+                for ref in self.montage.references():
+                    if ref.axe == "z" and abs(acc.z - ref.valeur) <= tol:
+                        acc.z = ref.valeur
+                    elif ref.axe == "x" and abs(acc.x - ref.valeur) <= tol and abs(acc.x) > 1e-9:
+                        acc.x = ref.valeur
             if self.aimants["objets"]:
                 for p in e.points.values():
                     if depuis is not None and p.id == depuis.point:
@@ -1266,6 +1335,13 @@ class VueEsquisse(QGraphicsView):
                     acc.guides = [((depuis.z, depuis.x), (acc.z, acc.x))]
         acc.sur_axe = abs(acc.x) < 1e-9 if acc.point is None else abs(e.points[acc.point].x) < 1e-9
         acc.sur_origine = acc.point is None and acc.courbe is None and self.aimants["axe"] and abs(acc.z) < 1e-9
+        acc.reference = ""
+        if acc.point is None and acc.courbe is None and self.aimants["axe"] and self.montage is not None \
+                and self.montage_visible and not acc.sur_origine:
+            for ref in self.montage.references():
+                if abs((acc.z if ref.axe == "z" else acc.x) - ref.valeur) < 1e-9:
+                    acc.reference = ref.nom
+                    break
         return acc
 
     def etiquette_sous(self, pos) -> Optional[Tuple[str, int]]:
@@ -1291,7 +1367,8 @@ class VueEsquisse(QGraphicsView):
                      and (genres is None or it.data(ROLE_GENRE) in genres)]
         if not candidats:
             return None
-        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "reference_mors": 7, "mors": 8}
+        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "reference_mors": 7, "mors": 8,
+                 "reference": 9}
         candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
         return candidats[0]
 
@@ -1486,7 +1563,7 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
-        if genre in ("brut", "mors", "cote_mors", "reference_mors"):
+        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference"):
             return                              # montage : pas de sélection, double-clic ou clic droit
         if genre == "point":
             self._glisse_point = ident          # sélection ou glissement : tranché au relâchement
@@ -1607,10 +1684,16 @@ class VueEsquisse(QGraphicsView):
                 if not horizontale and not verticale:
                     # ligne biaise : posée à côté d'elle, entre ses extrémités (dans sa boîte, un peu élargie),
                     # c'est sa longueur vraie, parallèle à la ligne ; au-dessus ou au-dessous, la longueur Z ;
-                    # à droite ou à gauche, l'angle
+                    # à droite ou à gauche, la longueur X ; en diagonale au-delà d'un coin, l'angle
                     marge = self.px_en_mm(12)
                     if dz_hors <= marge and dx_hors <= marge:
                         return TypeCote.DISTANCE, elements, self._decalage_normal(a, b, z, x)
+                    if dz_hors > marge and dx_hors <= marge:
+                        return TypeCote.LONGUEUR_X, elements, (z - max(a.z, b.z), x - (a.x + b.x) / 2)
+                    if dx_hors > marge and dz_hors <= marge:
+                        return TypeCote.LONGUEUR_Z, elements, (z - (a.z + b.z) / 2, x - max(a.x, b.x))
+                    mz, mx = (a.z + b.z) / 2, (a.x + b.x) / 2
+                    return TypeCote.ANGLE, elements, (z - mz, x - mx)
             if verticale:
                 # une face : posée au-dessus ou au-dessous, sa position Z depuis l'origine ; à côté, sa hauteur
                 if z is None or dx_hors > 0.0:
@@ -1659,6 +1742,16 @@ class VueEsquisse(QGraphicsView):
             if abs(p.z - q.z) < 1e-9:
                 dec = (0.0, d) if z is None else self._decalage_normal(p, q, z, x)
                 return TypeCote.DISTANCE, elements, dec
+            if z is not None and abs(p.x - q.x) > 1e-9:
+                # comme pour une ligne biaise : à côté, entre les deux points, la distance vraie ; au-dessus ou
+                # au-dessous, la longueur Z ; à droite ou à gauche, la longueur X
+                marge = self.px_en_mm(12)
+                dz_hors = max(0.0, min(p.z, q.z) - z, z - max(p.z, q.z))
+                dx_hors = max(0.0, min(p.x, q.x) - x, x - max(p.x, q.x))
+                if dz_hors <= marge and dx_hors <= marge:
+                    return TypeCote.DISTANCE, elements, self._decalage_normal(p, q, z, x)
+                if dz_hors > marge and dx_hors <= marge:
+                    return TypeCote.LONGUEUR_X, elements, (z - max(p.z, q.z), x - (p.x + q.x) / 2)
             dec = (0.0, d) if z is None else (z - (p.z + q.z) / 2, x - max(p.x, q.x))
             return TypeCote.LONGUEUR_Z, elements, dec
         return None
@@ -1684,6 +1777,7 @@ class VueEsquisse(QGraphicsView):
                 candidats.append((TypeCote.DISTANCE, elements, (0.0, d)))
             else:
                 candidats.append((TypeCote.LONGUEUR_Z, elements, (0.0, d)))
+                candidats.append((TypeCote.LONGUEUR_X, elements, (d, 0.0)))
                 candidats.append((TypeCote.ANGLE, elements, (d * 0.6, d * 0.6)))
                 candidats.append((TypeCote.DISTANCE, elements, (0.0, d)))
         elif genres == ["point"]:
@@ -1693,6 +1787,7 @@ class VueEsquisse(QGraphicsView):
             candidats.append((TypeCote.POSITION_Z, elements, (0.0, d)))
         elif genres == ["point", "point"]:
             candidats.append((TypeCote.LONGUEUR_Z, elements, (0.0, d)))
+            candidats.append((TypeCote.LONGUEUR_X, elements, (d, 0.0)))
             candidats.append((TypeCote.DISTANCE, elements, (0.0, d)))
         vus = set()
         uniques = []

@@ -31,6 +31,7 @@ class TypeRelation(str, Enum):
     SUR_AXE = "sur_axe"                  # (point) : x = 0
     ORIGINE_Z = "origine_z"              # (point) : z = 0, la face d'origine de la pièce
     FIXE = "fixe"                        # (point) : z et x figés
+    SUR_REFERENCE = "sur_reference"      # (point) ou (ligne) : sur une référence du montage (face des mors, du mandrin…)
 
 
 class TypeCote(str, Enum):
@@ -41,6 +42,8 @@ class TypeCote(str, Enum):
     DISTANCE = "distance"      # (point, point) ou (ligne) : distance vraie
     ECART = "ecart"            # (ligne, ligne) parallèles : distance perpendiculaire (profondeur de gorge…)
     POSITION_Z = "position_z"  # (point) ou (ligne) : coordonnée z depuis l'origine de la pièce, signée
+    LONGUEUR_X = "longueur_x"  # (point, point) ou (ligne) : écart selon X (en rayon)
+    DEPUIS_REFERENCE = "depuis_reference"  # (point) ou (ligne) : écart signé depuis une référence du montage
 
 
 LIBELLES_RELATION: Dict[TypeRelation, str] = {
@@ -56,6 +59,7 @@ LIBELLES_RELATION: Dict[TypeRelation, str] = {
     TypeRelation.SUR_AXE: "Sur l'axe",
     TypeRelation.ORIGINE_Z: "Origine Z",
     TypeRelation.FIXE: "Fixe",
+    TypeRelation.SUR_REFERENCE: "Sur une référence du montage",
 }
 
 LIBELLES_COTE: Dict[TypeCote, str] = {
@@ -66,6 +70,8 @@ LIBELLES_COTE: Dict[TypeCote, str] = {
     TypeCote.DISTANCE: "Distance",
     TypeCote.ECART: "Écart",
     TypeCote.POSITION_Z: "Position Z",
+    TypeCote.LONGUEUR_X: "Longueur X",
+    TypeCote.DEPUIS_REFERENCE: "Depuis une référence du montage",
 }
 
 # Formes acceptées : suites de genres d'éléments, dans l'ordre donné.
@@ -82,6 +88,7 @@ _FORMES_RELATION: Dict[TypeRelation, List[Tuple[str, ...]]] = {
     TypeRelation.SUR_AXE: [("point",)],
     TypeRelation.ORIGINE_Z: [("point",)],
     TypeRelation.FIXE: [("point",)],
+    TypeRelation.SUR_REFERENCE: [("point",), ("ligne",)],
 }
 
 _FORMES_COTE: Dict[TypeCote, List[Tuple[str, ...]]] = {
@@ -92,7 +99,11 @@ _FORMES_COTE: Dict[TypeCote, List[Tuple[str, ...]]] = {
     TypeCote.DISTANCE: [("point", "point"), ("ligne",)],
     TypeCote.ECART: [("ligne", "ligne")],
     TypeCote.POSITION_Z: [("point",), ("ligne",)],
+    TypeCote.LONGUEUR_X: [("point", "point"), ("ligne",)],
+    TypeCote.DEPUIS_REFERENCE: [("point",), ("ligne",)],
 }
+
+COTES_SIGNEES = (TypeCote.ANGLE, TypeCote.POSITION_Z, TypeCote.DEPUIS_REFERENCE)   # peuvent être négatives
 
 
 class ErreurEsquisse(ValueError):
@@ -129,10 +140,25 @@ class Arc:
 
 
 @dataclass
+class Reference:
+    """Un plan de référence du montage que l'esquisse peut viser : face des mors, du mandrin, bout du brut…
+
+    `axe` = "z" : plan perpendiculaire à l'axe, en z = valeur ; "x" : surface de révolution de rayon valeur.
+    Les références ne font pas partie de l'esquisse enregistrée : le contrôleur les pose depuis le montage.
+    """
+    nom: str
+    axe: str
+    valeur: float
+    libelle: str
+    court: str
+
+
+@dataclass
 class Relation:
     id: int
     type: TypeRelation
     elements: Tuple[int, ...]
+    reference: str = ""                          # nom de la référence du montage visée (SUR_REFERENCE)
 
 
 @dataclass
@@ -143,6 +169,7 @@ class Cote:
     valeur: float
     decalage: Tuple[float, float] = (0.0, 0.0)   # position de l'étiquette par rapport à son point d'ancrage
     pilotee: bool = False                        # cote pilotée : mesurée par le solveur, elle n'impose rien
+    reference: str = ""                          # nom de la référence du montage (DEPUIS_REFERENCE)
 
 
 class Esquisse:
@@ -154,7 +181,13 @@ class Esquisse:
         self.arcs: Dict[int, Arc] = {}
         self.relations: Dict[int, Relation] = {}
         self.cotes: Dict[int, Cote] = {}
+        self.references: Dict[str, Reference] = {}   # plans du montage, posés par le contrôleur, non enregistrés
         self._prochain_id = 1
+
+    def reference_de(self, nom: str) -> Reference:
+        if nom not in self.references:
+            raise ErreurEsquisse(f"référence du montage inconnue : {nom or '(aucune)'}")
+        return self.references[nom]
 
     # -- identifiants et genres ------------------------------------------------------
 
@@ -214,7 +247,7 @@ class Esquisse:
         self.arcs[a.id] = a
         return a
 
-    def ajouter_relation(self, type_: TypeRelation, elements: Iterable[int]) -> Relation:
+    def ajouter_relation(self, type_: TypeRelation, elements: Iterable[int], reference: str = "") -> Relation:
         type_ = TypeRelation(type_)
         elements = tuple(int(e) for e in elements)
         self._verifier_forme(_FORMES_RELATION[type_], elements, LIBELLES_RELATION[type_])
@@ -224,7 +257,9 @@ class Esquisse:
             elements = tuple(sorted(elements, key=lambda e: ordre[self.genre(e)]))
         if type_ == TypeRelation.EGAL and self.genre(elements[0]) == "cote":
             self._verifier_egalite_cotes(elements[0], elements[1])
-        r = Relation(self._nouvel_id(), type_, elements)
+        if type_ == TypeRelation.SUR_REFERENCE:
+            self.reference_de(reference)
+        r = Relation(self._nouvel_id(), type_, elements, reference if type_ == TypeRelation.SUR_REFERENCE else "")
         self.relations[r.id] = r
         return r
 
@@ -265,24 +300,29 @@ class Esquisse:
         return True
 
     def ajouter_cote(self, type_: TypeCote, elements: Iterable[int], valeur: Optional[float] = None,
-                     decalage: Tuple[float, float] = (0.0, 0.0)) -> Cote:
-        """Ajoute une cote. Sans `valeur`, la cote prend la mesure actuelle."""
+                     decalage: Tuple[float, float] = (0.0, 0.0), reference: str = "") -> Cote:
+        """Ajoute une cote. Sans `valeur`, la cote prend la mesure actuelle. `reference` : le plan du montage
+        visé par une cote « depuis une référence »."""
         type_ = TypeCote(type_)
         elements = tuple(int(e) for e in elements)
         self._verifier_forme(_FORMES_COTE[type_], elements, LIBELLES_COTE[type_])
+        if type_ == TypeCote.DEPUIS_REFERENCE:
+            self.reference_de(reference)
+        else:
+            reference = ""
         if valeur is None:
-            valeur = self.mesurer(type_, elements)
+            valeur = self.mesurer(type_, elements, reference)
         valeur = float(valeur)
-        if type_ in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE) and len(elements) == 2:
-            # ordre canonique : du plus petit z au plus grand, la valeur est positive
+        if type_ in (TypeCote.LONGUEUR_Z, TypeCote.DISTANCE, TypeCote.LONGUEUR_X) and len(elements) == 2:
+            # ordre canonique : du plus petit z (ou x) au plus grand, la valeur est positive
             a, b = (self.points[e] for e in elements)
-            if a.z > b.z:
+            if (a.x > b.x) if type_ == TypeCote.LONGUEUR_X else (a.z > b.z):
                 elements = (elements[1], elements[0])
             valeur = abs(valeur)
-        if type_ in (TypeCote.DIAMETRE, TypeCote.RAYON, TypeCote.DISTANCE, TypeCote.LONGUEUR_Z, TypeCote.ECART) \
-                and valeur < 0:
+        if type_ not in COTES_SIGNEES and valeur < 0:
             raise ErreurEsquisse(f"{LIBELLES_COTE[type_]} : valeur négative refusée")
-        c = Cote(self._nouvel_id(), type_, elements, valeur, (float(decalage[0]), float(decalage[1])))
+        c = Cote(self._nouvel_id(), type_, elements, valeur, (float(decalage[0]), float(decalage[1])),
+                 reference=reference)
         self.cotes[c.id] = c
         return c
 
@@ -392,13 +432,20 @@ class Esquisse:
         type_ = TypeCote(type_)
         self._verifier_forme(_FORMES_COTE[type_], tuple(int(e) for e in elements), LIBELLES_COTE[type_])
 
-    def mesurer(self, type_: TypeCote, elements: Tuple[int, ...]) -> float:
+    def mesurer(self, type_: TypeCote, elements: Tuple[int, ...], reference: str = "") -> float:
         """Valeur actuelle de la grandeur qu'une cote de ce type imposerait."""
         type_ = TypeCote(type_)
         self.verifier_cote(type_, elements)
         if type_ == TypeCote.LONGUEUR_Z:
             a, b = self._points_de(elements)
             return abs(b.z - a.z)
+        if type_ == TypeCote.LONGUEUR_X:
+            a, b = self._points_de(elements)
+            return abs(b.x - a.x)
+        if type_ == TypeCote.DEPUIS_REFERENCE:
+            ref = self.reference_de(reference)
+            p = self.points[self.point_reference(elements[0])]
+            return (p.z if ref.axe == "z" else p.x) - ref.valeur
         if type_ == TypeCote.DISTANCE:
             a, b = self._points_de(elements)
             return math.hypot(b.z - a.z, b.x - a.x)
@@ -436,6 +483,9 @@ class Esquisse:
             texte = v + "°"
         elif cote.type == TypeCote.POSITION_Z:
             texte = "Z " + v                     # coordonnée signée, comme sur la commande numérique
+        elif cote.type == TypeCote.DEPUIS_REFERENCE:
+            ref = self.references.get(cote.reference)
+            texte = (ref.court if ref is not None else "réf") + " " + v   # écart signé depuis la référence
         else:
             texte = v
         return f"({texte})" if cote.pilotee else texte   # convention du dessin : une cote mesurée entre parenthèses
@@ -456,10 +506,12 @@ class Esquisse:
             "lignes": [{"id": li.id, "p1": li.p1, "p2": li.p2} for li in self.lignes.values()],
             "arcs": [{"id": a.id, "centre": a.centre, "debut": a.debut, "fin": a.fin, "horaire": a.horaire}
                      for a in self.arcs.values()],
-            "relations": [{"id": r.id, "type": r.type.value, "elements": list(r.elements)}
+            "relations": [{"id": r.id, "type": r.type.value, "elements": list(r.elements),
+                           **({"reference": r.reference} if r.reference else {})}
                           for r in self.relations.values()],
             "cotes": [{"id": c.id, "type": c.type.value, "elements": list(c.elements), "valeur": c.valeur,
-                       "decalage": list(c.decalage), "pilotee": c.pilotee} for c in self.cotes.values()],
+                       "decalage": list(c.decalage), "pilotee": c.pilotee,
+                       **({"reference": c.reference} if c.reference else {})} for c in self.cotes.values()],
         }
 
     @classmethod
@@ -478,12 +530,12 @@ class Esquisse:
                                        bool(a.get("horaire", False)))
         for r in d.get("relations", []):
             e.relations[int(r["id"])] = Relation(int(r["id"]), TypeRelation(r["type"]),
-                                                 tuple(int(x) for x in r["elements"]))
+                                                 tuple(int(x) for x in r["elements"]), str(r.get("reference", "")))
         for c in d.get("cotes", []):
             dec = c.get("decalage") or [0.0, 0.0]
             e.cotes[int(c["id"])] = Cote(int(c["id"]), TypeCote(c["type"]), tuple(int(x) for x in c["elements"]),
                                          float(c["valeur"]), (float(dec[0]), float(dec[1])),
-                                         bool(c.get("pilotee", False)))
+                                         bool(c.get("pilotee", False)), str(c.get("reference", "")))
         ids = list(e.points) + list(e.lignes) + list(e.arcs) + list(e.relations) + list(e.cotes)
         e._prochain_id = max([int(d.get("prochain_id", 1))] + [i + 1 for i in ids])
         e._verifier_coherence()

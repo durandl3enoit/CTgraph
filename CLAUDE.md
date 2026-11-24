@@ -108,8 +108,10 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Les cotes sont un seul outil** (`Cote`, touche C), pas cinq boutons : le type se déduit des éléments cliqués et de
   l'endroit où la cote est posée (`VueEsquisse.deduire_cote`). Point → diamètre ; arc → rayon ; ligne → longueur Z
   si posée au-dessus ou au-dessous, sinon diamètre (horizontale), angle (inclinée) ou distance (verticale) ;
-  ligne inclinée posée à côté d'elle entre ses extrémités (dans sa boîte élargie de 12 px) → distance, sa
-  longueur vraie dessinée parallèle, comme la cote alignée des CAO ;
+  ligne inclinée (et deux points) : à côté, entre les extrémités (boîte élargie de 12 px) → distance (longueur
+  vraie, parallèle, comme la cote alignée des CAO) ; au-dessus ou au-dessous → longueur Z ; à droite ou à gauche
+  → **longueur X** (`TypeCote.LONGUEUR_X`, écart radial, `difference` sur les paramètres x) ; en diagonale au-delà
+  d'un coin → angle ;
   deux lignes → angle, longueur Z entre deux verticales, ou écart (`TypeCote.ECART`, distance point-droite
   PlaneGCS) entre deux parallèles ; deux points → longueur Z (distance si même z).
 - **Élaguer** : un trait tiré au travers des objets, un seul comportement : la portion retirée va jusqu'aux croisements
@@ -138,6 +140,14 @@ vérification par relecture du G-code généré, réception des programmes depui
   « h1 8 »), grise tout le reste (opacité 0,28) et le rend inerte ; bandeau Valider / Annuler, Entrée / Échap ;
   annuler rend le montage d'avant. Les valeurs éditables du montage passent toutes par `Montage.valeur`,
   `definir_valeur`, `texte`, `libelle` (brut et mors), appliquées en direct par `definir_montage`.
+- **Références du montage** (`Montage.references()` → `modele.Reference(nom, axe "z"|"x", valeur, libellé,
+  court)`) : bout du brut, face des mors, épaulement d'appui, face du mandrin, surface du brut, alésage d'un tube.
+  Le contrôleur les pose dans `Esquisse.references` (non enregistrées, relues du montage à chaque changement,
+  puis reconstruction et résolution). Relation `SUR_REFERENCE` (point ou ligne, champ `Relation.reference`) :
+  coordonnée figée à la valeur du plan ; cote `DEPUIS_REFERENCE` (`Cote.reference`) : écart signé depuis le
+  plan (`difference` avec un paramètre fixe), texte « court valeur ». Menu contextuel d'un point ou d'une face :
+  « Aligner sur une référence », « Coter depuis une référence ». Aimantation « axe Z » étendue aux plans
+  (`Accroche.reference` → relation posée d'office). Dessin en trait mixte nommé (genre « reference »).
 - **Survol** : sans bouton enfoncé, l'élément que le clic prendrait (`GENRES_SURVOL`) luit en magenta
   (`c["lueur"]`, distinct de l'orange de sélection) : stylo épaissi, point grossi, étiquette recolorée, aspect
   rendu au départ du curseur (`_survoler`). Un élément sélectionné garde sa couleur de sélection.

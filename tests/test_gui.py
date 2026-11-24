@@ -526,9 +526,19 @@ def test_cote_de_ligne_biaise(fenetre):
     # à côté de la ligne, entre ses extrémités : sa longueur vraie, posée parallèlement
     t, els, dec = vue.deduire_cote([li.id], pos(vue, -10, 15))
     assert t == TypeCote.DISTANCE and els == (li.id,)
-    # au-dessus de sa boîte : la longueur Z ; à droite : l'angle
+    # au-dessus de sa boîte : la longueur Z ; à droite : la longueur X ; en diagonale au-delà d'un coin : l'angle
     assert vue.deduire_cote([li.id], pos(vue, -15, 40))[0] == TypeCote.LONGUEUR_Z
-    assert vue.deduire_cote([li.id], pos(vue, 20, 10))[0] == TypeCote.ANGLE
+    assert vue.deduire_cote([li.id], pos(vue, 20, 10))[0] == TypeCote.LONGUEUR_X
+    assert vue.deduire_cote([li.id], pos(vue, 20, 40))[0] == TypeCote.ANGLE
+    # la longueur X se pose et se tient : l'écart radial entre les bouts
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (25.0, True)
+    win.poser_cote(TypeCote.LONGUEUR_X, (li.id,), (6.0, 0.0))
+    cx = list(e.cotes.values())[-1]
+    assert cx.type == TypeCote.LONGUEUR_X and cx.valeur == 25.0
+    a, b = (e.points[i] for i in e.extremites(li.id))
+    assert abs(b.x - a.x) == pytest.approx(25.0, abs=1e-6)
+    win.annuler()
+    e = win.esquisse                                     # l'annulation recharge l'esquisse
     # avec l'outil Cote : clic sur la ligne, puis à côté d'elle ; la valeur demandée est la longueur vraie
     demandes = []
 
@@ -545,6 +555,53 @@ def test_cote_de_ligne_biaise(fenetre):
     assert demandes and demandes[0][1] == pytest.approx(math.hypot(30, 20), abs=0.3)   # tracé à la souris, au pixel
     a, b = (e.points[i] for i in e.extremites(li.id))
     assert math.hypot(b.z - a.z, b.x - a.x) == pytest.approx(40.0, abs=1e-6)
+
+
+def test_references_du_montage_alignement_et_cote(fenetre):
+    from ctgraph.montage import Montage
+    from ctgraph.esquisse.modele import Esquisse
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())
+    win.act_voir_montage.setChecked(True)
+    rectangle(win)
+    e = win.esquisse
+    assert set(e.references) == {"brut_avant", "face_mors", "appui_mors", "face_mandrin", "brut_ext"}
+    # un point sélectionné : le menu propose de l'aligner sur chaque référence, ou d'en coter l'écart
+    coin = next(p for p in e.points.values() if p.z < -10 and p.x > 10)
+    vue.selection = [coin.id]
+    menu = win.construire_menu_contextuel()
+    assert menu.references_proposees == [r.nom for r in win.montage.references()]
+    # cote depuis la face du mandrin : l'écart signé, qui règle la position du coin arrière (libre en Z)
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (130.0, True)
+    win.coter_depuis_reference("face_mandrin")
+    cote = list(e.cotes.values())[-1]
+    assert cote.type == TypeCote.DEPUIS_REFERENCE and cote.reference == "face_mandrin" and cote.valeur == 130.0
+    assert not cote.pilotee and e.points[coin.id].z == pytest.approx(win.montage.z_face_mandrin() + 130.0)
+    assert e.texte_cote(cote) == "mandrin 130"
+    # la référence s'enregistre et se relit
+    e2 = Esquisse.from_json(e.to_json())
+    assert e2.cotes[cote.id].reference == "face_mandrin"
+    win.annuler()
+    e = win.esquisse                                     # l'annulation recharge l'esquisse
+    # alignement sur la face des mors : le point y va, et suit le montage quand il change
+    vue.selection = [coin.id]
+    win.aligner_sur_reference("face_mors")
+    assert any(r.type == TypeRelation.SUR_REFERENCE and r.reference == "face_mors" for r in e.relations.values())
+    assert e.points[coin.id].z == pytest.approx(win.montage.z_face_mors())
+    m = Montage()
+    m.prise.depassement = 130.0
+    win.definir_montage(m)
+    assert e.points[coin.id].z == pytest.approx(-130.0)
+    assert any(r.reference == "face_mors" for r in Esquisse.from_json(e.to_json()).relations.values())
+    # une face verticale ne vise que les plans Z, une ligne horizontale que les surfaces du brut
+    verticale = next(li for li in e.lignes.values() if vue.est_verticale(li.id))
+    horizontale = next(li for li in e.lignes.values() if vue.est_horizontale(li.id))
+    assert all(r.axe == "z" for r in win.references_pour([verticale.id]))
+    assert [r.nom for r in win.references_pour([horizontale.id])] == ["brut_ext"]
+    # aimantation : un tracé qui finit sur la face des mors y est accroché, avec la relation
+    acc = vue.accrocher(pos(vue, win.montage.z_face_mors() + 0.3, 40.0))
+    assert acc.reference == "face_mors" and acc.z == pytest.approx(win.montage.z_face_mors())
+    win.act_voir_montage.setChecked(False)
 
 
 def test_curseur_suit_l_outil(fenetre):
@@ -955,8 +1012,11 @@ def test_dialogue_montage_et_dessin(fenetre):
     n_sans = len(vue._items)                   # montage masqué par la fixture : esquisse vide, rien à dessiner
     assert not win.vue.montage_visible and n_sans == 0
     win.act_voir_montage.setChecked(True)
-    # brut, mors, corps du mandrin, trois cotes du brut (trait + étiquette), trois inscriptions gravées
-    assert len(vue._items) == 3 + 6 + 3
+    # brut, mors, corps du mandrin, trois cotes du brut (trait + étiquette), trois inscriptions gravées,
+    # cinq plans de référence (trait + nom)
+    n_refs = len(win.montage.references())
+    assert n_refs == 5
+    assert len(vue._items) == 3 + 6 + 3 + 2 * n_refs
     dlg = DialogueMontage(win.montage, win)
     dlg.brut_diametre.setValue(70.0)
     dlg.depassement.setValue(120.0)
@@ -968,11 +1028,11 @@ def test_dialogue_montage_et_dessin(fenetre):
     # les références gravées sont inscrites sur le dessin du montage
     from ctgraph.ui.vue_esquisse import Inscription
     textes = {it.texte for it in vue._items if isinstance(it, Inscription)}
-    assert textes == {"210 BH-FC", "passage Ø 42", "12082030 (1/16\"x90°)"}
+    assert textes >= {"210 BH-FC", "passage Ø 42", "12082030 (1/16\"x90°)", "mors", "mandrin", "bout", "appui", "brut"}
     win.definir_montage(m)
     assert win.montage.z_face_mors() == -120.0 and win._modifie
-    # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés, plus les cotes et inscriptions
-    assert len(vue._items) == 4 + 6 + 3
+    # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés, plus les cotes, inscriptions et plans
+    assert len(vue._items) == 4 + 6 + 3 + 2 * n_refs
     win.act_voir_montage.setChecked(False)
     assert not vue.montage_visible and len(vue._items) == 0
     # les étages se saisissent dans le dialogue : deux étages de 25 et 45, un seul épaulement

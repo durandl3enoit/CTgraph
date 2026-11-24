@@ -280,10 +280,21 @@ def _dessins_relations(encre: QColor, fond: QColor):
         for x in (6, 10, 14, 18):
             p.drawLine(QPointF(x, 16.5), QPointF(x - 2.5, 20.5))
 
+    def sur_reference(p):
+        # un plan du montage (trait mixte, comme les traits du montage) et le point qui s'y pose
+        p.setPen(_stylo(encre, 1.6, [4.0, 2.0, 1.0, 2.0]))
+        p.drawLine(QPointF(8, 2), QPointF(8, 22))
+        p.setPen(_stylo(encre, R))
+        p.drawLine(QPointF(8, 12), QPointF(16, 12))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(encre))
+        p.drawEllipse(QPointF(17, 12), 3, 3)
+
     return {
         "horizontal": horizontal, "vertical": vertical, "coincident": coincident, "point_sur_ligne": point_sur_ligne,
         "point_sur_arc": point_sur_ligne, "parallele": parallele, "perpendiculaire": perpendiculaire,
         "tangent": tangent, "egal": egal, "sur_axe": sur_axe, "origine_z": origine_z, "fixe": fixe,
+        "sur_reference": sur_reference,
     }
 
 

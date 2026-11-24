@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (QCheckBox, QFileDialog, QGridLayout, QGroupBox, Q
 from .. import APP_NAME, __version__
 from ..build_info import BUILD_TIME
 from ..esquisse import coins, elagage
-from ..esquisse.modele import (LIBELLES_COTE, LIBELLES_RELATION, ErreurEsquisse, Esquisse, TypeCote, TypeRelation)
+from ..esquisse.modele import (COTES_SIGNEES, LIBELLES_COTE, LIBELLES_RELATION, ErreurEsquisse, Esquisse, TypeCote,
+                               TypeRelation)
 from ..esquisse.solveur import AdaptateurSolveur, Resultat
 from ..icons import icone_action, icone_outil, icone_relation
 from ..log import get as get_log
@@ -50,6 +51,7 @@ class FenetrePrincipale(QMainWindow):
 
         self.esquisse = Esquisse()
         self.montage = self._montage_par_defaut()
+        self._synchroniser_references()
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.resultat = Resultat(True, "ok", 0)
         self.chemin: Optional[str] = None
@@ -347,6 +349,16 @@ class FenetrePrincipale(QMainWindow):
                 menu.addAction(self.actions_outils["cote"].icon(), f"Coter : {LIBELLES_COTE[t]}",
                                lambda tt=t, ee=els, dd=dec: self.poser_cote(tt, ee, dd))
                 possibles = True
+            # les plans du montage : s'y aligner (relation) ou en partir (cote), pour un point ou une face
+            cibles = self.references_pour(sel)
+            menu.references_proposees = [r.nom for r in cibles]
+            if cibles:
+                m_al = menu.addMenu(icone_relation("sur_reference", encre, fond), "Aligner sur une référence")
+                m_co = menu.addMenu(self.actions_outils["cote"].icon(), "Coter depuis une référence")
+                for ref in cibles:
+                    m_al.addAction(ref.libelle, lambda n=ref.nom: self.aligner_sur_reference(n))
+                    m_co.addAction(ref.libelle, lambda n=ref.nom: self.coter_depuis_reference(n))
+                possibles = True
             coin = self.coin_depuis_selection(sel)
             menu.coin_propose = coin
             if coin is not None:
@@ -376,6 +388,50 @@ class FenetrePrincipale(QMainWindow):
             m_outils.addAction(act)
         menu.addAction(self.act_tout_voir.icon(), "Tout voir", self.vue.tout_voir)
         return menu
+
+    def references_pour(self, sel) -> list:
+        """Les références du montage qu'une sélection peut viser : toutes pour un point ; les plans Z pour une
+        face verticale, les surfaces de révolution pour une ligne horizontale."""
+        e = self.esquisse
+        if len(sel) != 1 or not e.references:
+            return []
+        genre = e.genre(sel[0])
+        refs = list(e.references.values())
+        if genre == "point":
+            return refs
+        if genre == "ligne":
+            if self.vue.est_verticale(sel[0]):
+                return [r for r in refs if r.axe == "z"]
+            if self.vue.est_horizontale(sel[0]):
+                return [r for r in refs if r.axe == "x"]
+        return []
+
+    def aligner_sur_reference(self, nom: str) -> None:
+        """Relation « sur une référence » entre la sélection (point ou face) et un plan du montage."""
+        sel = list(self.vue.selection)
+        e = self.esquisse
+        if nom not in e.references or not sel:
+            return
+        nouvelle = []
+
+        def action():
+            nouvelle.append(e.ajouter_relation(TypeRelation.SUR_REFERENCE, sel, reference=nom).id)
+
+        if self._modifier(action, f"Aligné sur : {e.references[nom].libelle}."):
+            if nouvelle and nouvelle[0] in self.resultat.conflits:
+                self.statusBar().showMessage(f"{e.references[nom].libelle} : alignement en conflit avec le reste. "
+                                             "Annulez (Ctrl+Z) ou supprimez-le.", 8000)
+            self.vue.selection = []
+            self.vue.reconstruire()
+            self._selection_changee()
+
+    def coter_depuis_reference(self, nom: str) -> None:
+        """Cote de l'écart signé entre la sélection (point ou face) et un plan du montage."""
+        sel = tuple(self.vue.selection)
+        if nom not in self.esquisse.references or not sel:
+            return
+        decalage = self.vue.decalage_par_defaut(TypeCote.DEPUIS_REFERENCE, sel)
+        self.poser_cote(TypeCote.DEPUIS_REFERENCE, sel, decalage, reference=nom)
 
     def coin_depuis_selection(self, sel) -> Optional[int]:
         """Le sommet à arrondir ou chanfreiner : un point entre deux lignes, ou deux lignes concourantes."""
@@ -458,6 +514,9 @@ class FenetrePrincipale(QMainWindow):
         conflits = set(self.resultat.conflits)
         for r in e.relations.values():
             cible = ", ".join(f"{e.genre(i)} {i}" for i in r.elements)
+            if r.reference:
+                ref = e.references.get(r.reference)
+                cible += f" — {ref.libelle if ref is not None else r.reference}"
             it = QListWidgetItem(f"{LIBELLES_RELATION[r.type]} : {cible}")
             it.setData(Qt.ItemDataRole.UserRole, r.id)
             if r.id in conflits:
@@ -524,7 +583,13 @@ class FenetrePrincipale(QMainWindow):
         self.vue.montage = montage
         self.reglages.set("montage.defaut", json.dumps(montage.to_dict(), ensure_ascii=False))
         self._marquer_modifie(True)
-        self.vue.reconstruire()
+        # les références du montage ont pu bouger : ce qui s'y aligne ou s'y cote suit
+        self._synchroniser_references()
+        if any(r.reference for r in self.esquisse.relations.values()) \
+                or any(c.reference for c in self.esquisse.cotes.values()):
+            self._appliquer_resultat(self._resoudre_apres_construction())
+        else:
+            self.vue.reconstruire()
         self._pousser_montage_3d()
 
     def editer_valeur_montage(self, cle: str) -> None:
@@ -700,6 +765,8 @@ class FenetrePrincipale(QMainWindow):
                 e.ajouter_relation(TypeRelation.SUR_AXE, (p.id,))
             if acc.sur_origine:
                 e.ajouter_relation(TypeRelation.ORIGINE_Z, (p.id,))
+            if acc.reference and acc.reference in e.references:
+                e.ajouter_relation(TypeRelation.SUR_REFERENCE, (p.id,), reference=acc.reference)
         return p.id
 
     def ajouter_ligne(self, debut: Accroche, fin: Accroche, auto: Optional[TypeRelation] = None) -> Optional[int]:
@@ -800,7 +867,7 @@ class FenetrePrincipale(QMainWindow):
                 self.basculer_pilotee(cote_id)
             return
         unite = "°" if c.type == TypeCote.ANGLE else "mm"
-        mini = -360.0 if c.type == TypeCote.ANGLE else (-1e6 if c.type == TypeCote.POSITION_Z else 0.0)
+        mini = -360.0 if c.type == TypeCote.ANGLE else (-1e6 if c.type in COTES_SIGNEES else 0.0)
         saisie, ok = self._demander_valeur(libelle, unite, c.valeur / facteur, mini)
         valeur = saisie * facteur
         if not ok or abs(valeur - c.valeur) < 1e-12:
@@ -855,21 +922,24 @@ class FenetrePrincipale(QMainWindow):
             return
         self.poser_cote(*deduction)
 
-    def poser_cote(self, type_: TypeCote, elements: Tuple[int, ...], decalage: Tuple[float, float]) -> None:
+    def poser_cote(self, type_: TypeCote, elements: Tuple[int, ...], decalage: Tuple[float, float],
+                   reference: str = "") -> None:
         """Ajoute la cote à la mesure actuelle ; si elle sur-contraint, elle devient pilotée sans rien demander ;
-        sinon la valeur est demandée. Appelé par l'outil Cote et par « Coter : … »."""
+        sinon la valeur est demandée. Appelé par l'outil Cote, par « Coter : … » et « Coter depuis … »."""
         e = self.esquisse
         sel = tuple(elements)
         try:
             e.verifier_cote(type_, sel)
-            mesure = e.mesurer(type_, sel)
+            mesure = e.mesurer(type_, sel, reference)
         except ErreurEsquisse as exc:
             self.statusBar().showMessage(str(exc), 6000)
             return
         libelle = LIBELLES_COTE[type_]
+        if reference and reference in e.references:
+            libelle = f"Écart depuis : {e.references[reference].libelle}"
         avant = e.to_json()
         try:
-            c = e.ajouter_cote(type_, sel, mesure, decalage)
+            c = e.ajouter_cote(type_, sel, mesure, decalage, reference)
         except ErreurEsquisse as exc:
             self.statusBar().showMessage(str(exc), 6000)
             return
@@ -884,7 +954,7 @@ class FenetrePrincipale(QMainWindow):
                                          "Cote posée en cote pilotée (grisée, entre parenthèses).", 8000)
         else:
             unite = "°" if type_ == TypeCote.ANGLE else "mm"
-            mini = -360.0 if type_ == TypeCote.ANGLE else (-1e6 if type_ == TypeCote.POSITION_Z else 0.0)
+            mini = -360.0 if type_ == TypeCote.ANGLE else (-1e6 if type_ in COTES_SIGNEES else 0.0)
             valeur, ok = self._demander_valeur(libelle, unite, abs(mesure) if mini == 0 else mesure, mini)
             if not ok:
                 self._charger_json(avant)                      # abandon : la cote n'est pas posée
@@ -918,7 +988,7 @@ class FenetrePrincipale(QMainWindow):
         if c.type == TypeCote.DIAMETRE and variante == "rayon":
             pas *= 2.0                                   # un pas de rayon vaut deux pas de diamètre
         valeur = c.valeur + sens * pas
-        if c.type not in (TypeCote.ANGLE, TypeCote.POSITION_Z):
+        if c.type not in COTES_SIGNEES:
             valeur = max(0.0, valeur)
         if abs(valeur - c.valeur) < 1e-12:
             return self.esquisse.texte_cote(c)
@@ -988,9 +1058,16 @@ class FenetrePrincipale(QMainWindow):
 
     # -- annulation ------------------------------------------------------------------------
 
+    def _synchroniser_references(self) -> None:
+        """Les plans du montage (face des mors, du mandrin…) que l'esquisse peut viser, relus du montage courant."""
+        montage = getattr(self, "montage", None)
+        if montage is not None:
+            self.esquisse.references = {r.nom: r for r in montage.references()}
+
     def _charger_json(self, texte: str) -> None:
         """Recharge l'esquisse seule (annulation) ; le montage ne fait pas partie de la pile d'annulation."""
         self.esquisse = Esquisse.from_json(texte)
+        self._synchroniser_references()
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.vue.definir_esquisse(self.esquisse)
 
@@ -998,6 +1075,7 @@ class FenetrePrincipale(QMainWindow):
         piece = Piece.from_json(texte)
         self.esquisse = piece.esquisse
         self.montage = piece.montage
+        self._synchroniser_references()
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.vue.montage = self.montage
         self.vue.definir_esquisse(self.esquisse)
