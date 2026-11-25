@@ -198,9 +198,12 @@ avant et une de ses arêtes le long de l'arête principale ; elle déborde large
 position en hauteur qui dit la main :
 
 * **outil à droite** : plaquette en bas à gauche, débordant vers le bas et vers la gauche ;
-* **outil à gauche** : plaquette en haut à gauche, débordant vers le haut et vers la gauche.
+* **outil à gauche** : plaquette en haut à gauche, débordant vers le haut et vers la gauche ;
+* **outil neutre** : plaquette dans l'axe, sa pointe fine dardant droit devant.
 
-La main est rappelée sous le dessin, pour qu'il n'y ait pas de doute.
+La main est rappelée sous le dessin, pour qu'il n'y ait pas de doute. L'angle d'attaque `κr` est tracé au
+nez, entre le sens d'avance et l'arête de coupe elle-même. La cote de longueur se place du côté opposé à la
+plaquette, là où il reste de la place.
 
 Les valeurs sont portées sur les éléments : `l1` la longueur hors tout, `h × b` la queue carrée ou `d` son
 diamètre, `κr` l'angle d'attaque sur son arc, et pour une barre l'alésage minimal où elle passe, tracé en

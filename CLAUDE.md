@@ -233,7 +233,10 @@ vérification par relecture du G-code généré, réception des programmes depui
   couché à l'horizontale, **la queue est toujours un rectangle** (jamais une enveloppe épousant la
   plaquette), la plaquette est au bout gauche dans les deux cas et déborde largement ; c'est sa hauteur qui
   donne la main, **en bas pour un outil à droite, en haut pour un outil à gauche**. Ne pas inverser : la
-  main est écrite sous le dessin pour qu'une erreur se voie.
+  main est écrite sous le dessin pour qu'une erreur se voie. Sur un **outil neutre**, c'est la bissectrice
+  du coin actif qui pointe droit devant : la pointe fine darde vers l'extérieur, symétriquement. L'arc de
+  `κr` se calcule du sens d'avance jusqu'à l'arête **réellement tracée**, par le plus court chemin : il se
+  pose ainsi toujours du bon côté. La cote de longueur va à l'opposé de la plaquette.
 
 ## Points ouverts
 

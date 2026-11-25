@@ -88,8 +88,9 @@ class DessinPorteOutil(QWidget):
         lg, larg = pp.longueur * k, pp.queue_mm * k
         gauche = pp.main == "gauche"
         cote_v = 1.0 if gauche else -1.0   # le corps de la plaquette s'enfonce vers le bas (gauche) ou le haut (droite)
+        cote_dessus = not gauche and pp.main != "neutre"   # la cote de longueur va à l'opposé de la plaquette
         x0 = zone.left() + marge_g
-        y_milieu = zone.top() + zone.height() * 0.46
+        y_milieu = zone.top() + zone.height() * 0.52
         y_haut, y_bas = y_milieu - larg / 2.0, y_milieu + larg / 2.0
         # le coin de la queue où s'appuie la plaquette : en bas à gauche à droite, en haut à gauche à gauche
         ancre = QPointF(x0, y_haut if gauche else y_bas)
@@ -106,8 +107,9 @@ class DessinPorteOutil(QWidget):
 
         # arête principale : depuis la pointe, à l'angle d'attaque du sens d'avance (vers la gauche)
         attaque = pp.attaque if pp.attaque is not None else 90.0
-        arete = (-math.cos(math.radians(attaque)), cote_v * math.sin(math.radians(attaque)))
-        plaquette, pointe_locale = self._contour_plaquette(pp, k, arete, cote_v)
+        voulue = (-math.cos(math.radians(attaque)), cote_v * math.sin(math.radians(attaque)))
+        plaquette, pointe_locale, arete = self._contour_plaquette(pp, k, voulue, cote_v,
+                                                                  pp.main == "neutre")
         # la plaquette déborde largement de la queue : son centre est posé sur le coin
         plaquette = [(ancre.x() + u, ancre.y() + v) for u, v in plaquette]
         pointe = QPointF(ancre.x() + pointe_locale[0], ancre.y() + pointe_locale[1])
@@ -125,11 +127,15 @@ class DessinPorteOutil(QWidget):
             p.drawLine(pointe, QPointF(pointe.x() - trait - 12, pointe.y()))
             p.setPen(QPen(cote, 1.2))
             r_arc = max(larg * 0.42, 12.0)
-            # l'arc va du sens d'avance (180°) vers l'arête : dans un sens ou dans l'autre selon la main
+            # l'arc va du sens d'avance (180° dans le repère de Qt, y vers le haut) jusqu'à l'arête
+            # elle-même, par le plus court chemin : il se pose donc du bon côté, quelle que soit la main
+            angle_arete = math.degrees(math.atan2(-arete[1], arete[0]))
+            balayage = (angle_arete - 180.0 + 180.0) % 360.0 - 180.0
             p.drawArc(QRectF(pointe.x() - r_arc, pointe.y() - r_arc, 2 * r_arc, 2 * r_arc),
-                      180 * 16, int(-cote_v * attaque * 16))
+                      180 * 16, int(balayage * 16))
             p.setPen(QPen(cote))
-            p.drawText(QRectF(zone.left(), pointe.y() - 18 if gauche else pointe.y() + 3, marge_g - 6, 14),
+            y_texte = pointe.y() + 3 if balayage > 0 else pointe.y() - 18
+            p.drawText(QRectF(zone.left(), y_texte, marge_g - 6, 14),
                        int(Qt.AlignmentFlag.AlignRight), f"κr {pp.texte_attaque}")
 
         # alésage minimal d'une barre : le plus petit trou où elle passe
@@ -140,24 +146,30 @@ class DessinPorteOutil(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(centre, r, r)
             p.setPen(QPen(muet))
-            p.drawText(QRectF(centre.x() - 70, y_haut - 16, 140, 14),
-                       int(Qt.AlignmentFlag.AlignHCenter), f"alésage mini {pp.nombre(pp.alesage_mini)}")
+            y_alesage = y_bas + 4 if cote_dessus else y_haut - 17
+            p.drawText(QRectF(zone.left(), y_alesage, zone.width() - 4, 14),
+                       int(Qt.AlignmentFlag.AlignRight), f"alésage mini {pp.nombre(pp.alesage_mini)}")
 
-        # cote de longueur sous la queue, et la main écrite
-        y_cote = min(y_bas + 24, zone.bottom() - 18)
-        self._coter(p, QPointF(x0, y_cote), QPointF(x0 + lg, y_cote), f"l1 {pp.nombre(pp.longueur)}", cote)
+        # cote de longueur du côté opposé à la plaquette : c'est là qu'il reste de la place
+        y_cote = max(y_haut - 22, zone.top() + 18) if cote_dessus else min(y_bas + 22, zone.bottom() - 32)
+        self._coter(p, QPointF(x0, y_cote), QPointF(x0 + lg, y_cote), f"l1 {pp.nombre(pp.longueur)}", cote,
+                    texte_dessous=not cote_dessus)
+        if pp.main == "neutre":
+            legende = "outil neutre — pointe en avant, dans l'axe"
+        else:
+            legende = f"outil à {pp.main} — plaquette en {'haut' if gauche else 'bas'} à gauche"
         p.setPen(QPen(muet))
         p.drawText(QRectF(zone.left(), zone.bottom() - 15, zone.width(), 14),
-                   int(Qt.AlignmentFlag.AlignHCenter),
-                   f"outil à {pp.main} — plaquette en {'haut' if gauche else 'bas'} à gauche")
+                   int(Qt.AlignmentFlag.AlignHCenter), legende)
 
     @staticmethod
-    def _contour_plaquette(pp, k: float, arete, cote_v: float):
-        """Le contour de la plaquette et sa pointe, en pixels relatifs au coin de queue où elle s'appuie.
+    def _contour_plaquette(pp, k: float, voulue, cote_v: float, neutre: bool = False):
+        """(contour, pointe, arête) de la plaquette, en pixels relatifs au coin de queue où elle s'appuie.
 
-        Le coin actif est sur la pointe, une arête suit l'arête principale, le corps rentre dans la queue
-        (vers le haut pour un outil à droite, vers le bas pour un outil à gauche). Le contour est ensuite
-        centré sur le coin : la plaquette déborde largement, vers la gauche et du côté qui coupe.
+        Le coin actif est en avant, une arête suit l'arête principale, le corps rentre dans la queue (vers
+        le haut pour un outil à droite, vers le bas pour un outil à gauche). Le contour est centré sur le
+        coin : la plaquette déborde largement. **Sur un outil neutre, c'est la bissectrice du coin qui
+        pointe droit devant** : la pointe fine darde vers l'extérieur, symétriquement.
         """
         tailles = pour_base(pp.plaquette)
         cercle = tailles[0].cercle_inscrit if tailles else max(pp.queue_mm * 0.5, 6.0)
@@ -167,33 +179,51 @@ class DessinPorteOutil(QWidget):
             rayon = cercle / 2.0 * k
             points = [(rayon * math.cos(2 * math.pi * j / 20), rayon * math.sin(2 * math.pi * j / 20))
                       for j in range(20)]
-            return points, (-rayon * 0.7, cote_v * rayon * 0.7)
+            return points, (-rayon * 0.7, cote_v * rayon * 0.7), voulue
 
         rayon = cercle / 2.0 / max(rayon_inscrit(forme), 1e-6) * k
         sommets = sommets_forme(forme, rayon)
         if not sommets:
-            return [], (0.0, 0.0)
+            return [], (0.0, 0.0), voulue
         i = coin_actif(sommets)
-        # des deux arêtes du coin actif, une seule laisse le corps du bon côté : vers la queue, et vers
-        # le dos de l'outil. On mesure de quel côté de l'arête de coupe tombe le centre de la plaquette.
-        dedans = (1.0, -cote_v)
-        meilleur = None
-        for voisin in ((i + 1) % len(sommets), (i - 1) % len(sommets)):
-            d = (sommets[voisin][0] - sommets[i][0], sommets[voisin][1] - sommets[i][1])
-            rot = math.atan2(arete[1], arete[0]) - math.atan2(d[1], d[0])
+        voisins = ((i + 1) % len(sommets), (i - 1) % len(sommets))
+
+        def tourner(rot):
             cos, sin = math.cos(rot), math.sin(rot)
-            places = [((z - sommets[i][0]) * cos - (x - sommets[i][1]) * sin,
-                       (z - sommets[i][0]) * sin + (x - sommets[i][1]) * cos) for z, x in sommets]
-            milieu = (sum(u for u, _ in places) / len(places), sum(v for _, v in places) / len(places))
-            score = milieu[0] * dedans[0] + milieu[1] * dedans[1]
-            if meilleur is None or score > meilleur[0]:
-                meilleur = (score, places, milieu)
-        if meilleur is None:
-            return [], (0.0, 0.0)
-        _, places, milieu = meilleur
+            return [((z - sommets[i][0]) * cos - (x - sommets[i][1]) * sin,
+                     (z - sommets[i][0]) * sin + (x - sommets[i][1]) * cos) for z, x in sommets]
+
+        if neutre:
+            # bissectrice du coin actif, dirigée vers l'extérieur de la plaquette, amenée sur −u
+            bras = []
+            for v in voisins:
+                d = (sommets[v][0] - sommets[i][0], sommets[v][1] - sommets[i][1])
+                n = max(math.hypot(*d), 1e-9)
+                bras.append((d[0] / n, d[1] / n))
+            dehors = (-(bras[0][0] + bras[1][0]), -(bras[0][1] + bras[1][1]))
+            rot = math.pi - math.atan2(dehors[1], dehors[0])
+            places = tourner(rot)
+            d = (places[voisins[0]][0], places[voisins[0]][1])
+            arete = (d[0] / max(math.hypot(*d), 1e-9), d[1] / max(math.hypot(*d), 1e-9))
+        else:
+            # des deux arêtes du coin actif, une seule laisse le corps du bon côté : vers la queue, et
+            # vers le dos de l'outil. On regarde de quel côté tombe le centre de la plaquette.
+            dedans = (1.0, -cote_v)
+            meilleur = None
+            for v in voisins:
+                d = (sommets[v][0] - sommets[i][0], sommets[v][1] - sommets[i][1])
+                candidat = tourner(math.atan2(voulue[1], voulue[0]) - math.atan2(d[1], d[0]))
+                centre = (sum(u for u, _ in candidat) / len(candidat),
+                          sum(w for _, w in candidat) / len(candidat))
+                score = centre[0] * dedans[0] + centre[1] * dedans[1]
+                if meilleur is None or score > meilleur[0]:
+                    meilleur = (score, candidat)
+            places, arete = meilleur[1], voulue
+
+        milieu = (sum(u for u, _ in places) / len(places), sum(v for _, v in places) / len(places))
         # on pose le centre de la plaquette sur le coin de la queue : la pointe passe dehors
         points = [(u - milieu[0], v - milieu[1]) for u, v in places]
-        return points, (-milieu[0], -milieu[1])
+        return points, (-milieu[0], -milieu[1]), arete
 
     def _dessiner_section(self, p, pp, zone, encre, cote, muet, remplissage) -> None:
         """Section de la queue : carrée h × b, ou ronde Ø d, avec sa cote."""
@@ -215,13 +245,13 @@ class DessinPorteOutil(QWidget):
                    int(Qt.AlignmentFlag.AlignHCenter), "section de queue")
 
     @staticmethod
-    def _coter(p, a: QPointF, b: QPointF, texte: str, couleur) -> None:
+    def _coter(p, a: QPointF, b: QPointF, texte: str, couleur, texte_dessous: bool = False) -> None:
         p.setPen(QPen(couleur, 1.1))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawLine(a, b)
         for q in (a, b):
             p.drawLine(QPointF(q.x(), q.y() - 3), QPointF(q.x(), q.y() + 3))
-        p.drawText(QRectF((a.x() + b.x()) / 2 - 50, a.y() - 15, 100, 14),
+        p.drawText(QRectF((a.x() + b.x()) / 2 - 50, a.y() + (3 if texte_dessous else -16), 100, 14),
                    int(Qt.AlignmentFlag.AlignCenter), texte)
 
 
