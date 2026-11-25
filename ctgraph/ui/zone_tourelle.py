@@ -8,16 +8,16 @@ from __future__ import annotations
 import math
 from typing import List, Optional
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPalette, QPen
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QPushButton, QSizePolicy, QSpinBox, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtCore import QMimeData, QPoint, QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QPainter, QPalette, QPen
+from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
+                               QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSpinBox, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..outils import CATALOGUE as OUTILS
 from ..plaquettes import CATALOGUE as PLAQUETTES
 from ..tourelle import IMPLANTATIONS, NORME, ORIENTATIONS, Tourelle
-from .transfert import MIME_PLAQUETTE, accueillir
+from .transfert import MIME_PLAQUETTE, MIME_POSTE, accueillir, charger_poste
 
 COLONNES = ["Poste", "Type", "Porte-plaquette", "Plaquette", "Correcteur"]
 
@@ -26,7 +26,8 @@ class VueTourelle(QWidget):
     """Le disque : logements numérotés, postes garnis marqués, poste en travail désigné par une flèche.
 
     On peut y déposer un porte-plaquette ou une plaquette tirés des autres volets : le poste survolé
-    s'entoure tant que le dépôt est possible."""
+    s'entoure tant que le dépôt est possible. Et on peut en tirer un poste, pour le donner à une
+    séquence d'usinage."""
 
     poste_choisi = Signal(int)
     depot = Signal(int, str, str)        # poste, type du glisser, désignation
@@ -40,6 +41,8 @@ class VueTourelle(QWidget):
         self.setAcceptDrops(True)
         self.accepte_depot = lambda poste, type_mime, designation: False
         self._survol = 0                 # poste survolé par un glisser en cours
+        self._presse = QPoint()          # départ d'un glisser possible
+        self._poste_presse = 0
 
     def _echelle(self) -> float:
         marge = 24.0
@@ -142,10 +145,23 @@ class VueTourelle(QWidget):
             return
         pos = event.position()
         poste = self.tourelle.poste_le_plus_proche(*self._en_mm(pos.x(), pos.y()))
+        self._presse, self._poste_presse = pos.toPoint(), poste
         if poste != self.tourelle.poste_en_travail:
             self.tourelle.definir_poste(poste)
             self.update()
         self.poste_choisi.emit(poste)
+
+    def mouseMoveEvent(self, event) -> None:
+        """Tirer depuis un logement emporte le poste : on le dépose sur une séquence d'usinage."""
+        if not (event.buttons() & Qt.MouseButton.LeftButton) or not self._poste_presse:
+            return
+        if (event.position().toPoint() - self._presse).manhattanLength() < QApplication.startDragDistance():
+            return
+        commencer_glisser_poste(self, self.tourelle, self._poste_presse)
+        self._poste_presse = 0
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._poste_presse = 0
 
     # -- dépôt d'un outil ou d'une plaquette ------------------------------------------------
 
@@ -183,18 +199,43 @@ class VueTourelle(QWidget):
         self.depot.emit(poste, type_mime, designation)
 
 
+def commencer_glisser_poste(source: QWidget, tourelle: Tourelle, numero: int) -> None:
+    """Lance le glisser d'un poste garni : la séquence d'usinage qui le reçoit prend ce poste."""
+    try:
+        poste = tourelle.poste(numero)
+    except ValueError:
+        return
+    glisser = QDrag(source)
+    glisser.setMimeData(charger_poste(numero, poste.libelle()))
+    glisser.exec(Qt.DropAction.CopyAction)
+
+
 class ListePostes(QTreeWidget):
-    """Le tableau des postes : on y dépose aussi un porte-plaquette ou une plaquette."""
+    """Le tableau des postes : on y dépose un porte-plaquette ou une plaquette, et on en tire un poste."""
 
     depot = Signal(int, str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.tourelle: Optional[Tourelle] = None
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
         self.setDropIndicatorShown(True)
-        self.setDragDropMode(QTreeWidget.DragDropMode.DropOnly)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QTreeWidget.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
         self.accepte_depot = lambda poste, type_mime, designation: False
+
+    def mimeTypes(self):
+        return [MIME_POSTE, "text/plain"]
+
+    def mimeData(self, items):
+        """Tirer une ligne emporte le poste : numéro d'abord, combinaison montée ensuite."""
+        for it in items:
+            numero = int(it.data(0, Qt.ItemDataRole.UserRole) or 0)
+            if numero and self.tourelle is not None:
+                return charger_poste(numero, self.tourelle.poste(numero).libelle())
+        return QMimeData()
 
     def poste_sous(self, point) -> int:
         it = self.itemAt(point)
@@ -254,6 +295,7 @@ class ZoneTourelle(QWidget):
         v.addWidget(self.vue, 1)
 
         self.liste = ListePostes()
+        self.liste.tourelle = self.tourelle
         self.liste.accepte_depot = self.accepte_depot
         self.liste.depot.connect(self.deposer)
         self.liste.setColumnCount(len(COLONNES))
@@ -477,6 +519,9 @@ class ZoneTourelle(QWidget):
         self.rafraichir()
 
     def definir_tourelle(self, tourelle: Tourelle) -> None:
+        """Change la tourelle montrée. Le signal prévient tout ce qui s'y réfère, la gamme comprise."""
         self.tourelle = tourelle
         self.vue.tourelle = tourelle
+        self.liste.tourelle = tourelle
         self.rafraichir()
+        self.tourelle_changee.emit(tourelle)

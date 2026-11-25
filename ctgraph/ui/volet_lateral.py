@@ -18,8 +18,8 @@ _SANS_LIMITE = 16777215
 class _Bandeau(QWidget):
     """Le bandeau vertical : un chevron en haut, puis le titre tourné, lu de haut en bas.
 
-    Même présentation pour les trois volets, quel que soit le côté : le chevron pointe vers la droite
-    quand le volet est replié, vers la gauche quand il est déployé.
+    Même présentation pour tous les volets, quel que soit le côté : le chevron montre le sens où le
+    contenu va aller, à gauche quand le volet est replié, à droite quand il est déployé.
     """
 
     clique = Signal()
@@ -46,8 +46,8 @@ class _Bandeau(QWidget):
         p.setPen(QPen(QColor(encre.red(), encre.green(), encre.blue(), 60), 1))
         p.drawLine(self.width() - 1, 0, self.width() - 1, self.height())
 
-        # chevron : vers la droite quand le volet est replié, vers la gauche quand il est déployé
-        sens = -1.0 if self.volet.est_deploye() else 1.0
+        # chevron : vers la gauche quand le volet est replié, vers la droite quand il est déployé
+        sens = 1.0 if self.volet.est_deploye() else -1.0
         cx, cy = self.width() / 2.0, 14.0
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(encre))

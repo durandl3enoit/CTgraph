@@ -139,23 +139,36 @@ s'approche d'une référence s'y accroche et reçoit la relation d'office.
 Zone ancrée à droite (*Affichage → Atelier*, touche `O`), faite de **volets repliables latéralement**,
 de gauche à droite : **Usinage**, **Tourelle**, **Stock d'outils**, **Plaquettes**. Chaque volet se replie sur
 son bandeau vertical, d'un clic sur le bandeau ou par le menu *Affichage* ; l'état de chacun est mémorisé. Les
-bandeaux sont présentés de la même façon : le titre en haut, lu de haut en bas, et un chevron qui pointe
-vers la droite quand le volet est replié, vers la gauche quand il est déployé. Au premier
-lancement, seul le stock d'outils est déplié : cliquez les autres bandeaux pour les ouvrir.
+bandeaux sont présentés de la même façon : le titre en haut, lu de haut en bas, et un chevron qui montre le
+sens où le contenu va aller — vers la gauche quand le volet est replié, vers la droite quand il est déployé.
+Au premier lancement, seul le stock d'outils est déplié : cliquez les autres bandeaux pour les ouvrir.
 
 ### Usinage
 
-La **gamme** de la pièce : la suite ordonnée des séquences à exécuter. Trois types pour commencer, ceux que
-montrent les programmes qui ont tourné sur la machine : **dressage de face** (passes de la matière vers l'axe,
-du bout du brut jusqu'à la face finie), **ébauche de chariotage** (passes parallèles à l'axe, du diamètre du
-brut jusqu'au profil augmenté de la surépaisseur de finition ; une passe plus profonde que l'épaulement qui la
-précède n'entre en matière qu'après lui) et **finition de profil** (un passage qui suit le profil fini).
+La **gamme** de la pièce : la suite ordonnée des séquences à exécuter. Sept opérations :
 
-Les boutons du haut ajoutent une séquence ; les flèches changent l'ordre d'usinage ; la case de chaque ligne
-l'active ou la met de côté sans la perdre. La liste donne pour chaque séquence son poste de tourelle, le nombre
-de passes et la longueur à couper. Le formulaire règle la séquence choisie : poste (avec un rappel de ce qui y
-est monté sur la tourelle), vitesse de coupe, limitation de broche, avance, arrosage, profondeur de passe,
-surépaisseurs laissées au rayon et sur la face, garde d'approche, dégagement, et l'étendue en Z à usiner.
+* **dressage de face** : passes de la matière vers l'axe, du bout du brut jusqu'à la face finie ;
+* **ébauche de chariotage** : passes parallèles à l'axe, du diamètre du brut jusqu'au profil augmenté de la
+  surépaisseur de finition ; une passe plus profonde que l'épaulement qui la précède n'entre en matière
+  qu'après lui ;
+* **finition de profil** : un passage qui suit le profil fini ;
+* **gorge** : des plongées côte à côte, à la largeur de l'outil, jusqu'au diamètre de fond ; une gorge plus
+  large que l'outil se fait en autant de plongées qu'il faut, qui se recouvrent ;
+* **filetage** : des passes le long du filet, de plus en plus fines pour garder la section de copeau. La
+  profondeur du filet est celle du profil ISO métrique tant qu'on n'en donne pas une autre, et l'avance d'un
+  filetage est son pas ;
+* **perçage dans l'axe** : de la face vers le fond du trou, par débourrages successifs ;
+* **tronçonnage** : une plongée jusqu'au diamètre demandé, ou jusqu'à l'axe pour détacher la pièce.
+
+Les boutons du haut ajoutent une séquence, chacun avec les conditions de coupe habituelles de son type ; les
+flèches changent l'ordre d'usinage ; la case de chaque ligne l'active ou la met de côté sans la perdre. La
+liste donne pour chaque séquence son poste de tourelle, le nombre de passes et la longueur à couper.
+
+Le formulaire règle la séquence choisie et **ne montre que les réglages qui comptent pour son type** : une
+finition n'a ni passes ni surépaisseur, une gorge demande la largeur de l'outil et le diamètre de fond, un
+filetage son pas. Le filetage et le perçage tournent à vitesse de broche fixe : il n'y a pas de limitation de
+broche à régler. Le poste de tourelle se saisit au numéro, ou **en glissant une ligne du volet Tourelle sur
+la séquence** : elle prend ce poste avec la combinaison qui y est montée, rappelée sous le numéro.
 
 La **trajectoire de la séquence choisie se dessine sur l'esquisse** : trait plein pour la coupe, pointillé pour
 les déplacements rapides, un cercle au point de départ. Elle est **recalculée depuis le profil résolu**, jamais
@@ -188,6 +201,8 @@ porte-plaquettes se borne à ce que l'implantation accepte, queue carrée en tra
 sur le schéma de la tourelle, soit sur une ligne du tableau. Le poste visé s'entoure tant que le dépôt est
 possible, et le curseur refuse un outil que l'implantation du poste ne tient pas. Déposer un porte-plaquette
 ne touche pas à la plaquette déjà montée, et inversement : on garnit un poste en deux gestes.
+Dans l'autre sens, tirez un logement du schéma ou une ligne du tableau et lâchez-la sur une séquence du
+volet *Usinage* : la séquence prend ce poste, avec la combinaison qui y est montée.
 On y note aussi **les corrections à appliquer** : le numéro de correcteur sur la commande numérique, les
 corrections en X et en Z, le rayon de bec, qui suit la plaquette montée, et le code d'orientation du nez
 d'outil. La garniture est mémorisée avec les préférences : elle appartient à la machine, pas à la pièce.
@@ -289,7 +304,7 @@ ctgraph/
   ui/volet_lateral.py      volet repliable latéralement : bandeau vertical cliquable
   ui/zone_usinage.py       volet « Usinage » : la gamme, ses réglages, le résumé des passes
   ui/zone_tourelle.py      tourelle vue de face, postes garnis, corrections ; cible du glisser-déposer
-  ui/transfert.py          glisser-déposer d'un outil ou d'une plaquette vers un poste
+  ui/transfert.py          glisser-déposer : outil ou plaquette vers un poste, poste vers une séquence
   ui/zone_outils.py        volet « Stock d'outils » : catalogue filtrable, cases « en stock »
   ui/zone_plaquettes.py    volet « Plaquettes » : catalogue et dessin coté de la plaquette choisie
   ui/fenetre_principale.py fenêtre, menus, menu contextuel, fichiers, annulation ; contrôleur de la vue

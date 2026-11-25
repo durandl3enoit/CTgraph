@@ -1334,9 +1334,11 @@ def test_volet_usinage_gamme_et_trajectoires(fenetre, tmp_path):
     assert zone.lbl_outil.text().startswith(win.zone_tourelle.tourelle.poste(11).libelle())
     assert vue.trajectoire.sequence_id == ebauche.id
 
-    # une finition ne prend ni passes ni surépaisseur : elle suit le profil fini
+    # une finition ne prend ni passes ni surépaisseur : elle suit le profil fini, et le formulaire
+    # ne montre que les réglages qui comptent pour le type choisi
     finition = zone.ajouter(TypeSequence.FINITION)
-    assert not zone.profondeur.isEnabled() and not zone.surepaisseur.isEnabled()
+    assert zone.profondeur.isHidden() and zone.surepaisseur.isHidden()
+    assert not zone.garde.isHidden() and not zone.z_fin.isHidden()
     assert win.trajectoire_de(finition).nb_passes() == 1
     assert [s.id for s in win.gamme] == [ebauche.id, finition.id]
 
@@ -1362,6 +1364,29 @@ def test_volet_usinage_gamme_et_trajectoires(fenetre, tmp_path):
     win.zone_usinage.supprimer()
     assert len(win.gamme) == 0 and vue.trajectoire is None
     assert not any(it.data(ROLE_GENRE) == "trajectoire" for it in vue._items)
+
+
+def test_volet_usinage_un_formulaire_par_type(fenetre):
+    from ctgraph.usinage import TypeSequence
+    from ctgraph.usinage.sequences import CHAMPS_SEQUENCE, LIBELLES_Z
+    win = fenetre
+    zone = win.zone_usinage
+    assert set(zone.boutons_ajout) == set(TypeSequence)        # un bouton d'ajout par opération
+    for type_ in TypeSequence:
+        s = zone.ajouter(type_)
+        attendus = set(CHAMPS_SEQUENCE[type_])
+        montres = {cle for cle, widget in zone.champs.items()
+                   if not widget.isHidden() and cle not in ("vitesse_maxi", "avance")}
+        assert montres == attendus, type_
+        # filetage et perçage tournent à broche fixe : pas de limitation de broche à régler,
+        # et l'avance d'un filetage est son pas
+        assert zone.vitesse_maxi.isHidden() == s.vitesse_fixe()
+        assert zone.avance.isHidden() == (type_ == TypeSequence.FILETAGE)
+        if type_ in LIBELLES_Z:
+            assert zone.formulaire.labelForField(zone.z_debut).text() == LIBELLES_Z[type_][0]
+    for s in list(win.gamme.sequences):
+        win.gamme.supprimer(s.id)
+    zone.rafraichir()
 
 
 def test_zone_tourelle(fenetre):
@@ -1589,6 +1614,75 @@ def test_glisser_deposer_sur_la_tourelle(fenetre):
     assert not ev.isAccepted()
 
     zone.definir_tourelle(Tourelle())
+    for cle in win.zone_atelier.volets:
+        win.actions_volets[cle].setChecked(cle == "outils")
+
+
+def test_glisser_un_poste_vers_une_sequence(fenetre):
+    from PySide6.QtCore import QMimeData, QPointF
+    from PySide6.QtGui import QDragMoveEvent, QDropEvent
+    from ctgraph.tourelle import Tourelle
+    from ctgraph.ui.transfert import MIME_POSTE, charger_poste, lire
+    from ctgraph.ui.zone_usinage import ROLE_ID as ROLE_ID_SEQUENCE
+    from ctgraph.usinage import TypeSequence
+    win = fenetre
+    win.act_zone_atelier.setChecked(True)
+    for cle in win.zone_atelier.volets:
+        win.actions_volets[cle].setChecked(True)
+    QTest.qWait(20)
+    tourelle = Tourelle()
+    tourelle.garnir(3, "SDJCR 2020 K11", "DCMT 11T308")
+    win.zone_tourelle.definir_tourelle(tourelle)
+    usinage = win.zone_usinage
+    ebauche = usinage.ajouter(TypeSequence.EBAUCHE)
+    finition = usinage.ajouter(TypeSequence.FINITION)
+
+    # une ligne du tableau des postes emporte son numéro et la combinaison montée
+    liste = win.zone_tourelle.liste
+    it = next(liste.topLevelItem(i) for i in range(liste.topLevelItemCount())
+              if liste.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == 3)
+    assert liste.dragEnabled() and it.flags() & Qt.ItemFlag.ItemIsDragEnabled
+    type_mime, charge = lire(liste.model().mimeData([liste.indexFromItem(it)]))
+    assert type_mime == MIME_POSTE and charge == "3 SDJCR 2020 K11 + DCMT 11T308"
+
+    def point_de(sequence):
+        rect = usinage.liste.visualItemRect(next(
+            usinage.liste.topLevelItem(i) for i in range(usinage.liste.topLevelItemCount())
+            if usinage.liste.topLevelItem(i).data(0, ROLE_ID_SEQUENCE) == sequence.id))
+        return QPointF(rect.center())
+
+    def deposer(point, mime):
+        ev = QDropEvent(point, Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton,
+                        Qt.KeyboardModifier.NoModifier)
+        usinage.liste.dropEvent(ev)
+        QTest.qWait(10)        # la ligne se met à jour après la sortie de l'événement
+        return ev.isAccepted()
+
+    # déposer le poste sur la finition le lui donne, et ne touche pas à l'autre séquence
+    assert deposer(point_de(finition), charger_poste(3, tourelle.poste(3).libelle()))
+    assert finition.poste == 3 and ebauche.poste == 0
+    assert usinage.sequence_courante() is finition and win._modifie
+    assert usinage.lbl_outil.text().startswith("SDJCR 2020 K11 + DCMT 11T308")
+    # le survol dit si le dépôt est possible : sur une ligne oui, dans le vide non
+    def survol(point, mime):
+        ev = QDragMoveEvent(point, Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton,
+                            Qt.KeyboardModifier.NoModifier)
+        usinage.liste.dragMoveEvent(ev)
+        return ev.isAccepted()
+
+    poste_7 = charger_poste(7, tourelle.poste(7).libelle())
+    assert survol(point_de(ebauche), poste_7)
+    assert not survol(QPointF(5.0, usinage.liste.viewport().height() - 2.0), poste_7)
+    assert not deposer(point_de(ebauche), QMimeData())        # un glisser étranger n'est pas accueilli
+    assert ebauche.poste == 0
+    # un poste hors tourelle est refusé
+    assert not usinage.affecter_poste(ebauche.id, 99) and ebauche.poste == 0
+    assert usinage.affecter_poste(ebauche.id, 7) and ebauche.poste == 7
+
+    for s in list(win.gamme.sequences):
+        win.gamme.supprimer(s.id)
+    usinage.rafraichir()
+    win.zone_tourelle.definir_tourelle(Tourelle())
     for cle in win.zone_atelier.volets:
         win.actions_volets[cle].setChecked(cle == "outils")
 

@@ -84,26 +84,30 @@ Mis à jour le 25 novembre 2026 (cinquième séance, poste de la semaine).
   bien engagé ; restent les porte-outils VDI eux-mêmes et la fiche de réglage. 135 tests.
 
 - **Séquences d'usinage, première version** (point 4 du périmètre) : la pièce porte une **gamme**, suite
-  ordonnée de séquences enregistrée dans le `.ctg`. Trois types, ceux des programmes Go2CAM archivés :
-  dressage de face, ébauche paraxiale, finition de profil. Module `ctgraph/usinage/` sans Qt ni PlaneGCS :
-  `profil.py` tire le profil tourné des contours fermés et dit où une passe a le droit de couper,
-  `sequences.py` porte la gamme et ses réglages (poste, G96/G92/G95, passes, surépaisseurs, étendue en Z),
-  `trajectoires.py` rend des suites de `Mouvement(z, x, travail)`, telles quelles traduisibles en G0/G1.
-  Volet « Usinage » à gauche de l'atelier : liste ordonnée avec passes et longueur de coupe, ajout par type,
-  flèches d'ordre, case d'activation, formulaire de la séquence choisie. **La trajectoire de la séquence
-  choisie se dessine sur l'esquisse** (trait plein en coupe, pointillé en rapide) et se recalcule à chaque
-  changement de cote ou de montage : rien n'est recopié du dessin. Une passe ne descend jamais dans les mors
-  et la finition laisse la face arrière au tronçonnage. 143 tests.
+  ordonnée de séquences enregistrée dans le `.ctg`. Sept opérations : dressage de face, ébauche paraxiale,
+  finition de profil, gorge, filetage, perçage dans l'axe, tronçonnage. Module `ctgraph/usinage/` sans Qt ni
+  PlaneGCS : `profil.py` tire le profil tourné des contours fermés et dit où une passe a le droit de couper,
+  `sequences.py` porte la gamme et ses réglages (poste, G96/G92/G95, passes, surépaisseurs, largeur d'outil,
+  diamètre de fond, pas de filet, étendue en Z), `trajectoires.py` rend des suites de
+  `Mouvement(z, x, travail)`, telles quelles traduisibles en G0/G1.
+  Volet « Usinage » à gauche de l'atelier : liste ordonnée avec passes et longueur de coupe, un bouton
+  d'ajout par type, flèches d'ordre, case d'activation, formulaire de la séquence choisie qui **ne montre
+  que les réglages qui comptent pour son type**. Le poste se saisit au numéro ou **en glissant une ligne de
+  la tourelle sur la séquence**. **La trajectoire de la séquence choisie se dessine sur l'esquisse** (trait
+  plein en coupe, pointillé en rapide) et se recalcule à chaque changement de cote ou de montage : rien
+  n'est recopié du dessin. Une passe ne descend jamais dans les mors et la finition laisse la face arrière
+  au tronçonnage. 149 tests.
 
 ## En cours
 
 - Les dimensions du mandrin et de la machine sont des ordres de grandeur : à relever et à saisir dans le dialogue
   (en particulier les étages des mors 474 : longueur et épaulement de chacun, épaisseur radiale au fond, largeur).
 - Non prévu encore : brut en barre passant dans le mandrin (pas d'appui, longueur de brut sans objet).
-- Usinage, manques connus : pas de gorge, de filetage, de perçage ni de tronçonnage ; pas de profil intérieur
-  (alésage) ; pas de temps estimé ; les conditions de coupe sont saisies à la main, sans table de matières ;
-  l'ébauche descend tout droit, sans suivre le profil en fin de passe. Le poste de tourelle est un numéro :
-  rien ne vérifie encore qu'un outil à droite peut vraiment usiner la trajectoire demandée.
+- Usinage, manques connus : pas de profil intérieur (alésage, gorge intérieure, filetage intérieur) ; pas de
+  temps estimé ; les conditions de coupe sont saisies à la main, sans table de matières ; l'ébauche descend
+  tout droit, sans suivre le profil en fin de passe ; une gorge se décrit par ses cotes, elle n'est pas lue
+  dans le profil dessiné ; le filetage ne connaît que le pas constant. Rien ne vérifie qu'un outil monté sur
+  le poste choisi peut vraiment usiner la trajectoire demandée.
 
 ## Prochaines étapes
 
@@ -119,7 +123,8 @@ Mis à jour le 25 novembre 2026 (cinquième séance, poste de la semaine).
    cycles en option par séquence. Squelette, changement d'outil, G96/G92/G95, G41/G42 relevés dans
    `docs/reference-go2cam-ct200.md` ; **chaque fonction se vérifie dans le manuel NUM 750 T, jamais de
    mémoire**. Relecture par l'utilisateur obligatoire avant tout envoi à la machine.
-5. **Usinage, suite** : gorge, filetage, perçage, tronçonnage ; conditions de coupe par matière ; temps estimé.
+5. **Usinage, suite** : profil intérieur (alésage), conditions de coupe par matière, temps estimé, gorge
+   lue dans le profil dessiné.
 6. Retrouver le post-processeur Go2CAM et le logiciel RS232 (remis à plus tard par l'utilisateur).
 7. Relever sur le tour : grille d'options, version du logiciel CN, taille mémoire, réglages série.
 

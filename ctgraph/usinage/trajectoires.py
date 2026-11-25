@@ -10,6 +10,7 @@ décale donc pas la trajectoire ici.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -156,7 +157,142 @@ def _finition(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
     return Trajectoire(sequence.id, mouvements)
 
 
-_CALCULS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _ebauche, TypeSequence.FINITION: _finition}
+def _matiere_sur(profil: ProfilTourne, montage, z_droite: float, largeur: float) -> float:
+    """Le rayon de matière que l'outil rencontre sur sa largeur, à droite de `z_droite` vers la gauche.
+
+    Le profil fini donne la hauteur dans la pièce ; au-delà de ses bouts, c'est le brut qui reste en place.
+    """
+    rayon_brut = montage.rayon_brut() if montage is not None else 0.0
+    if not profil:
+        return rayon_brut
+    rayon = max(profil.rayon(z_droite - t * largeur) for t in (0.0, 0.5, 1.0))
+    if z_droite - largeur < profil.z_fond - 1e-9 or z_droite > profil.z_bout + 1e-9:
+        rayon = max(rayon, rayon_brut)          # l'outil mord dans la barre, pas seulement dans la pièce
+    return rayon
+
+
+def _plongee(sequence: Sequence, z: float, rayon_haut: float, rayon_fond: float) -> List[Mouvement]:
+    """Une plongée radiale à l'abscisse `z`, par passes de `profondeur_passe` avec débourrage entre elles."""
+    approche = rayon_haut + sequence.garde
+    retrait = rayon_haut + sequence.degagement
+    profondeur = max(sequence.profondeur_passe, 0.05)
+    mouvements = [Mouvement(z, approche)]
+    rayon = rayon_haut
+    while rayon > rayon_fond + 1e-9:
+        rayon = max(rayon - profondeur, rayon_fond)
+        mouvements.append(Mouvement(z, rayon, travail=True))
+        if rayon > rayon_fond + 1e-9:
+            mouvements.append(Mouvement(z, rayon + sequence.degagement))   # débourrage
+            mouvements.append(Mouvement(z, rayon))                          # retour au fond atteint
+    mouvements.append(Mouvement(z, retrait))
+    return mouvements
+
+
+def _gorge(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+    """Gorge : des plongées côte à côte, à la largeur de l'outil, jusqu'au diamètre de fond."""
+    if sequence.z_debut is None or sequence.diametre_fond <= 0.0:
+        return Trajectoire(sequence.id, [], "Indiquez le Z du bord droit de la gorge et son diamètre "
+                                            "de fond.")
+    largeur_outil = max(sequence.largeur_outil, 0.1)
+    largeur = max(sequence.largeur, largeur_outil)
+    z_droite = sequence.z_debut
+    if montage is not None and z_droite - largeur < montage.z_face_mors() - 1e-9:
+        return Trajectoire(sequence.id, [], "La gorge entre dans les mors : rapprochez-la de la face.")
+    rayon_fond = sequence.diametre_fond / 2.0 + sequence.surepaisseur
+    rayon_haut = _matiere_sur(profil, montage, z_droite, largeur)
+    if rayon_haut <= rayon_fond + 1e-9:
+        return Trajectoire(sequence.id, [], "Rien à creuser : le fond de gorge est déjà au diamètre.")
+    # le point piloté est le coin droit de l'outil : il va du bord droit au bord gauche moins la largeur
+    course = largeur - largeur_outil
+    nb = max(1, int(course / (largeur_outil * 0.8) + 0.999) + (1 if course > 1e-9 else 0))
+    mouvements: List[Mouvement] = []
+    for i in range(nb):
+        z = z_droite - (course * i / (nb - 1) if nb > 1 else 0.0)
+        mouvements += _plongee(sequence, z, rayon_haut, rayon_fond)
+    return Trajectoire(sequence.id, mouvements)
+
+
+def _tronconnage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+    """Tronçonnage : une plongée jusqu'au diamètre demandé, ou jusqu'à l'axe pour détacher la pièce."""
+    z = sequence.z_debut if sequence.z_debut is not None else (profil.z_fond if profil else None)
+    if z is None:
+        return Trajectoire(sequence.id, [], "Indiquez le Z où tronçonner.")
+    if montage is not None and z - sequence.largeur_outil < montage.z_face_mors() - 1e-9:
+        return Trajectoire(sequence.id, [], "Ce Z est dans les mors : le tronçonnage n'y passe pas.")
+    rayon_haut = _matiere_sur(profil, montage, z, max(sequence.largeur_outil, 0.1))
+    rayon_fin = sequence.diametre_fond / 2.0
+    if rayon_haut <= rayon_fin + 1e-9:
+        return Trajectoire(sequence.id, [], "Rien à tronçonner : la matière est déjà à ce diamètre.")
+    return Trajectoire(sequence.id, _plongee(sequence, z, rayon_haut, rayon_fin))
+
+
+def _filetage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+    """Filetage : des passes le long du filet, de plus en plus fines pour garder la section de copeau."""
+    if sequence.z_fin is None:
+        return Trajectoire(sequence.id, [], "Indiquez le Z de fin du filet.")
+    if sequence.pas <= 0.0:
+        return Trajectoire(sequence.id, [], "Indiquez le pas du filet.")
+    z_debut = sequence.z_debut if sequence.z_debut is not None else (profil.z_bout if profil else 0.0)
+    z_fin = sequence.z_fin
+    if montage is not None:
+        z_fin = max(z_fin, montage.z_face_mors())
+    if z_debut - z_fin <= 1e-9:
+        return Trajectoire(sequence.id, [], "Le filet n'a pas de longueur : vérifiez les deux Z.")
+    rayon = _rayon_travail(profil, montage, (z_debut + z_fin) / 2.0)
+    hauteur = sequence.profondeur_filet()
+    if rayon <= hauteur + 1e-9:
+        return Trajectoire(sequence.id, [], "Le filet est plus profond que la matière : vérifiez le pas.")
+    nb = max(1, int(hauteur / max(sequence.profondeur_passe, 0.02) + 0.999))
+    degage = rayon + sequence.degagement
+    mouvements: List[Mouvement] = []
+    for i in range(1, nb + 1):
+        # section de copeau constante : la i-ième passe descend à la racine de i/n de la hauteur du filet
+        fond = rayon - hauteur * math.sqrt(i / nb)
+        mouvements.append(Mouvement(z_debut + sequence.garde, degage))
+        mouvements.append(Mouvement(z_debut + sequence.garde, fond))
+        mouvements.append(Mouvement(z_fin, fond, travail=True))
+        mouvements.append(Mouvement(z_fin, degage))
+    return Trajectoire(sequence.id, mouvements)
+
+
+def _percage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+    """Perçage dans l'axe : des descentes successives, chacune suivie d'un débourrage complet."""
+    if sequence.z_fin is None:
+        return Trajectoire(sequence.id, [], "Indiquez la profondeur du trou : son Z de fond.")
+    if sequence.z_debut is not None:
+        z_face = sequence.z_debut
+    elif montage is not None:
+        z_face = montage.z_brut_avant()
+    else:
+        z_face = profil.z_bout if profil else 0.0
+    if z_face - sequence.z_fin <= 1e-9:
+        return Trajectoire(sequence.id, [], "Le trou n'a pas de profondeur : vérifiez les deux Z.")
+    pas = max(sequence.profondeur_passe, 0.1)
+    approche = z_face + sequence.garde
+    mouvements = [Mouvement(approche, 0.0)]
+    z = z_face
+    while z > sequence.z_fin + 1e-9:
+        z = max(z - pas, sequence.z_fin)
+        mouvements.append(Mouvement(z, 0.0, travail=True))
+        if z > sequence.z_fin + 1e-9:
+            mouvements.append(Mouvement(approche, 0.0))                       # débourrage complet
+            mouvements.append(Mouvement(min(z + sequence.garde, approche), 0.0))
+    mouvements.append(Mouvement(approche, 0.0))
+    return Trajectoire(sequence.id, mouvements)
+
+
+def _rayon_travail(profil: ProfilTourne, montage, z: float) -> float:
+    """Le rayon de la matière à une abscisse : le profil s'il y est, sinon le brut."""
+    rayon = profil.rayon(z) if profil else 0.0
+    if rayon <= 0.0 and montage is not None:
+        rayon = montage.rayon_brut()
+    return rayon
+
+
+_CALCULS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _ebauche,
+            TypeSequence.FINITION: _finition, TypeSequence.GORGE: _gorge,
+            TypeSequence.FILETAGE: _filetage, TypeSequence.PERCAGE: _percage,
+            TypeSequence.TRONCONNAGE: _tronconnage}
 
 
 def trajectoire(sequence: Sequence, profil: ProfilTourne, montage=None) -> Trajectoire:

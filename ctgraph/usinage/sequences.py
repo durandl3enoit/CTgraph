@@ -4,34 +4,50 @@ Une **séquence** dit quoi faire, avec quel poste de tourelle et dans quelles co
 ne garde aucune copie du dessin : sa trajectoire se recalcule depuis le profil résolu (voir
 `ctgraph.usinage.trajectoires`). Changer une cote change donc la trajectoire, et plus tard le G-code.
 
-Trois types pour commencer, ceux que montrent les programmes Go2CAM archivés
-(`docs/reference-go2cam-ct200.md`) :
+Sept types, ceux que montrent les programmes Go2CAM archivés (`docs/reference-go2cam-ct200.md`) :
 
 * **dressage** de la face avant, en passes successives de la matière vers l'axe ;
 * **ébauche** paraxiale, passes parallèles à Z qui descendent jusqu'au profil augmenté de la
   surépaisseur de finition ;
-* **finition**, qui suit le profil fini en un passage.
+* **finition**, qui suit le profil fini en un passage ;
+* **gorge**, plongées radiales côte à côte à la largeur de l'outil ;
+* **filetage**, passes de plus en plus fines le long du filet ;
+* **perçage** dans l'axe, par débourrages successifs ;
+* **tronçonnage**, une plongée jusqu'au diamètre demandé ou jusqu'à l'axe.
 
 Les conditions de coupe reprennent ce que la CN attend : vitesse de coupe constante `G96`, limitation
-de vitesse de broche `G92`, avance par tour `G95`.
+de vitesse de broche `G92`, avance par tour `G95`. Le filetage et le perçage tournent à vitesse de
+broche fixe (`G97`) : la vitesse de coupe saisie s'y entend au diamètre travaillé, et c'est le
+post-processeur qui fera la conversion.
 """
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+# profondeur du filet au rayon, en part du pas, pour un filetage ISO métrique extérieur (H1 = 0,6134 × P)
+PROFONDEUR_FILET = 0.6134
 
 
 class TypeSequence(str, Enum):
     DRESSAGE = "dressage"
     EBAUCHE = "ebauche"
     FINITION = "finition"
+    GORGE = "gorge"
+    FILETAGE = "filetage"
+    PERCAGE = "percage"
+    TRONCONNAGE = "tronconnage"
 
 
 LIBELLES_SEQUENCE: Dict[TypeSequence, str] = {
     TypeSequence.DRESSAGE: "Dressage de face",
     TypeSequence.EBAUCHE: "Ébauche de chariotage",
     TypeSequence.FINITION: "Finition de profil",
+    TypeSequence.GORGE: "Gorge",
+    TypeSequence.FILETAGE: "Filetage",
+    TypeSequence.PERCAGE: "Perçage dans l'axe",
+    TypeSequence.TRONCONNAGE: "Tronçonnage",
 }
 
 USAGES_SEQUENCE: Dict[TypeSequence, str] = {
@@ -40,6 +56,48 @@ USAGES_SEQUENCE: Dict[TypeSequence, str] = {
     TypeSequence.EBAUCHE: "Passes parallèles à l'axe, du diamètre du brut jusqu'au profil augmenté de "
                           "la surépaisseur laissée à la finition.",
     TypeSequence.FINITION: "Suit le profil fini en un passage, correction de rayon de bec à la CN.",
+    TypeSequence.GORGE: "Plongées radiales côte à côte, à la largeur de l'outil, jusqu'au diamètre de "
+                        "fond ; autant de plongées qu'il faut pour la largeur demandée.",
+    TypeSequence.FILETAGE: "Passes successives le long du filet, de plus en plus fines pour garder la "
+                           "section de copeau ; l'avance d'un filetage est son pas.",
+    TypeSequence.PERCAGE: "Perçage dans l'axe, de la face vers le fond du trou, par débourrages "
+                          "successifs.",
+    TypeSequence.TRONCONNAGE: "Plongée à la largeur de l'outil jusqu'au diamètre demandé, ou jusqu'à "
+                              "l'axe pour détacher la pièce de la barre.",
+}
+
+# les réglages qui comptent pour chaque type : l'interface ne montre que ceux-là
+CHAMPS_SEQUENCE: Dict[TypeSequence, Tuple[str, ...]] = {
+    TypeSequence.DRESSAGE: ("profondeur_passe", "surepaisseur_face", "garde", "degagement"),
+    TypeSequence.EBAUCHE: ("profondeur_passe", "surepaisseur", "garde", "degagement", "z_debut", "z_fin"),
+    TypeSequence.FINITION: ("garde", "degagement", "z_debut", "z_fin"),
+    TypeSequence.GORGE: ("largeur_outil", "largeur", "diametre_fond", "profondeur_passe", "surepaisseur",
+                         "garde", "degagement", "z_debut"),
+    TypeSequence.FILETAGE: ("pas", "hauteur_filet", "profondeur_passe", "garde", "degagement",
+                            "z_debut", "z_fin"),
+    TypeSequence.PERCAGE: ("diametre_outil", "profondeur_passe", "garde", "z_debut", "z_fin"),
+    TypeSequence.TRONCONNAGE: ("largeur_outil", "diametre_fond", "profondeur_passe", "garde",
+                               "degagement", "z_debut"),
+}
+
+# comment nommer les bornes en Z selon le type : ce ne sont pas les mêmes choses
+LIBELLES_Z: Dict[TypeSequence, Tuple[str, str]] = {
+    TypeSequence.GORGE: ("Z du bord droit", ""),
+    TypeSequence.FILETAGE: ("Début du filet", "Fin du filet"),
+    TypeSequence.PERCAGE: ("Z de la face", "Fond du trou"),
+    TypeSequence.TRONCONNAGE: ("Z du tronçonnage", ""),
+}
+
+# ce qui change des valeurs par défaut quand on ajoute une séquence de ce type
+DEFAUTS_SEQUENCE: Dict[TypeSequence, Dict[str, float]] = {
+    TypeSequence.FINITION: {"vitesse_coupe": 250.0, "avance": 0.1},
+    TypeSequence.GORGE: {"vitesse_coupe": 120.0, "avance": 0.08, "profondeur_passe": 1.5,
+                         "surepaisseur": 0.0},
+    TypeSequence.FILETAGE: {"vitesse_coupe": 100.0, "profondeur_passe": 0.25, "surepaisseur": 0.0},
+    TypeSequence.PERCAGE: {"vitesse_coupe": 60.0, "avance": 0.12, "profondeur_passe": 5.0,
+                           "surepaisseur": 0.0},
+    TypeSequence.TRONCONNAGE: {"vitesse_coupe": 110.0, "avance": 0.08, "profondeur_passe": 2.0,
+                               "surepaisseur": 0.0},
 }
 
 
@@ -65,6 +123,14 @@ class Sequence:
     degagement: float = 1.0          # retrait avant le retour rapide
     garde: float = 2.0               # approche en rapide, au-dessus de la matière
 
+    # outil et géométrie propres à certaines opérations
+    largeur_outil: float = 3.0       # largeur de l'arête : gorge, tronçonnage
+    largeur: float = 0.0             # largeur de la gorge à faire ; 0 = celle de l'outil
+    diametre_fond: float = 0.0       # Ø au fond d'une gorge, Ø où s'arrête un tronçonnage (0 = l'axe)
+    diametre_outil: float = 10.0     # Ø du foret
+    pas: float = 1.5                 # pas du filet
+    hauteur_filet: float = 0.0       # profondeur du filet au rayon ; 0 = PROFONDEUR_FILET × pas
+
     # étendue ; None = toute la longueur usinable
     z_debut: Optional[float] = None
     z_fin: Optional[float] = None
@@ -72,13 +138,34 @@ class Sequence:
     def libelle(self) -> str:
         return self.nom.strip() or LIBELLES_SEQUENCE[self.type]
 
+    def champs(self) -> Tuple[str, ...]:
+        """Les réglages qui comptent pour ce type d'opération."""
+        return CHAMPS_SEQUENCE.get(self.type, ())
+
+    def vitesse_fixe(self) -> bool:
+        """Vrai si l'opération se fait à vitesse de broche fixe (G97) et non à Vc constante (G96)."""
+        return self.type in (TypeSequence.FILETAGE, TypeSequence.PERCAGE)
+
+    def profondeur_filet(self) -> float:
+        """La profondeur du filet au rayon, celle qui est saisie ou celle du profil ISO métrique."""
+        return self.hauteur_filet if self.hauteur_filet > 0 else PROFONDEUR_FILET * self.pas
+
     def description(self) -> str:
         bouts = [USAGES_SEQUENCE[self.type],
-                 f"Poste {self.poste}" if self.poste else "Poste à choisir",
-                 f"Vc {self.vitesse_coupe:g} m/min, maxi {self.vitesse_maxi:g} tr/min, "
-                 f"avance {self.avance:g} mm/tr"]
+                 f"Poste {self.poste}" if self.poste else "Poste à choisir"]
+        broche = "broche fixe (G97)" if self.vitesse_fixe() else f"maxi {self.vitesse_maxi:g} tr/min"
+        avance = f"pas {self.pas:g} mm" if self.type == TypeSequence.FILETAGE \
+            else f"avance {self.avance:g} mm/tr"
+        bouts.append(f"Vc {self.vitesse_coupe:g} m/min, {broche}, {avance}")
         if self.type == TypeSequence.FINITION:
             bouts.append("Un seul passage, sans surépaisseur")
+        elif self.type == TypeSequence.FILETAGE:
+            bouts.append(f"Filet de {self.profondeur_filet():g} mm au rayon, passes de "
+                         f"{self.profondeur_passe:g} mm à section constante")
+        elif self.type in (TypeSequence.GORGE, TypeSequence.TRONCONNAGE):
+            bouts.append(f"Outil de {self.largeur_outil:g} mm, plongées de {self.profondeur_passe:g} mm")
+        elif self.type == TypeSequence.PERCAGE:
+            bouts.append(f"Foret Ø {self.diametre_outil:g}, débourrages de {self.profondeur_passe:g} mm")
         else:
             bouts.append(f"Passes de {self.profondeur_passe:g} mm, surépaisseur {self.surepaisseur:g} mm")
         bouts.append("Arrosage" if self.arrosage else "Sans arrosage")
@@ -109,7 +196,11 @@ class Gamme:
         return next((s for s in self.sequences if s.id == ident), None)
 
     def ajouter(self, type_: TypeSequence, **valeurs) -> Sequence:
-        s = Sequence(id=self._prochain_id, type=TypeSequence(type_), **valeurs)
+        """Ajoute une séquence en fin de gamme, avec les réglages habituels de son type."""
+        type_ = TypeSequence(type_)
+        reglages = dict(DEFAUTS_SEQUENCE.get(type_, {}))
+        reglages.update(valeurs)
+        s = Sequence(id=self._prochain_id, type=type_, **reglages)
         self._prochain_id += 1
         self.sequences.append(s)
         return s

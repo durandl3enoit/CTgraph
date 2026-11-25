@@ -182,14 +182,15 @@ vérification par relecture du G-code généré, réception des programmes depui
   reconstruit la liste à chaque frappe.
   Le catalogue dit ce qui est montable, les coches « en stock » disent ce que l'atelier possède
   (préférence `outils.stock`).
-- **Atelier : trois volets repliables latéralement** (`ui/zone_atelier.py`, demandé le 24 novembre 2026), un
+- **Atelier : des volets repliables latéralement** (`ui/zone_atelier.py`, demandé le 24 novembre 2026), un
   seul `QDockWidget` sans barre de titre ancré à droite (visibilité `atelier.visible`, touche `O`), contenant
-  de gauche à droite **Tourelle**, **Stock d'outils**, **Plaquettes**. Chacun est un `VoletLateral`
-  (`ui/volet_lateral.py`) : bandeau vertical cliquable de `LARGEUR_BANDEAU`, **présenté pareil pour les
-  trois** (titre en haut lu de haut en bas, chevron vers la droite quand c'est replié, vers la gauche quand
-  c'est déployé) ; replié, le volet est borné à la largeur du bandeau. Bandeau du côté extérieur (à gauche
-  pour les deux premiers, à droite pour le dernier). Un ressort en fin de rangée garde les bandeaux collés
-  quand les trois volets sont repliés.
+  de gauche à droite **Usinage**, **Tourelle**, **Stock d'outils**, **Plaquettes**. Chacun est un `VoletLateral`
+  (`ui/volet_lateral.py`) : bandeau vertical cliquable de `LARGEUR_BANDEAU`, **présenté pareil pour tous**
+  (titre en haut lu de haut en bas, chevron **vers la gauche quand c'est replié, vers la droite quand c'est
+  déployé** : il montre le sens où le contenu va aller ; sens inversé le 25 novembre 2026 à la demande de
+  l'utilisateur) ; replié, le volet est borné à la largeur du bandeau. Bandeau du côté extérieur (à gauche
+  pour les premiers, à droite pour le dernier). Un ressort en fin de rangée garde les bandeaux collés
+  quand tous les volets sont repliés.
   État mémorisé dans `volet.<clé>`, déplié par défaut pour le seul stock d'outils ; le menu Affichage a une
   entrée par volet. Les tests d'interface masquent l'atelier : il rétrécit la vue d'esquisse et fausserait
   les clics simulés.
@@ -212,6 +213,12 @@ vérification par relecture du G-code généré, réception des programmes depui
   `MIME_PLAQUETTE`) ; le schéma de la tourelle et le tableau des postes l'accueillent (`accueillir` rend le
   poste visé si `accepte_depot` le permet, sinon l'événement est ignoré et le curseur refuse). Déposer un
   porte-plaquette ne touche pas à la plaquette déjà montée, et inversement. Le poste survolé s'entoure.
+  **Deuxième chemin, en sens inverse** (demandé le 25 novembre 2026) : la tourelle est aussi une source.
+  Tirer un logement du schéma (`commencer_glisser_poste`, au-delà de `startDragDistance`) ou une ligne du
+  tableau emporte `MIME_POSTE`, dont la charge est « numéro, puis combinaison montée » (`charger_poste`,
+  relue par `zone_usinage._numero_poste`) ; la liste de la gamme l'accueille et donne ce poste à la séquence
+  visée. `ZoneTourelle.definir_tourelle` émet `tourelle_changee` : ce qui se réfère à la tourelle, la gamme
+  comprise, suit le changement d'objet.
 - **Plaquettes** (`ctgraph/plaquettes.py`, `ui/zone_plaquettes.py`) : catalogue **ISO 1832** des tailles qui
   garnissent les porte-plaquettes, quatre familles (négatives, positives, filetage, gorge). `Plaquette.base`
   (« CNMG 1204 ») relie la plaquette au champ `plaquette` du catalogue des outils ; `pour_base` accepte la
@@ -242,8 +249,19 @@ vérification par relecture du G-code généré, réception des programmes depui
   porte une **gamme** (`Gamme`), suite ordonnée de `Sequence`, enregistrée dans le `.ctg` (`Piece.gamme`).
   Une séquence dit son type, son poste de tourelle, ses conditions de coupe (`G96` vitesse de coupe, `G92`
   limitation de broche, `G95` avance par tour), ses passes et son étendue en Z ; `active` la met de côté sans
-  la perdre. Trois types pour commencer, ceux des programmes Go2CAM archivés : `DRESSAGE`, `EBAUCHE`
-  paraxiale, `FINITION` de profil.
+  la perdre. **Sept types** : `DRESSAGE`, `EBAUCHE` paraxiale, `FINITION` de profil, puis (ajoutés le
+  25 novembre 2026) `GORGE`, `FILETAGE`, `PERCAGE` et `TRONCONNAGE`.
+  Chaque type n'a pas les mêmes réglages : `CHAMPS_SEQUENCE` dit lesquels comptent et le formulaire ne montre
+  que ceux-là, `LIBELLES_Z` nomme les bornes en Z pour ce qu'elles sont (« Z du bord droit » d'une gorge,
+  « Fond du trou » d'un perçage), `DEFAUTS_SEQUENCE` donne à chaque type ses conditions habituelles à
+  l'ajout. Le **filetage** et le **perçage** tournent à broche fixe (`G97`, `Sequence.vitesse_fixe`) : pas de
+  limitation de broche à régler, et l'avance d'un filetage est son pas. La profondeur d'un filet vaut
+  `PROFONDEUR_FILET` × pas (0,6134, profil ISO métrique extérieur) tant qu'elle n'est pas saisie.
+  Gorge et tronçonnage plongent par `_plongee` (passes de `profondeur_passe` avec débourrage) ; une gorge
+  plus large que l'outil se fait en plusieurs plongées qui se recouvrent d'un cinquième. Le filetage
+  descend à `hauteur × √(i/n)` : section de copeau constante. Le perçage ressort complètement entre deux
+  descentes. Le rayon de départ d'une plongée vient de `_matiere_sur` : le profil dans la pièce, le brut
+  au-delà de ses bouts, ce qui fait qu'un tronçonnage au fond de la pièce attaque bien au diamètre du brut.
   **Le module ne connaît ni Qt ni PlaneGCS** : il reçoit le profil résolu et le montage, et rend des
   trajectoires. `ProfilTourne` (`usinage/profil.py`) est le profil extérieur, tiré du plus grand contour fermé
   ouvert sur l'axe (`profil_exterieur`), parcouru du bout de la pièce vers le mandrin (z décroissant) ;
@@ -259,8 +277,9 @@ vérification par relecture du G-code généré, réception des programmes depui
   **Rien n'est recopié du dessin** : `FenetrePrincipale.profil_usinage()` se vide à chaque résolution et à
   chaque changement de montage, `trajectoire_de` recalcule. C'est la décision de conception prise au départ.
   Volet « Usinage », le plus à gauche de l'atelier : liste ordonnée (ligne, opération, poste, passes, longueur
-  de coupe), boutons d'ajout par type, flèches d'ordre, case d'activation, formulaire de la séquence choisie
-  avec rappel de ce que porte son poste de tourelle. La trajectoire de la séquence choisie se dessine sur
+  de coupe), un bouton d'ajout par type, flèches d'ordre, case d'activation, formulaire de la séquence choisie
+  avec rappel de ce que porte son poste de tourelle. On affecte un poste en tapant son numéro ou en **glissant
+  une ligne de la tourelle sur la séquence**. La trajectoire de la séquence choisie se dessine sur
   l'esquisse (genre « trajectoire », non sélectionnable) : trait plein en coupe, pointillé en rapide, cercle
   au départ.
 

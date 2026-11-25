@@ -3,21 +3,76 @@
 La liste donne l'ordre d'usinage ; le formulaire règle la séquence choisie, dont la trajectoire se
 dessine aussitôt sur l'esquisse. Rien n'est figé : la trajectoire se recalcule depuis le profil résolu
 à chaque changement de cote, de montage ou de réglage.
+
+Chaque type d'opération n'a pas les mêmes réglages : le formulaire ne montre que ceux qui comptent
+(`CHAMPS_SEQUENCE`). On affecte un poste de tourelle en tapant son numéro, ou en y glissant la
+combinaison montée sur un poste, tirée du volet Tourelle.
 """
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QSpinBox, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox, QFormLayout, QGridLayout,
+                               QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..usinage import Gamme, Sequence, TypeSequence
-from ..usinage.sequences import LIBELLES_SEQUENCE, USAGES_SEQUENCE
+from ..usinage.sequences import LIBELLES_SEQUENCE, LIBELLES_Z, USAGES_SEQUENCE
+from .transfert import MIME_POSTE, accueillir
 
 COLONNES = ["#", "Opération", "Poste", "Passes", "Coupe"]
 ROLE_ID = Qt.ItemDataRole.UserRole
+BOUTONS_PAR_RANGEE = 4
+
+
+class ListeSequences(QTreeWidget):
+    """La liste de la gamme. On peut y déposer un poste de tourelle : la séquence visée le prend."""
+
+    depot = Signal(int, int)                 # identifiant de séquence, numéro de poste
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+        self.accepte_depot = lambda sequence_id, poste: False
+
+    def sequence_sous(self, point) -> int:
+        it = self.itemAt(point)
+        return int(it.data(0, ROLE_ID) or 0) if it is not None else 0
+
+    def _survoler(self, event) -> None:
+        # la liste se reconstruit en affectant le poste : on ne touche pas à la sélection pendant le survol
+        sequence_id, _, _ = accueillir(event, self.sequence_sous, self._accepte)
+        if sequence_id:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def _accepte(self, sequence_id: int, type_mime: str, charge: str) -> bool:
+        return type_mime == MIME_POSTE and self.accepte_depot(sequence_id, _numero_poste(charge))
+
+    def dragEnterEvent(self, event) -> None:
+        self._survoler(event)
+
+    def dragMoveEvent(self, event) -> None:
+        self._survoler(event)
+
+    def dropEvent(self, event) -> None:
+        sequence_id, _, charge = accueillir(event, self.sequence_sous, self._accepte)
+        if not sequence_id:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        poste = _numero_poste(charge)
+        QTimer.singleShot(0, lambda: self.depot.emit(sequence_id, poste))
+
+
+def _numero_poste(charge: str) -> int:
+    """Le numéro porté par un glisser de poste : « 7 » ou « 7 PCLNR 2020 K12 + CNMG 120408 »."""
+    tete = (charge or "").strip().split(" ")[0]
+    return int(tete) if tete.isdigit() else 0
 
 
 class ZoneUsinage(QWidget):
@@ -38,28 +93,31 @@ class ZoneUsinage(QWidget):
         v.setContentsMargins(6, 6, 6, 6)
         v.setSpacing(5)
         entete = QLabel("Gamme d'usinage de la pièce : les séquences s'exécutent dans cet ordre. La "
-                        "trajectoire de celle que vous choisissez se dessine sur l'esquisse.")
+                        "trajectoire de celle que vous choisissez se dessine sur l'esquisse ; glissez-y "
+                        "un poste de la tourelle pour l'y affecter.")
         entete.setWordWrap(True)
         v.addWidget(entete)
 
-        ligne = QHBoxLayout()
-        ligne.setSpacing(3)
-        self.boutons_ajout = {}
-        for type_ in TypeSequence:
+        grille = QGridLayout()
+        grille.setSpacing(3)
+        self.boutons_ajout: Dict[TypeSequence, QPushButton] = {}
+        for i, type_ in enumerate(TypeSequence):
             b = QPushButton("+ " + LIBELLES_SEQUENCE[type_].split(" ")[0])
             b.setToolTip(USAGES_SEQUENCE[type_])
             b.clicked.connect(lambda _=False, t=type_: self.ajouter(t))
-            ligne.addWidget(b)
+            grille.addWidget(b, i // BOUTONS_PAR_RANGEE, i % BOUTONS_PAR_RANGEE)
             self.boutons_ajout[type_] = b
-        v.addLayout(ligne)
+        v.addLayout(grille)
 
-        self.liste = QTreeWidget()
+        self.liste = ListeSequences()
         self.liste.setColumnCount(len(COLONNES))
         self.liste.setHeaderLabels(COLONNES)
         self.liste.setRootIsDecorated(False)
         self.liste.setUniformRowHeights(True)
         self.liste.setAlternatingRowColors(True)
         self.liste.setMinimumHeight(120)
+        self.liste.accepte_depot = self.accepte_poste
+        self.liste.depot.connect(self.affecter_poste)
         self.liste.currentItemChanged.connect(self._ligne_choisie)
         self.liste.itemChanged.connect(self._case_changee)
         v.addWidget(self.liste, 1)
@@ -76,21 +134,31 @@ class ZoneUsinage(QWidget):
         v.addLayout(ordre)
 
         self.groupe = QGroupBox("Séquence")
-        f = QFormLayout(self.groupe)
-        f.setContentsMargins(8, 6, 8, 6)
-        f.setSpacing(4)
+        self.formulaire = QFormLayout(self.groupe)
+        self.formulaire.setContentsMargins(8, 6, 8, 6)
+        self.formulaire.setSpacing(4)
         self.nom = QLineEdit()
         self.nom.setPlaceholderText("nom libre, sinon le type suffit")
         self.poste = QSpinBox()
         self.poste.setRange(0, 12)
         self.poste.setSpecialValueText("à choisir")
         self.poste.setPrefix("T ")
+        self.poste.setToolTip("Numéro de poste, ou glissez une ligne du volet Tourelle sur la séquence.")
         self.lbl_outil = QLabel("—")
         self.lbl_outil.setWordWrap(True)
         self.vitesse_coupe = self._nombre(" m/min", 1.0, 1000.0, 0)
         self.vitesse_maxi = self._nombre(" tr/min", 100.0, 10000.0, 0)
         self.avance = self._nombre(" mm/tr", 0.01, 2.0, 3)
         self.arrosage = QCheckBox("Arrosage")
+        self.largeur_outil = self._nombre(" mm", 0.5, 20.0, 2)
+        self.largeur = self._nombre(" mm", 0.0, 200.0, 2)
+        self.largeur.setSpecialValueText("largeur de l'outil")
+        self.diametre_fond = self._nombre(" mm", 0.0, 500.0, 2)
+        self.diametre_fond.setSpecialValueText("jusqu'à l'axe")
+        self.diametre_outil = self._nombre(" mm", 0.5, 100.0, 2)
+        self.pas = self._nombre(" mm", 0.2, 12.0, 2)
+        self.hauteur_filet = self._nombre(" mm", 0.0, 20.0, 3)
+        self.hauteur_filet.setSpecialValueText("profil ISO métrique")
         self.profondeur = self._nombre(" mm", 0.05, 20.0, 2)
         self.surepaisseur = self._nombre(" mm", 0.0, 10.0, 2)
         self.surepaisseur_face = self._nombre(" mm", 0.0, 10.0, 2)
@@ -98,31 +166,46 @@ class ZoneUsinage(QWidget):
         self.degagement = self._nombre(" mm", 0.0, 50.0, 1)
         self.z_debut = self._etendue("du bout de la pièce")
         self.z_fin = self._etendue("jusqu'au fond usinable")
-        f.addRow("Nom", self.nom)
-        f.addRow("Poste de tourelle", self.poste)
-        f.addRow("Outil monté", self.lbl_outil)
-        f.addRow("Vitesse de coupe", self.vitesse_coupe)
-        f.addRow("Broche maximale", self.vitesse_maxi)
-        f.addRow("Avance", self.avance)
-        f.addRow(self.arrosage)
-        f.addRow("Profondeur de passe", self.profondeur)
-        f.addRow("Surépaisseur au rayon", self.surepaisseur)
-        f.addRow("Surépaisseur de face", self.surepaisseur_face)
-        f.addRow("Garde d'approche", self.garde)
-        f.addRow("Dégagement", self.degagement)
-        f.addRow("Z de début", self.z_debut)
-        f.addRow("Z de fin", self.z_fin)
+        # (clé du champ, intitulé) ; la clé est celle de CHAMPS_SEQUENCE, qui dit quand le montrer
+        self.champs: Dict[str, QWidget] = {}
+        for cle, intitule, widget in (
+                ("", "Nom", self.nom),
+                ("", "Poste de tourelle", self.poste),
+                ("", "Outil monté", self.lbl_outil),
+                ("", "Vitesse de coupe", self.vitesse_coupe),
+                ("vitesse_maxi", "Broche maximale", self.vitesse_maxi),
+                ("avance", "Avance", self.avance),
+                ("", "", self.arrosage),
+                ("largeur_outil", "Largeur de l'outil", self.largeur_outil),
+                ("largeur", "Largeur de la gorge", self.largeur),
+                ("diametre_fond", "Ø au fond", self.diametre_fond),
+                ("diametre_outil", "Ø du foret", self.diametre_outil),
+                ("pas", "Pas du filet", self.pas),
+                ("hauteur_filet", "Profondeur du filet", self.hauteur_filet),
+                ("profondeur_passe", "Profondeur de passe", self.profondeur),
+                ("surepaisseur", "Surépaisseur au rayon", self.surepaisseur),
+                ("surepaisseur_face", "Surépaisseur de face", self.surepaisseur_face),
+                ("garde", "Garde d'approche", self.garde),
+                ("degagement", "Dégagement", self.degagement),
+                ("z_debut", "Z de début", self.z_debut),
+                ("z_fin", "Z de fin", self.z_fin)):
+            if intitule:
+                self.formulaire.addRow(intitule, widget)
+            else:
+                self.formulaire.addRow(widget)
+            if cle:
+                self.champs[cle] = widget
         v.addWidget(self.groupe)
 
         self.lbl_etat = QLabel("")
         self.lbl_etat.setWordWrap(True)
         v.addWidget(self.lbl_etat)
 
-        for widget in (self.vitesse_coupe, self.vitesse_maxi, self.avance, self.profondeur,
-                       self.surepaisseur, self.surepaisseur_face, self.garde, self.degagement,
-                       self.z_debut, self.z_fin):
+        for widget in (self.vitesse_coupe, self.vitesse_maxi, self.avance, self.largeur_outil,
+                       self.largeur, self.diametre_fond, self.diametre_outil, self.pas,
+                       self.hauteur_filet, self.profondeur, self.surepaisseur, self.surepaisseur_face,
+                       self.garde, self.degagement, self.z_debut, self.z_fin, self.poste):
             widget.valueChanged.connect(self._reglage_change)
-        self.poste.valueChanged.connect(self._reglage_change)
         self.arrosage.toggled.connect(self._reglage_change)
         self.nom.editingFinished.connect(self._reglage_change)
         self.rafraichir()
@@ -186,6 +269,28 @@ class ZoneUsinage(QWidget):
         it = self.liste.currentItem()
         return self.gamme.sequence(int(it.data(0, ROLE_ID))) if it is not None else None
 
+    # -- dépôt d'un poste de tourelle ------------------------------------------------------
+
+    def accepte_poste(self, sequence_id: int, poste: int) -> bool:
+        """Une séquence de la gamme accepte tout poste existant de la tourelle."""
+        if not poste or self.gamme.sequence(sequence_id) is None:
+            return False
+        if self.tourelle is None:
+            return True
+        return 1 <= poste <= int(getattr(self.tourelle, "nb_postes", 12))
+
+    def affecter_poste(self, sequence_id: int, poste: int) -> bool:
+        """Donne ce poste à la séquence : c'est ce que fait un dépôt venu du volet Tourelle."""
+        if not self.accepte_poste(sequence_id, poste):
+            return False
+        s = self.gamme.sequence(sequence_id)
+        s.poste = poste
+        self._choisir(s.id)
+        self._mettre_a_jour_ligne(s)
+        self._remplir_formulaire()
+        self.gamme_changee.emit()
+        return True
+
     # -- affichage ------------------------------------------------------------------------
 
     def rafraichir(self) -> None:
@@ -218,7 +323,7 @@ class ZoneUsinage(QWidget):
         self.groupe.setEnabled(s is not None)
         if s is None:
             self.groupe.setTitle("Séquence")
-            self.lbl_etat.setText("Aucune séquence : ajoutez un dressage, une ébauche ou une finition.")
+            self.lbl_etat.setText("Aucune séquence : ajoutez une opération avec les boutons du haut.")
             self._blocage = avant
             return
         self.groupe.setTitle(f"{LIBELLES_SEQUENCE[s.type]} — {s.libelle()}")
@@ -228,6 +333,12 @@ class ZoneUsinage(QWidget):
         self.vitesse_maxi.setValue(s.vitesse_maxi)
         self.avance.setValue(s.avance)
         self.arrosage.setChecked(s.arrosage)
+        self.largeur_outil.setValue(s.largeur_outil)
+        self.largeur.setValue(s.largeur)
+        self.diametre_fond.setValue(s.diametre_fond)
+        self.diametre_outil.setValue(s.diametre_outil)
+        self.pas.setValue(s.pas)
+        self.hauteur_filet.setValue(s.hauteur_filet)
         self.profondeur.setValue(s.profondeur_passe)
         self.surepaisseur.setValue(s.surepaisseur)
         self.surepaisseur_face.setValue(s.surepaisseur_face)
@@ -235,14 +346,25 @@ class ZoneUsinage(QWidget):
         self.degagement.setValue(s.degagement)
         self.z_debut.setValue(s.z_debut if s.z_debut is not None else self.z_debut.minimum())
         self.z_fin.setValue(s.z_fin if s.z_fin is not None else self.z_fin.minimum())
-        # une finition ne prend pas de passes ni de surépaisseur : elle suit le profil fini
-        finition = s.type == TypeSequence.FINITION
-        self.profondeur.setEnabled(not finition)
-        self.surepaisseur.setEnabled(not finition)
-        self.surepaisseur_face.setEnabled(s.type == TypeSequence.DRESSAGE)
+        self._adapter_au_type(s)
         self._blocage = avant
         self._dire_l_outil()
         self._dire_l_etat(s)
+
+    def _adapter_au_type(self, s: Sequence) -> None:
+        """Ne montre que les réglages qui comptent pour ce type, et nomme les bornes en Z pour ce qu'elles sont."""
+        attendus = s.champs()
+        for cle, widget in self.champs.items():
+            if cle not in ("vitesse_maxi", "avance"):
+                self.formulaire.setRowVisible(widget, cle in attendus)
+        # la broche est fixe en filetage et en perçage, et un filetage avance de son pas
+        self.formulaire.setRowVisible(self.vitesse_maxi, not s.vitesse_fixe())
+        self.formulaire.setRowVisible(self.avance, s.type != TypeSequence.FILETAGE)
+        debut, fin = LIBELLES_Z.get(s.type, ("Z de début", "Z de fin"))
+        for widget, texte in ((self.z_debut, debut), (self.z_fin, fin)):
+            etiquette = self.formulaire.labelForField(widget)
+            if etiquette is not None and texte:
+                etiquette.setText(texte)
 
     def _dire_l_etat(self, s: Sequence) -> None:
         traj = self._trajectoire(s)
@@ -252,14 +374,14 @@ class ZoneUsinage(QWidget):
         if getattr(traj, "message", ""):
             self.lbl_etat.setText(traj.message)
             return
+        allure = f"pas {s.pas:g} mm" if s.type == TypeSequence.FILETAGE else f"{s.avance:g} mm/tr"
         self.lbl_etat.setText(f"{traj.nb_passes()} passe(s), {traj.longueur_coupe():.0f} mm en coupe à "
-                              f"{s.avance:g} mm/tr. Trait plein : en coupe ; pointillé : en rapide.")
+                              f"{allure}. Trait plein : en coupe ; pointillé : en rapide.")
 
     # -- actions --------------------------------------------------------------------------
 
     def ajouter(self, type_: TypeSequence) -> Sequence:
-        valeurs = {"vitesse_coupe": 250.0, "avance": 0.1} if type_ == TypeSequence.FINITION else {}
-        s = self.gamme.ajouter(type_, **valeurs)
+        s = self.gamme.ajouter(type_)
         self.rafraichir()
         self._choisir(s.id)
         self.gamme_changee.emit()
@@ -318,6 +440,9 @@ class ZoneUsinage(QWidget):
         s.vitesse_coupe, s.vitesse_maxi, s.avance = (self.vitesse_coupe.value(), self.vitesse_maxi.value(),
                                                      self.avance.value())
         s.arrosage = self.arrosage.isChecked()
+        s.largeur_outil, s.largeur = self.largeur_outil.value(), self.largeur.value()
+        s.diametre_fond, s.diametre_outil = self.diametre_fond.value(), self.diametre_outil.value()
+        s.pas, s.hauteur_filet = self.pas.value(), self.hauteur_filet.value()
         s.profondeur_passe, s.surepaisseur = self.profondeur.value(), self.surepaisseur.value()
         s.surepaisseur_face = self.surepaisseur_face.value()
         s.garde, s.degagement = self.garde.value(), self.degagement.value()
@@ -339,5 +464,6 @@ class ZoneUsinage(QWidget):
             it.setText(2, f"T {s.poste}" if s.poste else "—")
             it.setText(3, str(traj.nb_passes()) if traj else "—")
             it.setText(4, f"{traj.longueur_coupe():.0f} mm" if traj else "—")
+            it.setToolTip(0, s.description() + (f"\n\n{traj.message}" if getattr(traj, "message", "") else ""))
             self._blocage = avant
             return

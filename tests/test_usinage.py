@@ -132,6 +132,88 @@ def test_finition_suit_le_profil():
     assert min(q.z for q in court.mouvements if q.travail) == pytest.approx(-40.0)
 
 
+def test_gorge_plongees_cote_a_cote():
+    p = profil_exterieur([ARBRE])
+    m = montage_essai()
+    s = Sequence(id=4, type=TypeSequence.GORGE, largeur_outil=3.0, largeur=8.0, diametre_fond=20.0,
+                 profondeur_passe=2.0, surepaisseur=0.0, garde=2.0, degagement=1.0, z_debut=-10.0)
+    t = trajectoire(s, p, m)
+    assert t and not t.message
+    coupes = [q for q in t.mouvements if q.travail]
+    # la gorge se creuse dans le Ø 50 : du rayon 25 au rayon 10
+    assert max(q.x for q in coupes) < 25.0 and min(q.x for q in coupes) == pytest.approx(10.0)
+    # le coin droit de l'outil balaie du bord droit au bord gauche plus la largeur de l'outil
+    zs = sorted({round(q.z, 6) for q in coupes})
+    assert zs[-1] == pytest.approx(-10.0) and zs[0] == pytest.approx(-15.0)
+    assert all(a - b <= s.largeur_outil * 0.8 + 1e-9 for a, b in zip(zs[1:], zs))   # pas de pont oublié
+    # chaque plongée descend par passes : 25 -> 10 à 2 mm, soit huit entrées en matière par position
+    assert t.nb_passes() == 8 * len(zs)
+    # une gorge sans fond donné, ou plus profonde que la matière, le dit au lieu de couper
+    assert trajectoire(Sequence(id=4, type=TypeSequence.GORGE, z_debut=-10.0), p, m).message
+    s.diametre_fond = 60.0
+    assert not trajectoire(s, p, m) and "déjà au diamètre" in trajectoire(s, p, m).message
+
+
+def test_tronconnage_derriere_la_piece():
+    p = profil_exterieur([ARBRE])
+    m = montage_essai()
+    s = Sequence(id=5, type=TypeSequence.TRONCONNAGE, largeur_outil=3.0, profondeur_passe=5.0,
+                 surepaisseur=0.0, garde=2.0, degagement=1.0)
+    t = trajectoire(s, p, m)
+    assert t and not t.message
+    coupes = [q for q in t.mouvements if q.travail]
+    # sans Z donné, on tronçonne au fond de la pièce, et l'outil mord dans la barre : rayon du brut
+    assert {round(q.z, 6) for q in coupes} == {-80.0}
+    assert max(q.x for q in coupes) < m.rayon_brut() and min(q.x for q in coupes) == 0.0
+    # jusqu'à un diamètre, pour laisser la pièce tenir
+    s.diametre_fond = 10.0
+    assert min(q.x for q in trajectoire(s, p, m).mouvements if q.travail) == pytest.approx(5.0)
+    # dans les mors, on refuse
+    s.z_debut = m.z_face_mors() - 1.0
+    assert not trajectoire(s, p, m) and "mors" in trajectoire(s, p, m).message
+
+
+def test_filetage_passes_de_plus_en_plus_fines():
+    p = profil_exterieur([ARBRE])
+    m = montage_essai()
+    s = Sequence(id=6, type=TypeSequence.FILETAGE, pas=2.0, profondeur_passe=0.3, garde=2.0,
+                 degagement=1.0, z_debut=-35.0, z_fin=-70.0)
+    t = trajectoire(s, p, m)
+    assert t and not t.message
+    # le filet se taille sur le Ø 30 ; sa profondeur suit le profil ISO métrique
+    hauteur = s.profondeur_filet()
+    assert hauteur == pytest.approx(0.6134 * 2.0)
+    fonds = sorted({round(q.x, 6) for q in t.mouvements if q.travail})
+    assert t.nb_passes() == len(fonds) == 5
+    assert fonds[0] == pytest.approx(15.0 - hauteur)       # la dernière passe tombe au fond du filet
+    assert fonds[-1] < 15.0
+    # les passes se resserrent : la première est la plus grosse
+    ecarts = [b - a for a, b in zip(fonds, fonds[1:])]
+    assert all(a <= b + 1e-9 for a, b in zip(ecarts, ecarts[1:]))
+    # chaque passe court sur toute la longueur du filet
+    assert min(q.z for q in t.mouvements if q.travail) == pytest.approx(-70.0)
+    # sans Z de fin ni pas, on le dit
+    assert trajectoire(Sequence(id=6, type=TypeSequence.FILETAGE), p, m).message
+    assert trajectoire(Sequence(id=6, type=TypeSequence.FILETAGE, pas=0.0, z_fin=-70.0), p, m).message
+
+
+def test_percage_dans_l_axe_avec_debourrage():
+    p = profil_exterieur([ARBRE])
+    m = montage_essai()
+    s = Sequence(id=7, type=TypeSequence.PERCAGE, diametre_outil=12.0, profondeur_passe=10.0,
+                 garde=2.0, z_fin=-45.0)
+    t = trajectoire(s, p, m)
+    assert t and not t.message
+    coupes = [q for q in t.mouvements if q.travail]
+    assert all(q.x == 0.0 for q in t.mouvements)                 # tout se passe sur l'axe
+    # du bout du brut (z = 2) au fond du trou, par tranches de 10 mm : cinq descentes
+    assert t.nb_passes() == 5 and min(q.z for q in coupes) == pytest.approx(-45.0)
+    # entre deux descentes, l'outil ressort complètement
+    assert max(q.z for q in t.mouvements) == pytest.approx(m.z_brut_avant() + s.garde)
+    # sans fond donné, on le dit
+    assert trajectoire(Sequence(id=7, type=TypeSequence.PERCAGE), p, m).message
+
+
 def test_gamme_ordonnee_et_enregistree():
     g = Gamme()
     a = g.ajouter(TypeSequence.DRESSAGE, poste=1)

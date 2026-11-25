@@ -1,7 +1,12 @@
-"""Glisser-déposer entre les volets de l'atelier : un porte-plaquette ou une plaquette vers un poste.
+"""Glisser-déposer entre les volets de l'atelier.
 
-Les listes du stock d'outils et des plaquettes sont des sources : tirer une ligne emporte sa désignation.
-Le schéma de la tourelle et le tableau des postes sont des cibles : déposer garnit le poste visé.
+Deux chemins :
+
+* un **porte-plaquette** ou une **plaquette** vers un poste de tourelle. Les listes du stock d'outils et
+  des plaquettes sont les sources ; le schéma de la tourelle et le tableau des postes les accueillent, et
+  déposer garnit le poste visé.
+* un **poste garni** vers une séquence d'usinage. La tourelle est alors la source, et la liste de la gamme
+  la cible : la séquence visée prend ce poste, avec la combinaison qui y est montée.
 """
 from __future__ import annotations
 
@@ -12,7 +17,8 @@ from PySide6.QtWidgets import QAbstractItemView, QTreeWidget
 
 MIME_PORTE_PLAQUETTE = "application/x-ctgraph-porte-plaquette"
 MIME_PLAQUETTE = "application/x-ctgraph-plaquette"
-MIMES = (MIME_PORTE_PLAQUETTE, MIME_PLAQUETTE)
+MIME_POSTE = "application/x-ctgraph-poste"          # un poste de tourelle et ce qui y est monté
+MIMES = (MIME_PORTE_PLAQUETTE, MIME_PLAQUETTE, MIME_POSTE)
 
 
 def charger(type_mime: str, designation: str) -> QMimeData:
@@ -21,6 +27,11 @@ def charger(type_mime: str, designation: str) -> QMimeData:
     m.setData(type_mime, designation.encode("utf-8"))
     m.setText(designation)
     return m
+
+
+def charger_poste(numero: int, libelle: str = "") -> QMimeData:
+    """Le glisser d'un poste de tourelle : son numéro d'abord, ce qui y est monté ensuite."""
+    return charger(MIME_POSTE, f"{int(numero)} {libelle}".strip())
 
 
 def lire(mime: QMimeData) -> Tuple[str, str]:
