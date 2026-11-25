@@ -27,6 +27,11 @@ from typing import Any, Dict, List, Tuple
 NORME = "VDI 30 (DIN 69880)"
 DIAMETRE_QUEUE = 30.0        # queue cylindrique du porte-outil, fixé par la taille VDI 30
 
+
+def nom_poste(numero: int) -> str:
+    """Le nom d'un poste de tourelle : « T1 », « T12 ». C'est ainsi qu'il s'écrit partout, et sur la CN."""
+    return f"T{int(numero)}"
+
 IMPLANTATIONS: Dict[str, str] = {
     "transversal": "Transversal, en périphérie — outil de tournage extérieur, queue carrée",
     "axial": "Axial — barre d'alésage, foret, outil intérieur, queue cylindrique",
@@ -80,6 +85,9 @@ class Poste:
     plaquette: str = ""          # désignation du catalogue `ctgraph.plaquettes`
     correcteur: Correcteur = field(default_factory=Correcteur)
     commentaire: str = ""
+
+    def nom(self) -> str:
+        return nom_poste(self.numero)
 
     def est_garni(self) -> bool:
         return bool(self.porte_plaquette or self.plaquette)
@@ -180,7 +188,8 @@ class Tourelle:
 
     def description(self) -> str:
         return (f"Tourelle {NORME}, {self.nb_postes} postes, queue Ø {self.diametre_queue:g} mm. "
-                f"Poste en travail : {self.poste_en_travail}. {len(self.garnis())} poste(s) garni(s).")
+                f"Poste en travail : {nom_poste(self.poste_en_travail)}. "
+                f"{len(self.garnis())} poste(s) garni(s).")
 
     # -- sérialisation ---------------------------------------------------------------------
 

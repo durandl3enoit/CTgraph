@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox, QFo
                                QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
+from ..tourelle import nom_poste
 from ..usinage import Gamme, Sequence, TypeSequence
 from ..usinage.sequences import LIBELLES_SEQUENCE, LIBELLES_Z, USAGES_SEQUENCE
 from .transfert import MIME_POSTE, accueillir
@@ -70,8 +71,8 @@ class ListeSequences(QTreeWidget):
 
 
 def _numero_poste(charge: str) -> int:
-    """Le numéro porté par un glisser de poste : « 7 » ou « 7 PCLNR 2020 K12 + CNMG 120408 »."""
-    tete = (charge or "").strip().split(" ")[0]
+    """Le numéro porté par un glisser de poste : « T7 » ou « T7 PCLNR 2020 K12 + CNMG 120408 »."""
+    tete = (charge or "").strip().split(" ")[0].lstrip("Tt")
     return int(tete) if tete.isdigit() else 0
 
 
@@ -142,7 +143,7 @@ class ZoneUsinage(QWidget):
         self.poste = QSpinBox()
         self.poste.setRange(0, 12)
         self.poste.setSpecialValueText("à choisir")
-        self.poste.setPrefix("T ")
+        self.poste.setPrefix("T")
         self.poste.setToolTip("Numéro de poste, ou glissez une ligne du volet Tourelle sur la séquence.")
         self.lbl_outil = QLabel("—")
         self.lbl_outil.setWordWrap(True)
@@ -301,8 +302,8 @@ class ZoneUsinage(QWidget):
             traj = self._trajectoire(s)
             passes = str(traj.nb_passes()) if traj else "—"
             coupe = f"{traj.longueur_coupe():.0f} mm" if traj else "—"
-            it = QTreeWidgetItem(self.liste, [str(rang), s.libelle(), f"T {s.poste}" if s.poste else "—",
-                                              passes, coupe])
+            it = QTreeWidgetItem(self.liste, [str(rang), s.libelle(),
+                                              nom_poste(s.poste) if s.poste else "—", passes, coupe])
             it.setData(0, ROLE_ID, s.id)
             it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             it.setCheckState(0, Qt.CheckState.Checked if s.active else Qt.CheckState.Unchecked)
@@ -461,7 +462,7 @@ class ZoneUsinage(QWidget):
                 continue
             avant, self._blocage = self._blocage, True
             it.setText(1, s.libelle())
-            it.setText(2, f"T {s.poste}" if s.poste else "—")
+            it.setText(2, nom_poste(s.poste) if s.poste else "—")
             it.setText(3, str(traj.nb_passes()) if traj else "—")
             it.setText(4, f"{traj.longueur_coupe():.0f} mm" if traj else "—")
             it.setToolTip(0, s.description() + (f"\n\n{traj.message}" if getattr(traj, "message", "") else ""))

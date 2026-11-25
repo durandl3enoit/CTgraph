@@ -1,4 +1,4 @@
-"""Tests de l'interface (plateforme Qt hors écran) : tracé, aimantation, sélection, cotes, glissement, élagage, fichiers.
+﻿"""Tests de l'interface (plateforme Qt hors écran) : tracé, aimantation, sélection, cotes, glissement, élagage, fichiers.
 
 Lancer : .venv\\Scripts\\python -m pytest tests\\test_gui.py
 Une variable CTGRAPH_SHOTS=<dossier> enregistre des captures PNG pour contrôle visuel.
@@ -1330,7 +1330,7 @@ def test_volet_usinage_gamme_et_trajectoires(fenetre, tmp_path):
     zone.profondeur.setValue(4.0)
     zone.poste.setValue(11)
     assert ebauche.profondeur_passe == 4.0 and ebauche.poste == 11
-    assert zone.liste.topLevelItem(0).text(2) == "T 11"
+    assert zone.liste.topLevelItem(0).text(2) == "T11"
     assert zone.lbl_outil.text().startswith(win.zone_tourelle.tourelle.poste(11).libelle())
     assert vue.trajectoire.sequence_id == ebauche.id
 
@@ -1404,17 +1404,17 @@ def test_zone_tourelle(fenetre):
     assert [t.poste(n).implantation for n in (1, 2, 3, 4)] == ["transversal", "axial"] * 2
     assert sum(1 for n in t.postes() if t.poste(n).implantation == "transversal") == 6
     zone.definir_poste(1)
-    assert "Poste en travail : 1" in zone.lbl_etat.text()
+    assert "Poste en travail : T1" in zone.lbl_etat.text()
     # cliquer sur le logement du poste 4 (à 90°, donc à droite) le met en travail
     x, y = t.position_poste(4)
     cible = zone.vue._en_pixels(x, y)
     QTest.mouseClick(zone.vue, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                      QPoint(int(cible.x()), int(cible.y())))
     QTest.qWait(10)
-    assert t.poste_en_travail == 4 and "Poste en travail : 4" in zone.lbl_etat.text()
+    assert t.poste_en_travail == 4 and "Poste en travail : T4" in zone.lbl_etat.text()
     # la liste montre les douze postes, le poste en travail en gras et sélectionné
     assert zone.liste.topLevelItemCount() == 12
-    assert zone.liste.currentItem().text(0) == "4" and zone.liste.currentItem().font(0).bold()
+    assert zone.liste.currentItem().text(0) == "T4" and zone.liste.currentItem().font(0).bold()
     win.actions_volets["tourelle"].setChecked(False)
 
 
@@ -1444,7 +1444,7 @@ def test_garnir_un_poste_et_ses_corrections(fenetre):
     c = poste.correcteur
     assert (c.numero, c.x, c.z, c.orientation) == (1, -12.345, 84.5, 3)
     assert "D1" in c.texte() and "X -12.345" in c.texte() and "C3" in c.texte()
-    ligne = next(zone.liste.topLevelItem(i) for i in range(12) if zone.liste.topLevelItem(i).text(0) == "1")
+    ligne = next(zone.liste.topLevelItem(i) for i in range(12) if zone.liste.topLevelItem(i).text(0) == "T1")
     assert ligne.text(2) == "SCLCR 2020 K09" and ligne.text(3) == "CCMT 09T308" and "D1" in ligne.text(4)
     # un poste axial n'accepte que les queues cylindriques
     zone.definir_poste(2)
@@ -1598,7 +1598,7 @@ def test_glisser_deposer_sur_la_tourelle(fenetre):
 
     # dépôt sur le tableau des postes : la ligne du poste 4, axial
     zone.rafraichir()
-    item = next(zone.liste.topLevelItem(i) for i in range(12) if zone.liste.topLevelItem(i).text(0) == "4")
+    item = next(zone.liste.topLevelItem(i) for i in range(12) if zone.liste.topLevelItem(i).text(0) == "T4")
     rect = zone.liste.visualItemRect(item)
     assert deposer(zone.liste, rect.center(), MIME_PORTE_PLAQUETTE, "S20R-SDUCR 11")
     assert t.poste(4).porte_plaquette == "S20R-SDUCR 11" and t.poste_en_travail == 4
@@ -1643,7 +1643,7 @@ def test_glisser_un_poste_vers_une_sequence(fenetre):
               if liste.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole) == 3)
     assert liste.dragEnabled() and it.flags() & Qt.ItemFlag.ItemIsDragEnabled
     type_mime, charge = lire(liste.model().mimeData([liste.indexFromItem(it)]))
-    assert type_mime == MIME_POSTE and charge == "3 SDJCR 2020 K11 + DCMT 11T308"
+    assert type_mime == MIME_POSTE and charge == "T3 SDJCR 2020 K11 + DCMT 11T308"
 
     def point_de(sequence):
         rect = usinage.liste.visualItemRect(next(

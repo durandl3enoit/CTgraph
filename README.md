@@ -167,8 +167,9 @@ liste donne pour chaque séquence son poste de tourelle, le nombre de passes et 
 Le formulaire règle la séquence choisie et **ne montre que les réglages qui comptent pour son type** : une
 finition n'a ni passes ni surépaisseur, une gorge demande la largeur de l'outil et le diamètre de fond, un
 filetage son pas. Le filetage et le perçage tournent à vitesse de broche fixe : il n'y a pas de limitation de
-broche à régler. Le poste de tourelle se saisit au numéro, ou **en glissant une ligne du volet Tourelle sur
-la séquence** : elle prend ce poste avec la combinaison qui y est montée, rappelée sous le numéro.
+broche à régler. Le poste de tourelle, écrit `T1` à `T12` comme sur la machine, se saisit au numéro, ou
+**en glissant une ligne du volet Tourelle sur la séquence** : elle prend ce poste avec la combinaison qui y
+est montée, rappelée sous le numéro.
 
 La **trajectoire de la séquence choisie se dessine sur l'esquisse** : trait plein pour la coupe, pointillé pour
 les déplacements rapides, un cercle au point de départ. Elle est **recalculée depuis le profil résolu**, jamais
@@ -183,7 +184,8 @@ périmètre) ; aucun programme ne partira à la machine sans relecture.
 ### Tourelle
 
 La tourelle du tour vue de face : un disque à **douze postes VDI 30** (DIN 69880), chacun recevant la queue
-cylindrique de Ø 30 mm d'un porte-outil. Le poste 1 est en haut, la numérotation tourne dans le sens horaire.
+cylindrique de Ø 30 mm d'un porte-outil. Les postes s'écrivent **T1 à T12**, comme sur la commande numérique ;
+T1 est en haut, la numérotation tourne dans le sens horaire.
 Cliquez un poste, dans le dessin ou dans la liste, pour le mettre en travail ; la flèche le désigne.
 
 Un porte-outil VDI se monte soit sur la circonférence de la tourelle, soit sur sa face. Sur le CT200, la

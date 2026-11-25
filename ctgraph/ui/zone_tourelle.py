@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFormLay
 
 from ..outils import CATALOGUE as OUTILS
 from ..plaquettes import CATALOGUE as PLAQUETTES
-from ..tourelle import IMPLANTATIONS, NORME, ORIENTATIONS, Tourelle
+from ..tourelle import IMPLANTATIONS, NORME, ORIENTATIONS, Tourelle, nom_poste
 from .transfert import MIME_PLAQUETTE, MIME_POSTE, accueillir, charger_poste
 
 COLONNES = ["Poste", "Type", "Porte-plaquette", "Plaquette", "Correcteur"]
@@ -116,11 +116,11 @@ class VueTourelle(QWidget):
                 p.setPen(QPen(choix, 2.4, Qt.PenStyle.DashLine))
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawEllipse(c, r_logement + 5.0, r_logement + 5.0)
-            etiquette = self._en_pixels(x - ux * (t.diametre_queue * 0.5 + 11.0 / k),
-                                        y - uy * (t.diametre_queue * 0.5 + 11.0 / k))
+            etiquette = self._en_pixels(x - ux * (t.diametre_queue * 0.5 + 13.0 / k),
+                                        y - uy * (t.diametre_queue * 0.5 + 13.0 / k))
             p.setPen(QPen(couleur))
-            p.drawText(QRectF(etiquette.x() - 13, etiquette.y() - 8, 26, 16),
-                       int(Qt.AlignmentFlag.AlignCenter), str(numero))
+            p.drawText(QRectF(etiquette.x() - 16, etiquette.y() - 8, 32, 16),
+                       int(Qt.AlignmentFlag.AlignCenter), nom_poste(numero))
 
         # flèche extérieure vers le poste en travail
         x, y = t.position_poste(t.poste_en_travail)
@@ -307,7 +307,7 @@ class ZoneTourelle(QWidget):
         self.liste.currentItemChanged.connect(self._ligne_choisie)
         v.addWidget(self.liste)
 
-        self.groupe = QGroupBox("Poste 1")
+        self.groupe = QGroupBox(nom_poste(1))
         f = QFormLayout(self.groupe)
         f.setContentsMargins(8, 6, 8, 6)
         f.setSpacing(4)
@@ -378,11 +378,11 @@ class ZoneTourelle(QWidget):
         self.liste.clear()
         for numero in t.postes():
             poste = t.poste(numero)
-            it = QTreeWidgetItem(self.liste, [str(numero), poste.texte_implantation(),
+            it = QTreeWidgetItem(self.liste, [poste.nom(), poste.texte_implantation(),
                                               poste.porte_plaquette or "—", poste.plaquette or "—",
                                               poste.correcteur.texte()])
             it.setData(0, Qt.ItemDataRole.UserRole, numero)
-            it.setToolTip(0, f"Poste {numero} : {poste.libelle()}\n{IMPLANTATIONS[poste.implantation]}")
+            it.setToolTip(0, f"{poste.nom()} : {poste.libelle()}\n{IMPLANTATIONS[poste.implantation]}")
             if numero == t.poste_en_travail:
                 police = it.font(0)
                 police.setBold(True)
@@ -396,13 +396,14 @@ class ZoneTourelle(QWidget):
         self.vue.update()
         garnis = len(t.garnis())
         self.lbl_etat.setText(f"{garnis} poste(s) garni(s) sur {t.nb_postes}. Poste en travail : "
-                              f"{t.poste_en_travail}. Diamètre du disque et rayon d'implantation à relever.")
+                              f"{nom_poste(t.poste_en_travail)}. Diamètre du disque et rayon "
+                              "d'implantation à relever.")
 
     def _remplir_formulaire(self) -> None:
         avant, self._blocage = self._blocage, True
         t = self.tourelle
         poste = t.poste(t.poste_en_travail)
-        self.groupe.setTitle(f"Poste {poste.numero} — {poste.libelle()}")
+        self.groupe.setTitle(f"{poste.nom()} — {poste.libelle()}")
         self.implantation.setCurrentIndex(max(0, self.implantation.findData(poste.implantation)))
         for combo, courant, choix in ((self.porte_plaquette, poste.porte_plaquette,
                                        self._outils_compatibles(poste.implantation)),

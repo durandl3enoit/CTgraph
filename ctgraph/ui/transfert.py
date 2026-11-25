@@ -15,6 +15,8 @@ from typing import Callable, Tuple
 from PySide6.QtCore import QMimeData, Qt
 from PySide6.QtWidgets import QAbstractItemView, QTreeWidget
 
+from ..tourelle import nom_poste
+
 MIME_PORTE_PLAQUETTE = "application/x-ctgraph-porte-plaquette"
 MIME_PLAQUETTE = "application/x-ctgraph-plaquette"
 MIME_POSTE = "application/x-ctgraph-poste"          # un poste de tourelle et ce qui y est monté
@@ -30,8 +32,8 @@ def charger(type_mime: str, designation: str) -> QMimeData:
 
 
 def charger_poste(numero: int, libelle: str = "") -> QMimeData:
-    """Le glisser d'un poste de tourelle : son numéro d'abord, ce qui y est monté ensuite."""
-    return charger(MIME_POSTE, f"{int(numero)} {libelle}".strip())
+    """Le glisser d'un poste de tourelle : son nom d'abord (« T7 »), ce qui y est monté ensuite."""
+    return charger(MIME_POSTE, f"{nom_poste(numero)} {libelle}".strip())
 
 
 def lire(mime: QMimeData) -> Tuple[str, str]:

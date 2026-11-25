@@ -1,4 +1,4 @@
-"""Tests de la tourelle : répartition des douze postes VDI 30, désignation du poste en travail."""
+﻿"""Tests de la tourelle : répartition des douze postes VDI 30, désignation du poste en travail."""
 from __future__ import annotations
 
 import math
@@ -27,7 +27,7 @@ def test_poste_en_travail():
     t = Tourelle()
     assert t.poste_en_travail == 1
     t.definir_poste(5)
-    assert t.poste_en_travail == 5 and "Poste en travail : 5" in t.description()
+    assert t.poste_en_travail == 5 and "Poste en travail : T5" in t.description()
     for mauvais in (0, 13, -1):
         with pytest.raises(ValueError):
             t.definir_poste(mauvais)

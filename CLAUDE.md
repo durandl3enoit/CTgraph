@@ -197,6 +197,9 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Tourelle** (`ctgraph/tourelle.py`, `ui/zone_tourelle.py`) : douze postes **VDI 30** (DIN 69880), queue
   Ø 30 mm fixée par la norme (c'est elle qui borne `outils.QUEUE_MAXI` à 20 mm). Poste 1 en haut,
   numérotation horaire vue de face ; clic sur un logement ou sur sa ligne pour le mettre en travail.
+  **Un poste s'écrit « T1 », « T12 »** (`tourelle.nom_poste`, `Poste.nom`), comme sur la commande numérique :
+  partout, sur le disque, dans le tableau, dans le formulaire, dans la gamme et dans le glisser-déposer.
+  Un seul endroit décide de cette écriture (décidé le 25 novembre 2026).
   **Implantation** (`IMPLANTATIONS`, relevé le 24 novembre 2026) : un porte-outil VDI se monte sur la
   circonférence de la tourelle ou sur sa face. Sur le CT200, la moitié des outils sont montés
   *transversalement en périphérie* (tournage extérieur, queue carrée), l'autre moitié est *axiale* (barres,

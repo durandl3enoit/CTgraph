@@ -26,6 +26,8 @@ from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from ..tourelle import nom_poste
+
 # profondeur du filet au rayon, en part du pas, pour un filetage ISO métrique extérieur (H1 = 0,6134 × P)
 PROFONDEUR_FILET = 0.6134
 
@@ -152,7 +154,7 @@ class Sequence:
 
     def description(self) -> str:
         bouts = [USAGES_SEQUENCE[self.type],
-                 f"Poste {self.poste}" if self.poste else "Poste à choisir"]
+                 f"Poste {nom_poste(self.poste)}" if self.poste else "Poste à choisir"]
         broche = "broche fixe (G97)" if self.vitesse_fixe() else f"maxi {self.vitesse_maxi:g} tr/min"
         avance = f"pas {self.pas:g} mm" if self.type == TypeSequence.FILETAGE \
             else f"avance {self.avance:g} mm/tr"

@@ -1,4 +1,4 @@
-"""Tests de l'usinage : profil extérieur tiré des contours, et trajectoires des trois séquences."""
+﻿"""Tests de l'usinage : profil extérieur tiré des contours, et trajectoires des trois séquences."""
 from __future__ import annotations
 
 import pytest
@@ -221,7 +221,7 @@ def test_gamme_ordonnee_et_enregistree():
     c = g.ajouter(TypeSequence.FINITION, poste=5, nom="Finition Ø 30")
     assert [s.id for s in g] == [a.id, b.id, c.id] and len(g) == 3
     assert c.libelle() == "Finition Ø 30" and a.libelle() == "Dressage de face"
-    assert "Poste 11" in b.description()
+    assert "Poste T11" in b.description()
     # l'ordre se change, et on ne sort pas des bornes
     assert g.deplacer(c.id, -1) and [s.id for s in g] == [a.id, c.id, b.id]
     assert not g.deplacer(a.id, -1) and not g.deplacer(b.id, 1)
