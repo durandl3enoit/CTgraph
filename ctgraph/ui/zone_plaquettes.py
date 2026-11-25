@@ -15,8 +15,10 @@ from PySide6.QtWidgets import (QCheckBox, QHBoxLayout, QLabel, QLineEdit, QSizeP
                                QVBoxLayout, QWidget)
 
 from ..icons import icone_plaquette
-from ..plaquettes import CATALOGUE, FAMILLES, FORMES_PLAQUETTE, Plaquette, filtrer, sommets_forme
+from ..plaquettes import (CATALOGUE, FAMILLES, FORMES_PLAQUETTE, Plaquette, coin_actif, filtrer, rayon_inscrit,
+                          sommets_forme)
 from .transfert import MIME_PLAQUETTE, ArbreGlissable
+from .volet_lateral import HAUTEUR_DESSIN
 
 COLONNES = ["Désignation", "Dépouille", "Arête", "Épaisseur", "Rayon"]
 ROLE_DESIGNATION = Qt.ItemDataRole.UserRole
@@ -55,7 +57,7 @@ class DessinPlaquette(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.plaquette: Optional[Plaquette] = None
-        self.setMinimumHeight(185)
+        self.setFixedHeight(HAUTEUR_DESSIN)      # même hauteur que le dessin du porte-plaquette : les deux s'alignent
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def legende(self) -> List[str]:
@@ -143,7 +145,7 @@ class DessinPlaquette(QWidget):
             k = demi * 2.0 / max(pl.arete, 0.1)
             p.drawPath(_contour_arrondi([(-demi, -haut), (demi, -haut), (demi, haut), (-demi, haut)],
                                         min(pl.rayon_bec * k, demi * 0.6)))
-            bec = (demi, -haut)
+            bec = (-demi, -haut)        # le bec qui travaille est au bout de la barrette
             p.setPen(QPen(cote, 1.1))
             self._coter_horizontal(p, -demi, demi, -haut - 12, f"largeur {pl.texte_arete}")
         elif pl.forme == "R":
@@ -156,31 +158,37 @@ class DessinPlaquette(QWidget):
             if not sommets:
                 p.restore()
                 return
-            mm_par_unite = pl.cercle_inscrit / 2.0 / max(_rayon_inscrit(sommets), 1e-6)
+            mm_par_unite = pl.cercle_inscrit / 2.0 / max(rayon_inscrit(pl.forme), 1e-6)
             rayon_bec_dessin = pl.rayon_bec / max(mm_par_unite, 1e-6) * rayon_dessin
             points = [(z * rayon_dessin, x * rayon_dessin) for z, x in sommets]
             p.drawPath(_contour_arrondi(points, rayon_bec_dessin))
-            r_inscrit = _rayon_inscrit(sommets) * rayon_dessin
+            r_inscrit = rayon_inscrit(pl.forme) * rayon_dessin
             p.setPen(QPen(muet, 1.0, Qt.PenStyle.DashDotLine))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QPointF(0, 0), r_inscrit, r_inscrit)
             # le cercle inscrit porte sa valeur en son centre, l'arête la sienne le long d'un côté
             p.setPen(QPen(muet))
             p.drawText(QRectF(-40, -7, 80, 14), int(Qt.AlignmentFlag.AlignCenter), f"IC {pl.texte_cercle}")
-            bec = max(points, key=lambda q: q[1])
-            a, b = min(points, key=lambda q: q[0]), min(points, key=lambda q: q[1])
+            # le bec est le coin qui travaille : le plus aigu, pas n'importe lequel
+            i = coin_actif(points)
+            bec = points[i]
+            a, b = points[i], points[(i + 1) % len(points)]
             p.setPen(QPen(cote, 1.2))
             milieu = QPointF((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
             p.drawLine(QPointF(*a), QPointF(*b))
-            p.drawText(QRectF(milieu.x() - 56, milieu.y() - 16, 52, 14),
-                       int(Qt.AlignmentFlag.AlignRight), f"l {pl.texte_arete}")
+            cote_gauche = milieu.x() <= 0
+            p.drawText(QRectF(milieu.x() - (56 if cote_gauche else -4), milieu.y() - 16, 52, 14),
+                       int(Qt.AlignmentFlag.AlignRight if cote_gauche else Qt.AlignmentFlag.AlignLeft),
+                       f"l {pl.texte_arete}")
 
         if bec is not None:
             # le bec, entouré : à cette échelle le rayon est minuscule, on le montre et on l'écrit
             p.setPen(QPen(cote, 1.6))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QPointF(*bec), 6.0, 6.0)
-            p.drawText(QRectF(bec[0] + 7, bec[1] - 2, 60, 14), int(Qt.AlignmentFlag.AlignLeft),
+            a_gauche = bec[0] <= 0
+            p.drawText(QRectF(bec[0] - (66 if a_gauche else -8), bec[1] - 7, 58, 14),
+                       int(Qt.AlignmentFlag.AlignRight if a_gauche else Qt.AlignmentFlag.AlignLeft),
                        f"r {pl.texte_rayon}")
         p.restore()
 
@@ -224,18 +232,6 @@ class DessinPlaquette(QWidget):
             p.drawLine(QPointF(q.x() - 3, q.y()), QPointF(q.x() + 3, q.y()))
         p.drawText(QRectF(a.x() - 72, (a.y() + b.y()) / 2 - 7, 68, 14),
                    int(Qt.AlignmentFlag.AlignRight), texte)
-
-
-def _rayon_inscrit(sommets) -> float:
-    """Rayon du cercle inscrit d'un contour centré sur l'origine : la plus courte distance du centre à
-    une arête (produit vectoriel des deux sommets, divisé par la longueur de l'arête)."""
-    n = len(sommets)
-    court = float("inf")
-    for i in range(n):
-        a, b = sommets[i], sommets[(i + 1) % n]
-        lg = max(math.hypot(b[0] - a[0], b[1] - a[1]), 1e-9)
-        court = min(court, abs(a[0] * b[1] - a[1] * b[0]) / lg)
-    return court if court < float("inf") else 1.0
 
 
 class ZonePlaquettes(QWidget):

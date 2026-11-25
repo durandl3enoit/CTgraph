@@ -10,6 +10,8 @@ from PySide6.QtGui import QBrush, QColor, QPainter, QPalette, QPen, QPolygonF
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
 
 LARGEUR_BANDEAU = 24
+# hauteur commune des dessins cotés au bas des volets catalogue : les deux zones s'alignent
+HAUTEUR_DESSIN = 190
 _SANS_LIMITE = 16777215
 
 

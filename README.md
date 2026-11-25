@@ -189,11 +189,17 @@ Le catalogue dit ce qu'il est **possible** de monter. Cochez la case d'une ligne
 possède : les coches sont mémorisées, et le filtre *En stock* n'affiche plus qu'elles. Le champ de filtre
 cherche dans la désignation, la plaquette, la queue, la main et l'usage.
 
-Choisissez une ligne : le porte-plaquette est **dessiné coté** en dessous, vu de dessus avec sa queue, sa
-plaquette au bout et son angle d'attaque, et en coupe de queue. Les valeurs sont portées sur les éléments :
-`l1` la longueur hors tout, `h × b` la queue carrée ou `d` son diamètre, `κr` l'angle d'attaque, et pour une
-barre l'alésage minimal où elle passe, tracé en cercle pointillé. La cote `f`, du flanc de la queue à la
-pointe, dépend du modèle : elle n'est pas donnée tant qu'elle n'est pas relevée.
+Choisissez une ligne : le porte-plaquette est **dessiné coté** en dessous, vu de dessus et en coupe de queue,
+à la même hauteur que le dessin des plaquettes pour que les deux volets s'alignent. La plaquette est à sa
+place dans la tête, son coin actif sur la pointe de l'outil et une de ses arêtes le long de l'arête
+principale ; la tête épouse la plaquette, qui déborde du profil de la queue sur un outil à 45°, comme en
+vrai. **Un outil à droite et un outil à gauche sont dessinés en miroir** : pointe à gauche et avance vers la
+gauche pour l'un, l'inverse pour l'autre, la main étant rappelée sous le dessin.
+
+Les valeurs sont portées sur les éléments : `l1` la longueur hors tout, `h × b` la queue carrée ou `d` son
+diamètre, `κr` l'angle d'attaque sur son arc, et pour une barre l'alésage minimal où elle passe, tracé en
+cercle pointillé. La cote `f`, du flanc de la queue à la pointe, dépend du modèle : elle n'est pas donnée
+tant qu'elle n'est pas relevée.
 
 ### Plaquettes
 
@@ -205,7 +211,8 @@ Les colonnes donnent la dépouille, la longueur d'arête, l'épaisseur et le ray
 Choisissez une ligne : la plaquette est **dessinée cotée** en dessous, de face avec son contour, ses becs
 arrondis et son cercle inscrit, de profil avec son épaisseur et son angle de dépouille. Chaque élément porte
 sa valeur, celle de la plaquette choisie : `l 12,9` sur l'arête, `IC 12,7` dans le cercle inscrit, `r 0,8`
-au bec entouré, `s 4,76` sur l'épaisseur, `α 0°` sur l'angle de dépouille. Une plaquette ronde est cotée par
+au bec entouré, `s 4,76` sur l'épaisseur, `α 0°` sur l'angle de dépouille. Le bec repéré est **le coin qui
+travaille**, le plus aigu : sur un losange, c'est l'un des deux coins aigus, jamais un obtus. Une plaquette ronde est cotée par
 son diamètre, une barrette de gorge par sa largeur de coupe. La lecture d'un code ISO 1832 est détaillée en
 tête de `ctgraph/plaquettes.py`.
 

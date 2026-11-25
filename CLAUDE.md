@@ -222,6 +222,14 @@ vérification par relecture du G-code généré, réception des programmes depui
   d'attaque, coupe de queue, valeurs portées « l1 125 », « h × b 20 × 20 » ou « d Ø 16 », « κr 95° », et
   l'alésage minimal d'une barre en cercle pointillé. La cote `f` (flanc de queue à la pointe) dépend du
   modèle : à relever, pas inventée. Nombres à la française (`nombre`, virgule décimale).
+  Les deux dessins ont la même hauteur (`volet_lateral.HAUTEUR_DESSIN`) : les volets s'alignent.
+  **Le bec coté est le coin qui travaille** : `plaquettes.coin_actif` rend le sommet d'angle le plus aigu
+  (le plus à gauche à égalité), jamais un coin obtus de losange. Le dessin du porte-plaquette s'en sert
+  aussi pour asseoir la plaquette : coin actif sur la pointe, une arête le long de l'arête principale, le
+  corps tourné vers la queue ; le contour de l'outil est l'enveloppe convexe de la queue et de la plaquette,
+  si bien qu'un outil à 45° montre sa tête taillée autour d'une plaquette qui déborde. **Droite et gauche
+  sont dessinés en miroir** (pointe à gauche ou à droite, sens d'avance rappelé) : c'est ce qui les
+  distingue au premier coup d'œil.
 
 ## Points ouverts
 

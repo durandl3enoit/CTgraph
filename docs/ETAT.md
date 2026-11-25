@@ -79,7 +79,7 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   et le correcteur à appliquer (numéro, X, Z, rayon de bec, orientation). Garniture mémorisée avec les
   préférences. **Glisser-déposer** d'un outil ou d'une plaquette depuis les volets voisins, sur le schéma
   comme sur le tableau des postes, avec refus de ce que l'implantation ne tient pas. Point 1 du périmètre
-  bien engagé ; restent les porte-outils VDI eux-mêmes et la fiche de réglage.
+  bien engagé ; restent les porte-outils VDI eux-mêmes et la fiche de réglage. 135 tests.
 
 ## En cours
 

@@ -98,6 +98,45 @@ def sommets_forme(forme: str, rayon: float = 1.0) -> List[Tuple[float, float]]:
     return []
 
 
+def rayon_inscrit(forme: str, rayon: float = 1.0) -> float:
+    """Rayon du cercle inscrit d'une forme donnée dans un cercle de `rayon` : la plus courte distance du
+    centre à une arête. Pour une forme sans contour polygonal, le rayon lui-même."""
+    sommets = sommets_forme(forme, rayon)
+    if not sommets:
+        return rayon
+    court = float("inf")
+    for i in range(len(sommets)):
+        a, b = sommets[i], sommets[(i + 1) % len(sommets)]
+        lg = max(math.hypot(b[0] - a[0], b[1] - a[1]), 1e-9)
+        court = min(court, abs(a[0] * b[1] - a[1] * b[0]) / lg)
+    return court if court < float("inf") else rayon
+
+
+def angle_interieur(sommets, i: int) -> float:
+    """Angle au sommet `i` du contour, en degrés, non orienté (un creux de trigon donne son supplément)."""
+    n = len(sommets)
+    v, a, b = sommets[i], sommets[(i - 1) % n], sommets[(i + 1) % n]
+    ua = (a[0] - v[0], a[1] - v[1])
+    ub = (b[0] - v[0], b[1] - v[1])
+    na, nb = max(math.hypot(*ua), 1e-9), max(math.hypot(*ub), 1e-9)
+    cos = max(-1.0, min(1.0, (ua[0] * ub[0] + ua[1] * ub[1]) / (na * nb)))
+    return math.degrees(math.acos(cos))
+
+
+def coin_actif(sommets) -> int:
+    """Le coin qui travaille : celui dont l'angle est le plus aigu, c'est lui qui porte le rayon de bec.
+
+    Une plaquette en losange a deux coins aigus et deux obtus : seuls les aigus coupent. À égalité (carré,
+    triangle, trigon), on retient le plus à gauche, puis le plus haut, pour que le dessin soit stable.
+    """
+    if not sommets:
+        return -1
+    angles = [angle_interieur(sommets, i) for i in range(len(sommets))]
+    plus_aigu = min(angles)
+    candidats = [i for i, a in enumerate(angles) if a <= plus_aigu + 1e-6]
+    return min(candidats, key=lambda i: (round(sommets[i][0], 6), round(sommets[i][1], 6)))
+
+
 @dataclass(frozen=True)
 class Plaquette:
     """Une taille de plaquette. `arete` est la longueur d'arête, ou la largeur pour une plaquette de gorge."""

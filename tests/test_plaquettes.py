@@ -75,6 +75,41 @@ def test_formes_geometriques():
     assert sorted(round(abs(z), 6) for z, _ in sommets_forme("S")) == [pytest.approx(0.70710678, abs=1e-6)] * 4
 
 
+def test_coin_actif_est_le_plus_aigu():
+    """Le rayon de bec se porte sur le coin qui coupe : le plus aigu, jamais l'obtus d'un losange."""
+    from ctgraph.plaquettes import angle_interieur, coin_actif
+    for forme, attendu in (("C", 80.0), ("D", 55.0), ("V", 35.0)):
+        s = sommets_forme(forme)
+        i = coin_actif(s)
+        assert angle_interieur(s, i) == pytest.approx(attendu, abs=1e-6)
+        assert s[i][0] < 0 and abs(s[i][1]) < 1e-9        # le coin aigu de gauche : la pointe de l'outil
+        # les deux autres coins du losange sont obtus : ce ne sont pas eux
+        obtus = [j for j in range(4) if angle_interieur(s, j) > attendu + 1]
+        assert len(obtus) == 2 and i not in obtus
+    # formes à coins égaux : le plus à gauche, puis le plus haut, pour que le dessin soit stable
+    for forme in ("S", "T"):
+        s = sommets_forme(forme)
+        i = coin_actif(s)
+        assert s[i][0] == pytest.approx(min(q[0] for q in s))
+    # trigon : une pointe, jamais un creux
+    s = sommets_forme("W")
+    i = coin_actif(s)
+    assert math.hypot(*s[i]) == pytest.approx(1.0, abs=1e-6)
+    assert angle_interieur(s, i) < 90.0
+    assert coin_actif([]) == -1
+
+
+def test_rayon_inscrit():
+    from ctgraph.plaquettes import rayon_inscrit
+    # un carré de rayon circonscrit 1 a un cercle inscrit de rayon cos(45°)
+    assert rayon_inscrit("S") == pytest.approx(math.cos(math.radians(45)), abs=1e-6)
+    assert rayon_inscrit("T") == pytest.approx(0.5, abs=1e-6)        # triangle équilatéral
+    assert rayon_inscrit("C", 2.0) == pytest.approx(2 * rayon_inscrit("C"), abs=1e-9)
+    assert rayon_inscrit("R", 3.0) == 3.0                            # pas de contour : le rayon lui-même
+    # le cercle inscrit est toujours plus petit que le cercle circonscrit
+    assert all(0 < rayon_inscrit(f) < 1.0 for f in ("C", "D", "V", "W", "T", "S"))
+
+
 def test_filtrage():
     assert len(filtrer("")) == len(CATALOGUE)
     assert all(pl.forme == "C" for pl in filtrer("losange 80"))
