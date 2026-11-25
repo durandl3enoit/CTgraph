@@ -185,8 +185,11 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Atelier : trois volets repliables latéralement** (`ui/zone_atelier.py`, demandé le 24 novembre 2026), un
   seul `QDockWidget` sans barre de titre ancré à droite (visibilité `atelier.visible`, touche `O`), contenant
   de gauche à droite **Tourelle**, **Stock d'outils**, **Plaquettes**. Chacun est un `VoletLateral`
-  (`ui/volet_lateral.py`) : bandeau vertical cliquable, titre tourné, chevron ; replié, le volet est borné à
-  `LARGEUR_BANDEAU`. Bandeau du côté extérieur (à gauche pour les deux premiers, à droite pour le dernier).
+  (`ui/volet_lateral.py`) : bandeau vertical cliquable de `LARGEUR_BANDEAU`, **présenté pareil pour les
+  trois** (titre en haut lu de haut en bas, chevron vers la droite quand c'est replié, vers la gauche quand
+  c'est déployé) ; replié, le volet est borné à la largeur du bandeau. Bandeau du côté extérieur (à gauche
+  pour les deux premiers, à droite pour le dernier). Un ressort en fin de rangée garde les bandeaux collés
+  quand les trois volets sont repliés.
   État mémorisé dans `volet.<clé>`, déplié par défaut pour le seul stock d'outils ; le menu Affichage a une
   entrée par volet. Les tests d'interface masquent l'atelier : il rétrécit la vue d'esquisse et fausserait
   les clics simulés.
@@ -225,11 +228,12 @@ vérification par relecture du G-code généré, réception des programmes depui
   Les deux dessins ont la même hauteur (`volet_lateral.HAUTEUR_DESSIN`) : les volets s'alignent.
   **Le bec coté est le coin qui travaille** : `plaquettes.coin_actif` rend le sommet d'angle le plus aigu
   (le plus à gauche à égalité), jamais un coin obtus de losange. Le dessin du porte-plaquette s'en sert
-  aussi pour asseoir la plaquette : coin actif sur la pointe, une arête le long de l'arête principale, le
-  corps tourné vers la queue ; le contour de l'outil est l'enveloppe convexe de la queue et de la plaquette,
-  si bien qu'un outil à 45° montre sa tête taillée autour d'une plaquette qui déborde. **Droite et gauche
-  sont dessinés en miroir** (pointe à gauche ou à droite, sens d'avance rappelé) : c'est ce qui les
-  distingue au premier coup d'œil.
+  aussi pour asseoir la plaquette : coin actif en avant, une arête le long de l'arête principale, le corps
+  tourné vers la queue. **Convention de dessin fixée par l'utilisateur le 25 novembre 2026** : l'outil est
+  couché à l'horizontale, **la queue est toujours un rectangle** (jamais une enveloppe épousant la
+  plaquette), la plaquette est au bout gauche dans les deux cas et déborde largement ; c'est sa hauteur qui
+  donne la main, **en bas pour un outil à droite, en haut pour un outil à gauche**. Ne pas inverser : la
+  main est écrite sous le dessin pour qu'une erreur se voie.
 
 ## Points ouverts
 

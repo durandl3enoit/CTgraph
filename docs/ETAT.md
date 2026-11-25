@@ -73,8 +73,9 @@ Mis à jour le 24 novembre 2026 (quatrième séance, poste de la semaine).
   Dans les deux catalogues, l'élément choisi est dessiné coté en dessous, chaque élément géométrique portant
   sa valeur : pour une plaquette l'arête, le cercle inscrit, le rayon de bec, l'épaisseur et la dépouille ;
   pour un porte-plaquette la longueur, la queue, l'angle d'attaque et l'alésage minimal d'une barre.
-  Les deux dessins ont la même hauteur et s'alignent ; le bec coté est le coin qui travaille, et les outils
-  à droite et à gauche sont dessinés en miroir. Seul le stock d'outils est déplié au premier lancement.
+  Les deux dessins ont la même hauteur et s'alignent ; le bec coté est le coin qui travaille. L'outil est
+  couché, queue rectangulaire, plaquette au bout gauche, en bas pour un outil à droite et en haut pour un
+  outil à gauche. Seul le stock d'outils est déplié au premier lancement.
 - **Tourelle garnie** : douze postes VDI 30 vus de face, implantation transversale en périphérie ou axiale
   (alternées, réglables poste par poste), liste des postes avec le porte-plaquette et la plaquette montés,
   et le correcteur à appliquer (numéro, X, Z, rayon de bec, orientation). Garniture mémorisée avec les

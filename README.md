@@ -138,7 +138,9 @@ s'approche d'une référence s'y accroche et reçoit la relation d'office.
 
 Zone ancrée à droite (*Affichage → Atelier*, touche `O`), faite de **trois volets repliables latéralement**,
 de gauche à droite : **Tourelle**, **Stock d'outils**, **Plaquettes**. Chaque volet se replie sur son bandeau
-vertical, d'un clic sur le bandeau ou par le menu *Affichage* ; l'état de chacun est mémorisé. Au premier
+vertical, d'un clic sur le bandeau ou par le menu *Affichage* ; l'état de chacun est mémorisé. Les trois
+bandeaux sont présentés de la même façon : le titre en haut, lu de haut en bas, et un chevron qui pointe
+vers la droite quand le volet est replié, vers la gauche quand il est déployé. Au premier
 lancement, seul le stock d'outils est déplié : cliquez les bandeaux « Tourelle » et « Plaquettes » pour
 ouvrir les deux autres.
 
@@ -190,11 +192,15 @@ possède : les coches sont mémorisées, et le filtre *En stock* n'affiche plus 
 cherche dans la désignation, la plaquette, la queue, la main et l'usage.
 
 Choisissez une ligne : le porte-plaquette est **dessiné coté** en dessous, vu de dessus et en coupe de queue,
-à la même hauteur que le dessin des plaquettes pour que les deux volets s'alignent. La plaquette est à sa
-place dans la tête, son coin actif sur la pointe de l'outil et une de ses arêtes le long de l'arête
-principale ; la tête épouse la plaquette, qui déborde du profil de la queue sur un outil à 45°, comme en
-vrai. **Un outil à droite et un outil à gauche sont dessinés en miroir** : pointe à gauche et avance vers la
-gauche pour l'un, l'inverse pour l'autre, la main étant rappelée sous le dessin.
+à la même hauteur que le dessin des plaquettes pour que les deux volets s'alignent. L'outil est couché à
+l'horizontale et **sa queue est toujours un rectangle**. La plaquette est au bout gauche, son coin actif en
+avant et une de ses arêtes le long de l'arête principale ; elle déborde largement de la queue. C'est sa
+position en hauteur qui dit la main :
+
+* **outil à droite** : plaquette en bas à gauche, débordant vers le bas et vers la gauche ;
+* **outil à gauche** : plaquette en haut à gauche, débordant vers le haut et vers la gauche.
+
+La main est rappelée sous le dessin, pour qu'il n'y ait pas de doute.
 
 Les valeurs sont portées sur les éléments : `l1` la longueur hors tout, `h × b` la queue carrée ou `d` son
 diamètre, `κr` l'angle d'attaque sur son arc, et pour une barre l'alésage minimal où elle passe, tracé en

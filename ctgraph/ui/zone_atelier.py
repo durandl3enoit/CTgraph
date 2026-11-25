@@ -42,7 +42,9 @@ class ZoneAtelier(QDockWidget):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
         for volet in self.volets.values():
-            h.addWidget(volet)
+            h.addWidget(volet, 1)
+        # quand les trois volets sont repliés, la place qui reste va ici : les bandeaux restent collés
+        h.addStretch(0)
         self.setWidget(contenu)
 
     def largeur_souhaitee(self) -> int:

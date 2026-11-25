@@ -9,14 +9,18 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPalette, QPen, QPolygonF
 from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
 
-LARGEUR_BANDEAU = 24
+LARGEUR_BANDEAU = 32
 # hauteur commune des dessins cotés au bas des volets catalogue : les deux zones s'alignent
 HAUTEUR_DESSIN = 190
 _SANS_LIMITE = 16777215
 
 
 class _Bandeau(QWidget):
-    """Le bandeau vertical : le titre tourné à 90° et un chevron qui montre où va le contenu."""
+    """Le bandeau vertical : un chevron en haut, puis le titre tourné, lu de haut en bas.
+
+    Même présentation pour les trois volets, quel que soit le côté : le chevron pointe vers la droite
+    quand le volet est replié, vers la gauche quand il est déployé.
+    """
 
     clique = Signal()
 
@@ -30,7 +34,7 @@ class _Bandeau(QWidget):
         self._majuscules = titre.upper()
 
     def minimumSizeHint(self) -> QSize:
-        return QSize(LARGEUR_BANDEAU, self.fontMetrics().horizontalAdvance(self._majuscules) + 44)
+        return QSize(LARGEUR_BANDEAU, self.fontMetrics().horizontalAdvance(self._majuscules) + 48)
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
@@ -42,23 +46,20 @@ class _Bandeau(QWidget):
         p.setPen(QPen(QColor(encre.red(), encre.green(), encre.blue(), 60), 1))
         p.drawLine(self.width() - 1, 0, self.width() - 1, self.height())
 
-        # chevron : vers le bandeau quand le volet est déployé (cliquer replie), vers le contenu sinon
-        vers_contenu = not self.volet.est_deploye()
-        if self.volet.bandeau_a_gauche:
-            sens = 1.0 if vers_contenu else -1.0
-        else:
-            sens = -1.0 if vers_contenu else 1.0
-        cx, cy = self.width() / 2.0, 13.0
+        # chevron : vers la droite quand le volet est replié, vers la gauche quand il est déployé
+        sens = -1.0 if self.volet.est_deploye() else 1.0
+        cx, cy = self.width() / 2.0, 14.0
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(encre))
-        p.drawPolygon(QPolygonF([QPointF(cx - 3.0 * sens, cy - 4.5), QPointF(cx + 3.0 * sens, cy),
-                                 QPointF(cx - 3.0 * sens, cy + 4.5)]))
+        p.drawPolygon(QPolygonF([QPointF(cx - 3.5 * sens, cy - 5.0), QPointF(cx + 3.5 * sens, cy),
+                                 QPointF(cx - 3.5 * sens, cy + 5.0)]))
 
+        # titre écrit en haut, lu de haut en bas
         p.save()
-        p.translate(self.width() / 2.0, self.height() - 10.0)
-        p.rotate(-90.0)
+        p.translate(self.width() / 2.0, 28.0)
+        p.rotate(90.0)
         p.setPen(QPen(encre))
-        p.drawText(QRectF(0.0, -8.0, max(self.height() - 34.0, 10.0), 16.0),
+        p.drawText(QRectF(0.0, -8.0, max(self.height() - 36.0, 10.0), 16.0),
                    int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), self._majuscules)
         p.restore()
         p.end()
@@ -108,9 +109,11 @@ class VoletLateral(QWidget):
         if self._deploye:
             self.setMinimumWidth(LARGEUR_BANDEAU + max(self.contenu.minimumWidth(), 120))
             self.setMaximumWidth(_SANS_LIMITE)
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         else:
             self.setMinimumWidth(LARGEUR_BANDEAU)
             self.setMaximumWidth(LARGEUR_BANDEAU)
+            self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         self.bandeau.update()
 
     def basculer(self) -> None:
