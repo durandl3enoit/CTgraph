@@ -252,6 +252,8 @@ class VueEsquisse(QGraphicsView):
         self.vue3d = None                 # incrustation 3D en haut à droite, posée par la fenêtre
         self.montage = None               # mandrin, brut, contre-pointe : dessinés en arrière-plan du profil
         self.montage_visible = True
+        # trajectoire de la séquence d'usinage choisie, dessinée par-dessus le profil
+        self.trajectoire = None
         # édition des cotes du mors : elles s'affichent et se règlent, tout le reste est grisé et inerte
         self.mode_mors = False
         self._items_mors: List[QGraphicsItem] = []
@@ -523,6 +525,8 @@ class VueEsquisse(QGraphicsView):
                 et.moveBy(self.px_en_mm(22) * (n % 3), self.px_en_mm(16) * (n // 3))
                 self._enregistrer(et, "relation", r.id)
 
+        self._dessiner_trajectoire(c)
+
         if self.mode_mors:
             # édition des cotes du mors : tout le reste s'efface à demi
             vifs = {id(it) for it in self._items_mors}
@@ -531,6 +535,42 @@ class VueEsquisse(QGraphicsView):
                     it.setOpacity(0.28)
         self._placer_bandeau_mors()
         self._dessiner_apercu()
+
+    def _dessiner_trajectoire(self, c: Dict[str, QColor]) -> None:
+        """Le chemin de la séquence choisie : trait plein en coupe, pointillé en rapide, flèches de sens."""
+        traj = self.trajectoire
+        if traj is None or len(traj) < 2:
+            return
+        coupe = QColor(225, 90, 60)
+        rapide = QColor(coupe.red(), coupe.green(), coupe.blue(), 120)
+        chemin_coupe, chemin_rapide = QPainterPath(), QPainterPath()
+        for a, b in zip(traj.mouvements, traj.mouvements[1:]):
+            cible = chemin_coupe if b.travail else chemin_rapide
+            cible.moveTo(a.z, a.x)
+            cible.lineTo(b.z, b.x)
+        for chemin, couleur, tirets in ((chemin_rapide, rapide, Qt.PenStyle.DashLine),
+                                        (chemin_coupe, coupe, Qt.PenStyle.SolidLine)):
+            it = QGraphicsPathItem(chemin)
+            stylo = QPen(couleur, 2.0 if tirets == Qt.PenStyle.SolidLine else 1.0, tirets)
+            stylo.setCosmetic(True)
+            it.setPen(stylo)
+            it.setZValue(12)
+            it.setData(ROLE_GENRE, "trajectoire")
+            it.setData(ROLE_ID, traj.sequence_id)
+            self._scene.addItem(it)
+            self._items.append(it)
+        # le point de départ, pour savoir par où l'outil arrive
+        depart = traj.mouvements[0]
+        marque = QGraphicsEllipseItem(-4, -4, 8, 8)
+        marque.setPos(depart.z, depart.x)
+        marque.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        marque.setPen(QPen(coupe, 1.4))
+        marque.setBrush(QBrush(c["fond"]))
+        marque.setZValue(12)
+        marque.setData(ROLE_GENRE, "trajectoire")
+        marque.setData(ROLE_ID, traj.sequence_id)
+        self._scene.addItem(marque)
+        self._items.append(marque)
 
     def _dessiner_montage(self, c: Dict[str, QColor]) -> None:
         """Brut en pointillés, mors hachurés, face du mandrin, contre-pointe : au-dessus de l'axe, en retrait."""
@@ -898,6 +938,10 @@ class VueEsquisse(QGraphicsView):
         if poly and poly[0] != poly[-1]:
             poly.append(poly[0])
         return poly
+
+    def polylignes_contours(self) -> List[List[Tuple[float, float]]]:
+        """Les contours fermés en polylignes (z, x) : la source de la vue 3D et du profil d'usinage."""
+        return [self._polyligne_contour(ch) for ch in self.contours_fermes()]
 
     def _chemin_contour(self, chaine: List[Tuple[int, bool]]) -> QPainterPath:
         path = QPainterPath()
@@ -1389,7 +1433,7 @@ class VueEsquisse(QGraphicsView):
         if not candidats:
             return None
         ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "reference_mors": 7, "mors": 8,
-                 "reference": 9}
+                 "reference": 9, "trajectoire": 10}
         candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
         return candidats[0]
 
@@ -1584,8 +1628,8 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
-        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference"):
-            return                              # montage : pas de sélection, double-clic ou clic droit
+        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference", "trajectoire"):
+            return                              # montage et usinage : pas de sélection
         if genre == "point":
             self._glisse_point = ident          # sélection ou glissement : tranché au relâchement
             self._glisse_actif = False

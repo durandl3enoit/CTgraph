@@ -26,6 +26,7 @@ from ..icons import icone_action, icone_outil, icone_relation
 from ..log import get as get_log
 from ..montage import Montage, Piece
 from ..settings import Settings
+from ..usinage import Gamme, Sequence, Trajectoire, profil_exterieur, trajectoire
 from .dialogue_montage import DialogueMontage
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
 from ..tourelle import Tourelle
@@ -53,6 +54,8 @@ class FenetrePrincipale(QMainWindow):
 
         self.esquisse = Esquisse()
         self.montage = self._montage_par_defaut()
+        self.gamme = Gamme()
+        self._profil_usinage = None          # profil tourné, recalculé après chaque résolution
         self._synchroniser_references()
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.resultat = Resultat(True, "ok", 0)
@@ -214,8 +217,9 @@ class FenetrePrincipale(QMainWindow):
         disposition.addWidget(self.vue, 1)
         self.setCentralWidget(central)
 
-        # Atelier : tourelle, stock d'outils et plaquettes, en volets repliables ancrés à droite
+        # Atelier : usinage, tourelle, stock d'outils et plaquettes, en volets repliables ancrés à droite
         self.zone_atelier = ZoneAtelier(self)
+        self.zone_usinage = self.zone_atelier.usinage
         self.zone_tourelle = self.zone_atelier.tourelle
         self.zone_outils = self.zone_atelier.outils
         self.zone_plaquettes = self.zone_atelier.plaquettes
@@ -235,6 +239,12 @@ class FenetrePrincipale(QMainWindow):
                 pass
         self.zone_tourelle.tourelle_changee.connect(
             lambda t: self.reglages.set("tourelle", json.dumps(t.to_dict(), ensure_ascii=False)))
+        # la gamme appartient à la pièce ; la garniture de la tourelle dit ce que porte chaque poste
+        self.zone_tourelle.tourelle_changee.connect(self.zone_usinage.definir_tourelle)
+        self.zone_usinage.definir_tourelle(self.zone_tourelle.tourelle)
+        self.zone_usinage.definir_gamme(self.gamme, self.trajectoire_de)
+        self.zone_usinage.gamme_changee.connect(self._gamme_changee)
+        self.zone_usinage.sequence_choisie.connect(self._sequence_choisie)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.zone_atelier)
         self.resizeDocks([self.zone_atelier], [self.zone_atelier.largeur_souhaitee()], Qt.Orientation.Horizontal)
         self.zone_atelier.setVisible(self.reglages.get_bool("atelier.visible", True))
@@ -534,6 +544,8 @@ class FenetrePrincipale(QMainWindow):
     def _appliquer_resultat(self, res: Resultat) -> None:
         self.resultat = res
         self.vue.definir_resultat(res)
+        # le profil a bougé : les trajectoires se recalculent avant que la vue ne se redessine
+        self._rafraichir_usinage(False)
         self.vue.reconstruire()
         texte = res.texte()
         if res.sur_contraint:
@@ -631,7 +643,8 @@ class FenetrePrincipale(QMainWindow):
                 or any(c.reference for c in self.esquisse.cotes.values()):
             self._appliquer_resultat(self._resoudre_apres_construction())
         else:
-            self.vue.reconstruire()
+            # le brut et la face des mors entrent dans les trajectoires : elles se recalculent aussi
+            self._rafraichir_usinage()
         self._pousser_montage_3d()
 
     def editer_valeur_montage(self, cle: str) -> None:
@@ -668,6 +681,42 @@ class FenetrePrincipale(QMainWindow):
 
     def ajuster_brut(self, cle: str, sens: int, fin: bool) -> Optional[str]:
         return self.ajuster_valeur_montage(cle, sens, fin)
+
+    # -- usinage : la gamme de la pièce et ses trajectoires ------------------------------------
+
+    def profil_usinage(self):
+        """Le profil tourné de la pièce, tiré des contours fermés résolus.
+
+        Il est recalculé après chaque résolution, jamais recopié : c'est la règle posée pour les
+        séquences d'usinage, qui référencent le profil et ne gardent rien du dessin.
+        """
+        if self._profil_usinage is None:
+            self._profil_usinage = profil_exterieur(self.vue.polylignes_contours())
+        return self._profil_usinage
+
+    def trajectoire_de(self, sequence: Sequence) -> Trajectoire:
+        """La trajectoire d'une séquence, calculée depuis le profil résolu et le montage courant."""
+        return trajectoire(sequence, self.profil_usinage(), self.montage)
+
+    def _rafraichir_usinage(self, redessiner: bool = True) -> None:
+        """Après une résolution ou un changement de montage : profil, passes et trajectoire montrée."""
+        self._profil_usinage = None
+        self.zone_usinage.rafraichir()
+        self._pousser_trajectoire(redessiner)
+
+    def _pousser_trajectoire(self, redessiner: bool = True) -> None:
+        """Dessine sur l'esquisse la trajectoire de la séquence choisie, rien si aucune n'est choisie."""
+        sequence = self.zone_usinage.sequence_courante()
+        self.vue.trajectoire = self.trajectoire_de(sequence) if sequence is not None else None
+        if redessiner:
+            self.vue.reconstruire()
+
+    def _gamme_changee(self) -> None:
+        self._marquer_modifie(True)
+        self._pousser_trajectoire()
+
+    def _sequence_choisie(self, _ident: int) -> None:
+        self._pousser_trajectoire()
 
     # -- cotes du mors : édition en place, le reste grisé jusqu'à validation ----------------------
 
@@ -1158,10 +1207,14 @@ class FenetrePrincipale(QMainWindow):
         piece = Piece.from_json(texte)
         self.esquisse = piece.esquisse
         self.montage = piece.montage
+        self.gamme = piece.gamme
         self._synchroniser_references()
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.vue.montage = self.montage
         self.vue.definir_esquisse(self.esquisse)
+        self.vue.trajectoire = None
+        self._profil_usinage = None
+        self.zone_usinage.definir_gamme(self.gamme, self.trajectoire_de)
         self._pousser_montage_3d()
 
     def annuler(self) -> None:
@@ -1255,7 +1308,7 @@ class FenetrePrincipale(QMainWindow):
         try:
             tmp = chemin + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
-                f.write(Piece(self.esquisse, self.montage).to_json())
+                f.write(Piece(self.esquisse, self.montage, self.gamme).to_json())
             os.replace(tmp, chemin)
         except OSError as exc:
             QMessageBox.warning(self, APP_NAME, f"Enregistrement impossible :\n{chemin}\n\n{exc}")

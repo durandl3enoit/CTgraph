@@ -29,6 +29,7 @@ from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Dict, List, Tuple
 
 from .esquisse.modele import ErreurEsquisse, Esquisse, Reference
+from .usinage.sequences import Gamme
 
 FORMAT_PIECE = "ctgraph-piece"
 VERSION_PIECE = 1
@@ -466,13 +467,15 @@ class Montage:
 
 @dataclass
 class Piece:
-    """Le document enregistré : l'esquisse et son montage."""
+    """Le document enregistré : l'esquisse, son montage et sa gamme d'usinage."""
     esquisse: Esquisse = field(default_factory=Esquisse)
     montage: Montage = field(default_factory=Montage)
+    gamme: "Gamme" = field(default_factory=lambda: Gamme())
 
     def to_dict(self) -> dict:
         return {"format": FORMAT_PIECE, "version": VERSION_PIECE,
-                "esquisse": self.esquisse.to_dict(), "montage": self.montage.to_dict()}
+                "esquisse": self.esquisse.to_dict(), "montage": self.montage.to_dict(),
+                "gamme": self.gamme.to_dict()}
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=1)
@@ -484,7 +487,8 @@ class Piece:
         if d.get("format") == FORMAT_PIECE:
             if int(d.get("version", 0)) > VERSION_PIECE:
                 raise ErreurEsquisse("pièce enregistrée par une version plus récente de CTgraph")
-            return cls(Esquisse.from_dict(d.get("esquisse") or {}), Montage.from_dict(d.get("montage")))
+            return cls(Esquisse.from_dict(d.get("esquisse") or {}), Montage.from_dict(d.get("montage")),
+                       Gamme.from_dict(d.get("gamme")))
         # ancien format : l'esquisse seule
         return cls(Esquisse.from_dict(d), Montage())
 

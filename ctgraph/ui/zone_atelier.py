@@ -1,8 +1,8 @@
-"""Zone « Atelier » : trois volets repliables latéralement, côte à côte à droite de l'esquisse.
+"""Zone « Atelier » : des volets repliables latéralement, côte à côte à droite de l'esquisse.
 
-De gauche à droite : la **tourelle** du tour vue de face, le **stock d'outils** (porte-plaquettes montables
-en VDI 30) et les **plaquettes** qui les garnissent. Chaque volet se replie sur son bandeau vertical : on
-déplie celui dont on a besoin, les autres rendent la place au dessin.
+De gauche à droite : l'**usinage** (la gamme de la pièce), la **tourelle** du tour vue de face, le **stock
+d'outils** (porte-plaquettes montables en VDI 30) et les **plaquettes** qui les garnissent. Chaque volet se
+replie sur son bandeau vertical : on déplie celui dont on a besoin, les autres rendent la place au dessin.
 """
 from __future__ import annotations
 
@@ -15,10 +15,11 @@ from .volet_lateral import VoletLateral
 from .zone_outils import ZoneOutils
 from .zone_plaquettes import ZonePlaquettes
 from .zone_tourelle import ZoneTourelle
+from .zone_usinage import ZoneUsinage
 
 
 class ZoneAtelier(QDockWidget):
-    """Le conteneur des trois volets. Pas de barre de titre : les bandeaux des volets en tiennent lieu."""
+    """Le conteneur des volets. Pas de barre de titre : les bandeaux des volets en tiennent lieu."""
 
     def __init__(self, parent=None):
         super().__init__("Atelier", parent)
@@ -27,11 +28,13 @@ class ZoneAtelier(QDockWidget):
         self.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
         self.setTitleBarWidget(QWidget(self))     # les bandeaux verticaux remplacent la barre de titre
 
+        self.usinage = ZoneUsinage()
         self.tourelle = ZoneTourelle()
         self.outils = ZoneOutils()
         self.plaquettes = ZonePlaquettes()
 
         self.volets: Dict[str, VoletLateral] = {
+            "usinage": VoletLateral("Usinage", self.usinage, False, bandeau_a_gauche=True),
             "tourelle": VoletLateral("Tourelle", self.tourelle, False, bandeau_a_gauche=True),
             "outils": VoletLateral("Stock d'outils", self.outils, True, bandeau_a_gauche=True),
             "plaquettes": VoletLateral("Plaquettes", self.plaquettes, False, bandeau_a_gauche=False),

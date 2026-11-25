@@ -3,8 +3,8 @@
 Logiciel de FAO pour le tour **Cazeneuve CT200** à commande numérique **NUM 750 T** (deux axes, X et Z).
 Il ira du dessin de la pièce jusqu'à l'envoi du programme ISO à la machine.
 
-État actuel : **module d'esquisse paramétrique** (version 0.1). Les autres modules (bibliothèque d'outils,
-vue 3D, séquences d'usinage, post-processeur, liaison RS232) viendront ensuite. Voir `docs/ETAT.md`.
+État actuel : **esquisse paramétrique, montage, bibliothèque d'outils et premières séquences d'usinage**
+(version 0.1). Le post-processeur NUM 750 T et la liaison RS232 viendront ensuite. Voir `docs/ETAT.md`.
 
 ## L'esquisse
 
@@ -134,15 +134,38 @@ référence » (le point ou la face y reste, et suit le montage quand il change)
 l'écart signé depuis ce plan, lu « mors 15 » ou « mandrin 190 ». Avec l'aimantation *Axe Z*, un tracé qui
 s'approche d'une référence s'y accroche et reçoit la relation d'office.
 
-## L'atelier : tourelle, stock d'outils, plaquettes
+## L'atelier : usinage, tourelle, stock d'outils, plaquettes
 
-Zone ancrée à droite (*Affichage → Atelier*, touche `O`), faite de **trois volets repliables latéralement**,
-de gauche à droite : **Tourelle**, **Stock d'outils**, **Plaquettes**. Chaque volet se replie sur son bandeau
-vertical, d'un clic sur le bandeau ou par le menu *Affichage* ; l'état de chacun est mémorisé. Les trois
+Zone ancrée à droite (*Affichage → Atelier*, touche `O`), faite de **volets repliables latéralement**,
+de gauche à droite : **Usinage**, **Tourelle**, **Stock d'outils**, **Plaquettes**. Chaque volet se replie sur
+son bandeau vertical, d'un clic sur le bandeau ou par le menu *Affichage* ; l'état de chacun est mémorisé. Les
 bandeaux sont présentés de la même façon : le titre en haut, lu de haut en bas, et un chevron qui pointe
 vers la droite quand le volet est replié, vers la gauche quand il est déployé. Au premier
-lancement, seul le stock d'outils est déplié : cliquez les bandeaux « Tourelle » et « Plaquettes » pour
-ouvrir les deux autres.
+lancement, seul le stock d'outils est déplié : cliquez les autres bandeaux pour les ouvrir.
+
+### Usinage
+
+La **gamme** de la pièce : la suite ordonnée des séquences à exécuter. Trois types pour commencer, ceux que
+montrent les programmes qui ont tourné sur la machine : **dressage de face** (passes de la matière vers l'axe,
+du bout du brut jusqu'à la face finie), **ébauche de chariotage** (passes parallèles à l'axe, du diamètre du
+brut jusqu'au profil augmenté de la surépaisseur de finition ; une passe plus profonde que l'épaulement qui la
+précède n'entre en matière qu'après lui) et **finition de profil** (un passage qui suit le profil fini).
+
+Les boutons du haut ajoutent une séquence ; les flèches changent l'ordre d'usinage ; la case de chaque ligne
+l'active ou la met de côté sans la perdre. La liste donne pour chaque séquence son poste de tourelle, le nombre
+de passes et la longueur à couper. Le formulaire règle la séquence choisie : poste (avec un rappel de ce qui y
+est monté sur la tourelle), vitesse de coupe, limitation de broche, avance, arrosage, profondeur de passe,
+surépaisseurs laissées au rayon et sur la face, garde d'approche, dégagement, et l'étendue en Z à usiner.
+
+La **trajectoire de la séquence choisie se dessine sur l'esquisse** : trait plein pour la coupe, pointillé pour
+les déplacements rapides, un cercle au point de départ. Elle est **recalculée depuis le profil résolu**, jamais
+recopiée : changer une cote, un diamètre de brut ou la prise de pièce la refait aussitôt. Le chemin est celui
+de la pointe théorique de l'outil ; la correction de rayon de bec sera posée par la commande numérique. Une
+séquence ne descend jamais dans les mors, et la finition ne redescend pas la face arrière jusqu'à l'axe : la
+pièce y tient encore à la barre, c'est au tronçonnage de la détacher.
+
+La gamme est enregistrée avec la pièce dans le fichier `.ctg`. Le G-code viendra ensuite (point 5 du
+périmètre) ; aucun programme ne partira à la machine sans relecture.
 
 ### Tourelle
 
@@ -258,9 +281,13 @@ ctgraph/
   outils.py                catalogue des porte-plaquettes montables en VDI 30 (ISO 5608 et ISO 6261)
   plaquettes.py            formes, géométrie et catalogue des plaquettes (ISO 1832)
   tourelle.py              tourelle VDI 30 à douze postes : répartition, poste en travail
+  usinage/profil.py        le profil tourné tiré des contours fermés : rayon, tranches usinables
+  usinage/sequences.py     la gamme et ses séquences : type, poste, conditions de coupe, passes
+  usinage/trajectoires.py  les chemins d'outil, recalculés depuis le profil et le montage
   ui/vue_esquisse.py       QGraphicsView : tracé, aimantation, sélection, élagage, dessin des cotes et des symboles
-  ui/zone_atelier.py       les trois volets repliables ancrés à droite
+  ui/zone_atelier.py       les volets repliables ancrés à droite
   ui/volet_lateral.py      volet repliable latéralement : bandeau vertical cliquable
+  ui/zone_usinage.py       volet « Usinage » : la gamme, ses réglages, le résumé des passes
   ui/zone_tourelle.py      tourelle vue de face, postes garnis, corrections ; cible du glisser-déposer
   ui/transfert.py          glisser-déposer d'un outil ou d'une plaquette vers un poste
   ui/zone_outils.py        volet « Stock d'outils » : catalogue filtrable, cases « en stock »

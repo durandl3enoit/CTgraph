@@ -238,6 +238,32 @@ vérification par relecture du G-code généré, réception des programmes depui
   `κr` se calcule du sens d'avance jusqu'à l'arête **réellement tracée**, par le plus court chemin : il se
   pose ainsi toujours du bon côté. La cote de longueur va à l'opposé de la plaquette.
 
+- **Séquences d'usinage** (`ctgraph/usinage/`, `ui/zone_usinage.py`, demandé le 25 novembre 2026) : la pièce
+  porte une **gamme** (`Gamme`), suite ordonnée de `Sequence`, enregistrée dans le `.ctg` (`Piece.gamme`).
+  Une séquence dit son type, son poste de tourelle, ses conditions de coupe (`G96` vitesse de coupe, `G92`
+  limitation de broche, `G95` avance par tour), ses passes et son étendue en Z ; `active` la met de côté sans
+  la perdre. Trois types pour commencer, ceux des programmes Go2CAM archivés : `DRESSAGE`, `EBAUCHE`
+  paraxiale, `FINITION` de profil.
+  **Le module ne connaît ni Qt ni PlaneGCS** : il reçoit le profil résolu et le montage, et rend des
+  trajectoires. `ProfilTourne` (`usinage/profil.py`) est le profil extérieur, tiré du plus grand contour fermé
+  ouvert sur l'axe (`profil_exterieur`), parcouru du bout de la pièce vers le mandrin (z décroissant) ;
+  `rayon(z)`, `z_matiere(rayon)`, `intervalles_sous(rayon, …)` (les tranches où une passe paraxiale a le droit
+  de couper : un épaulement plus gros devant interdit de partir du bout), `rayon_mini` (jusqu'où l'ébauche
+  descend) et `entre(z1, z2)` (le profil rogné sur une tranche).
+  `Trajectoire` est une suite de `Mouvement(z, x, travail)` : exactement ce que le post-processeur traduira en
+  `G0` et `G1`. Le chemin est celui de la **pointe théorique** : la correction de rayon de bec est laissée à la
+  CN (`G41`/`G42`), comme dans les programmes archivés. Une séquence ne descend jamais dans les mors
+  (`_bornes` borne à `montage.z_face_mors()`), et **la finition ne redescend pas la face arrière jusqu'à
+  l'axe** : la pièce y tient encore à la barre, c'est au tronçonnage de la détacher ; la face avant, elle, se
+  finit depuis l'axe.
+  **Rien n'est recopié du dessin** : `FenetrePrincipale.profil_usinage()` se vide à chaque résolution et à
+  chaque changement de montage, `trajectoire_de` recalcule. C'est la décision de conception prise au départ.
+  Volet « Usinage », le plus à gauche de l'atelier : liste ordonnée (ligne, opération, poste, passes, longueur
+  de coupe), boutons d'ajout par type, flèches d'ordre, case d'activation, formulaire de la séquence choisie
+  avec rappel de ce que porte son poste de tourelle. La trajectoire de la séquence choisie se dessine sur
+  l'esquisse (genre « trajectoire », non sélectionnable) : trait plein en coupe, pointillé en rapide, cercle
+  au départ.
+
 ## Points ouverts
 
 - Post-processeur : cycles NUM (G64, G33…) ou trajectoires explicites en G1/G2/G3. Les programmes Go2CAM

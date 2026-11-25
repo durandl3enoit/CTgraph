@@ -1270,8 +1270,9 @@ def test_volets_de_l_atelier(fenetre):
     win = fenetre
     win.act_zone_atelier.setChecked(True)
     volets = win.zone_atelier.volets
-    assert list(volets) == ["tourelle", "outils", "plaquettes"]       # tourelle à gauche, plaquettes à droite
-    assert volets["tourelle"].bandeau_a_gauche and not volets["plaquettes"].bandeau_a_gauche
+    # usinage et tourelle à gauche, plaquettes à droite
+    assert list(volets) == ["usinage", "tourelle", "outils", "plaquettes"]
+    assert volets["usinage"].bandeau_a_gauche and not volets["plaquettes"].bandeau_a_gauche
     # replier un volet le réduit à son bandeau et cache son contenu ; déplier le rend
     outils = volets["outils"]
     outils.definir_deploye(True)
@@ -1294,6 +1295,73 @@ def test_volets_de_l_atelier(fenetre):
     assert not volets["tourelle"].est_deploye()
     for cle in volets:
         win.actions_volets[cle].setChecked(cle == "outils")
+
+
+def test_volet_usinage_gamme_et_trajectoires(fenetre, tmp_path):
+    from ctgraph.montage import Montage
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE
+    from ctgraph.usinage import TypeSequence
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())              # pas le montage laissé par un autre test
+    rectangle(win, 40.0, 20.0)
+    zone = win.zone_usinage
+    # le profil d'usinage se tire des contours fermés résolus, jamais d'une copie du dessin
+    assert win.profil_usinage().rayon_maxi == pytest.approx(20.0, abs=0.5)   # tracé à la souris
+    assert len(zone.gamme) == 0 and zone.sequence_courante() is None
+    assert vue.trajectoire is None and "Aucune séquence" in zone.lbl_etat.text()
+
+    # une ébauche ajoutée se choisit d'elle-même, et sa trajectoire se dessine aussitôt
+    ebauche = zone.ajouter(TypeSequence.EBAUCHE)
+    assert zone.sequence_courante() is ebauche and win._modifie
+    assert vue.trajectoire is not None and vue.trajectoire.sequence_id == ebauche.id
+    assert any(it.data(ROLE_GENRE) == "trajectoire" for it in vue._items)
+    # du brut Ø 60 au Ø 40 plus la surépaisseur, par passes de 2 mm au rayon
+    passes = win.trajectoire_de(ebauche).nb_passes()
+    assert passes == 5 and zone.liste.topLevelItem(0).text(3) == "5"
+    assert "5 passe(s)" in zone.lbl_etat.text()
+
+    # changer une cote du brut recalcule les trajectoires : rien n'est figé
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (80.0, True)
+    win.editer_brut("diametre")
+    assert win.trajectoire_de(ebauche).nb_passes() > passes
+    assert int(zone.liste.topLevelItem(0).text(3)) == win.trajectoire_de(ebauche).nb_passes()
+
+    # le formulaire règle la séquence choisie, et la vue suit
+    zone.profondeur.setValue(4.0)
+    zone.poste.setValue(11)
+    assert ebauche.profondeur_passe == 4.0 and ebauche.poste == 11
+    assert zone.liste.topLevelItem(0).text(2) == "T 11"
+    assert zone.lbl_outil.text().startswith(win.zone_tourelle.tourelle.poste(11).libelle())
+    assert vue.trajectoire.sequence_id == ebauche.id
+
+    # une finition ne prend ni passes ni surépaisseur : elle suit le profil fini
+    finition = zone.ajouter(TypeSequence.FINITION)
+    assert not zone.profondeur.isEnabled() and not zone.surepaisseur.isEnabled()
+    assert win.trajectoire_de(finition).nb_passes() == 1
+    assert [s.id for s in win.gamme] == [ebauche.id, finition.id]
+
+    # l'ordre d'usinage se change, et la case décoche une séquence sans la retirer de la gamme
+    assert zone.deplacer(-1) and [s.id for s in win.gamme] == [finition.id, ebauche.id]
+    zone.liste.topLevelItem(0).setCheckState(0, Qt.CheckState.Unchecked)
+    assert not finition.active and len(win.gamme.actives()) == 1
+
+    # la gamme fait partie de la pièce enregistrée
+    chemin = tmp_path / "gamme.ctg"
+    assert win._ecrire(str(chemin))
+    win.nouveau()
+    assert len(win.gamme) == 0 and vue.trajectoire is None
+    assert win.ouvrir_fichier(str(chemin))
+    assert [s.type for s in win.gamme] == [TypeSequence.FINITION, TypeSequence.EBAUCHE]
+    assert win.zone_usinage.liste.topLevelItemCount() == 2
+    assert not win.gamme.sequences[0].active and win.gamme.sequences[1].poste == 11
+
+    # choisir une ligne montre sa trajectoire ; la supprimer la retire du dessin
+    win.zone_usinage.liste.setCurrentItem(win.zone_usinage.liste.topLevelItem(1))
+    assert vue.trajectoire.sequence_id == win.gamme.sequences[1].id
+    win.zone_usinage.supprimer()
+    win.zone_usinage.supprimer()
+    assert len(win.gamme) == 0 and vue.trajectoire is None
+    assert not any(it.data(ROLE_GENRE) == "trajectoire" for it in vue._items)
 
 
 def test_zone_tourelle(fenetre):
