@@ -31,6 +31,13 @@ vérification par relecture du G-code généré, réception des programmes depui
   que l'esquisse interne, sans rien changer au reste du logiciel.
 - **Les séquences d'usinage référencent le profil résolu**, elles n'en gardent pas de copie.
   Modifier une cote recalcule les trajectoires et le G-code.
+- **Le profil extérieur d'une pièce percée** (`usinage/profil.py`, corrigé le 26 novembre 2026) : un
+  contour fermé qui **ne touche jamais l'axe** est un anneau — la pièce est percée de part en part. Son
+  profil extérieur n'est pas l'anneau entier : `_bord_exterieur` le coupe au sommet le plus haut de
+  chacune de ses deux faces de bout et garde la chaîne de plus grand rayon moyen. Sans cela la finition
+  descendait dans l'alésage et rabotait toute la pièce. Couper plutôt sur « ce sommet porte-t-il le plus
+  grand rayon de son abscisse » casserait la chaîne à chaque épaulement : le coin bas d'une face
+  d'épaulement est sous l'enveloppe et appartient pourtant au bord extérieur.
 - **Pile technique (validée le 23 novembre 2026)** : Python 3.12 et PySide6, comme DXFgraph et PDFgraph.
   Solveur par le paquet PyPI `planegcs` (roue binaire Windows, LGPL 2.1+, liaison dynamique : la condition
   de la LGPL est remplie). Liaison série par `pyserial`. Distribution par PyInstaller (`build.ps1`) et

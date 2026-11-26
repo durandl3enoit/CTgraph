@@ -23,8 +23,10 @@ def _sur_axe(p: Point) -> bool:
 def _ouvrir_sur_l_axe(contour: List[Point]) -> List[Point]:
     """Coupe le contour fermé au niveau de l'axe et rend la chaîne qui n'y est pas.
 
-    Le contour est donné fermé (premier point répété à la fin). S'il ne touche pas l'axe, on le rend
-    tel quel, sans le point répété : c'est au reste du module de faire au mieux.
+    Le contour est donné fermé (premier point répété à la fin). **S'il ne touche jamais l'axe**, c'est que
+    la pièce est percée de part en part : le contour est un anneau, et c'est `_bord_exterieur` qui en tire
+    le dessus. Rendre l'anneau entier ferait descendre la finition dans l'alésage et raboter toute la
+    pièce — c'est ce qui se produisait jusqu'au 26 novembre 2026.
     """
     pts = list(contour)
     if len(pts) > 1 and pts[0] == pts[-1]:
@@ -33,8 +35,10 @@ def _ouvrir_sur_l_axe(contour: List[Point]) -> List[Point]:
     if n < 3:
         return pts
     sur = [_sur_axe(p) for p in pts]
-    if not any(sur) or all(sur):
+    if all(sur):
         return pts
+    if not any(sur):
+        return _bord_exterieur(contour)
     # on repart juste après le dernier point d'une suite posée sur l'axe
     depart = next(i for i in range(n) if sur[i] and not sur[(i + 1) % n])
     chaine = [pts[depart % n]]
@@ -44,6 +48,38 @@ def _ouvrir_sur_l_axe(contour: List[Point]) -> List[Point]:
         i = (i + 1) % n
     chaine.append(pts[i])          # le premier point revenu sur l'axe ferme la chaîne
     return chaine
+
+
+def _bord_exterieur(contour: List[Point]) -> List[Point]:
+    """Le dessus d'un contour qui ne touche pas l'axe : le profil extérieur d'une pièce percée.
+
+    Un tel contour est un anneau : la paroi de l'alésage, les deux faces de bout, et le bord extérieur.
+    On le coupe au **sommet le plus haut de chaque face de bout** — les deux seuls endroits où le bord
+    extérieur rejoint l'alésage — et des deux chaînes obtenues on garde celle de plus grand rayon moyen.
+
+    Couper ailleurs, par exemple sur le critère « ce sommet porte-t-il le plus grand rayon de son
+    abscisse », casserait la chaîne à chaque épaulement : le coin bas d'une face d'épaulement est sous
+    l'enveloppe, et pourtant il appartient bien au bord extérieur.
+    """
+    pts = list(contour)
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    n = len(pts)
+    if n < 3:
+        return pts
+    z_min = min(z for z, _ in pts)
+    z_max = max(z for z, _ in pts)
+
+    def sommet_haut(z_cible: float) -> int:
+        candidats = [i for i, (z, _) in enumerate(pts) if abs(z - z_cible) <= 1e-6]
+        return max(candidats, key=lambda i: pts[i][1])
+
+    a, b = sommet_haut(z_min), sommet_haut(z_max)
+    if a == b:
+        return pts
+    chaines = ([pts[(a + k) % n] for k in range((b - a) % n + 1)],
+               [pts[(b + k) % n] for k in range((a - b) % n + 1)])
+    return max(chaines, key=lambda ch: sum(x for _, x in ch) / len(ch))
 
 
 @dataclass

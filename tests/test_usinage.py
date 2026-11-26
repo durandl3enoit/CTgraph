@@ -30,6 +30,27 @@ def test_profil_exterieur_ouvre_le_contour_sur_l_axe():
     assert not profil_exterieur([])
 
 
+def test_profil_exterieur_d_une_piece_percee():
+    """Un contour qui ne touche jamais l'axe est un anneau : seul son dessus est le profil extérieur."""
+    # bague Ø 50 × Ø 20, longue de 30, avec un épaulement Ø 40 sur les 10 premiers millimètres
+    anneau = [(0.0, 10.0), (-30.0, 10.0), (-30.0, 25.0), (-10.0, 25.0), (-10.0, 20.0), (0.0, 20.0),
+              (0.0, 10.0)]
+    p = profil_exterieur([anneau])
+    assert p and p.points[0][0] == pytest.approx(0.0) and p.points[-1][0] == pytest.approx(-30.0)
+    # la paroi de l'alésage est écartée : plus aucun point au rayon 10
+    assert min(x for _, x in p.points) == pytest.approx(20.0)
+    assert p.rayon_maxi == 25.0
+    # le coin bas de l'épaulement est gardé, bien qu'il ne porte pas le plus grand rayon de son abscisse
+    assert (-10.0, 20.0) in p.points and (-10.0, 25.0) in p.points
+    # une finition suit ce bord, et ne descend pas dans le trou
+    m = Montage(brut=Brut(diametre=56.0), prise=PriseDePiece(depassement=100.0, surepaisseur_face=2.0))
+    s = Sequence(id=1, type=TypeSequence.FINITION, garde=2.0, degagement=1.0)
+    t = trajectoire(s, p, m)
+    assert t and min(q.x for q in t.mouvements if q.travail) >= 20.0 - 1e-9
+    # le sens est celui de toujours : du bout de la pièce vers le mandrin
+    assert [z for z, _ in p.points] == sorted((z for z, _ in p.points), reverse=True)
+
+
 def test_rayon_du_profil_et_butee_des_passes():
     p = profil_exterieur([ARBRE])
     assert p.rayon(0.0) == 25.0 and p.rayon(-10.0) == 25.0

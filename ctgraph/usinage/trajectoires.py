@@ -339,6 +339,35 @@ def _percage(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> Tr
     return Trajectoire(sequence.id, mouvements)
 
 
+def _rogner(polyligne: List[Tuple[float, float]], z_haut: float,
+            z_bas: float) -> List[Tuple[float, float]]:
+    """La polyligne réduite à une tranche, **bouts interpolés**.
+
+    Filtrer les sommets ne suffirait pas : une paroi cylindrique n'a que deux points, et une tranche
+    plus courte qu'elle n'en garderait aucun. C'est ce qui faisait disparaître les passes d'alésage.
+    """
+    haut, bas = max(z_haut, z_bas), min(z_haut, z_bas)
+    morceau: List[Tuple[float, float]] = []
+
+    def poser(p: Tuple[float, float]) -> None:
+        if not morceau or abs(p[0] - morceau[-1][0]) > 1e-9 or abs(p[1] - morceau[-1][1]) > 1e-9:
+            morceau.append(p)
+
+    for (z1, x1), (z2, x2) in zip(polyligne, polyligne[1:]):
+        if abs(z2 - z1) <= 1e-12:
+            if bas - 1e-9 <= z1 <= haut + 1e-9:
+                poser((z1, x1))
+                poser((z2, x2))
+            continue
+        ta, tb = (bas - z1) / (z2 - z1), (haut - z1) / (z2 - z1)
+        t0, t1 = max(0.0, min(ta, tb)), min(1.0, max(ta, tb))
+        if t0 > t1 + 1e-12:
+            continue
+        for t in (t0, t1):
+            poser((z1 + t * (z2 - z1), x1 + t * (x2 - x1)))
+    return morceau
+
+
 def _paroi_visee(sequence: Sequence, paroi, z_face: float, z_fin: float) -> List[Tuple[float, float]]:
     """La paroi à obtenir, en points (z, rayon) du bord d'entrée vers le fond.
 
@@ -394,7 +423,7 @@ def _alesage(sequence: Sequence, profil: ProfilTourne, montage, etat=None, paroi
         tranches = (etat.intervalles_sous_la_paroi(plafond, z_face, z_fin) if etat is not None
                     else [(z_face, z_fin)])
         for z_a, z_b in tranches:
-            chemin = [(z, min(x, plafond)) for z, x in cible if z_b - 1e-9 <= z <= z_a + 1e-9]
+            chemin = [(z, min(x, plafond)) for z, x in _rogner(cible, z_a, z_b)]
             if len(chemin) < 2:
                 continue
             retrait = max(chemin[-1][1] - sequence.degagement, 0.0)

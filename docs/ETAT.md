@@ -123,6 +123,9 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
   lâcher la poignée de paroi sur une ligne ou un arc fait **suivre cette forme** à l'alésage : la zone
   n'est plus forcément rectangulaire. Chaque opération porte sa cote maîtresse dans son nom
   (« Perçage Ø 10 »).
+- **Pièce percée** : un contour fermé qui ne touche jamais l'axe est un anneau ; seul son bord extérieur
+  sert de profil. Avant la correction, la finition extérieure descendait dans l'alésage et rabotait toute
+  la pièce. Le fichier `exemples/bug - opération 6 et 7.ctg` garde le cas.
 - **Un outil enlève ce qui reste après l'opération d'avant** : chaque trajectoire reçoit l'état de la
   matière à son rang. Les approches rapides ne traversent plus le métal, les passes se limitent à ce
   qu'il y a à couper, et une ébauche laisse une surépaisseur avant et après un épaulement. Intérieur et
