@@ -17,13 +17,14 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPalette, QPen
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox, QFormLayout, QFrame,
-                               QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
-                               QPushButton, QScrollArea, QSpinBox, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtCore import QPoint, QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QColor, QPainter, QPalette, QPen, QPolygonF
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout,
+                               QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+                               QMessageBox, QPushButton, QScrollArea, QSpinBox, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
+from ..forets import forets
 from ..tourelle import nom_poste
 from ..usinage import Gamme, Sequence, TypeSequence
 from ..usinage.sequences import FAMILLES_OUTIL, LIBELLES_SEQUENCE, USAGES_SEQUENCE
@@ -152,6 +153,89 @@ class ListeSequences(QTreeWidget):
         QTimer.singleShot(0, lambda: self.depot.emit(sequence_id, poste))
 
 
+class CurseurEtape(QWidget):
+    """Le curseur d'étape, à droite de la liste : un trait et une poignée que l'on fait glisser.
+
+    Il n'a pas d'état propre : la poignée se pose en face de la ligne choisie, et la tirer change la
+    ligne. La liste et le curseur sont donc toujours d'accord, par construction.
+    """
+
+    LARGEUR = 18
+
+    def __init__(self, liste: QTreeWidget, parent=None):
+        super().__init__(parent)
+        self.liste = liste
+        self.setFixedWidth(self.LARGEUR)
+        self.setCursor(Qt.CursorShape.SizeVerCursor)
+        self.setToolTip("Curseur d'étape : tirez la poignée pour voir la pièce à chaque opération.")
+
+    def _y_de(self, rang: int) -> int:
+        """Le milieu de la ligne de ce rang, en coordonnées du curseur."""
+        nb = self.liste.topLevelItemCount()
+        if not nb:
+            return self.height() // 2
+        it = self.liste.topLevelItem(min(max(rang, 0), nb - 1))
+        rect = self.liste.visualItemRect(it)
+        return rect.center().y() + self.liste.viewport().mapTo(self.liste, QPoint(0, 0)).y()
+
+    def _rang_a(self, y: int) -> int:
+        """Le rang de la ligne la plus proche de cette hauteur."""
+        nb = self.liste.topLevelItemCount()
+        if not nb:
+            return 0
+        return min(range(nb), key=lambda i: abs(self._y_de(i) - y))
+
+    def paintEvent(self, event) -> None:
+        nb = self.liste.topLevelItemCount()
+        if not nb:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pal = self.palette()
+        encre = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText)
+        trait = QColor(encre.red(), encre.green(), encre.blue(), 90)
+        vif = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight)
+        x = self.width() / 2.0
+        haut, bas = self._y_de(0), self._y_de(nb - 1)
+        p.setPen(QPen(trait, 2))
+        p.drawLine(int(x), haut, int(x), bas)
+        # un repère par étape, pour que les crans se voient
+        p.setPen(QPen(trait, 1))
+        for i in range(nb):
+            y = self._y_de(i)
+            p.drawLine(int(x - 3), y, int(x + 3), y)
+        # la poignée, en face de la ligne choisie
+        courant = self.liste.indexOfTopLevelItem(self.liste.currentItem())
+        if courant >= 0:
+            y = self._y_de(courant)
+            p.setPen(QPen(vif, 1.4))
+            p.setBrush(QBrush(vif))
+            # la poignée pointe vers la liste : elle désigne la ligne où l'on en est
+            p.drawPolygon(QPolygonF([QPointF(x + 6.0, y - 5.0), QPointF(x - 6.0, y),
+                                     QPointF(x + 6.0, y + 5.0)]))
+        p.end()
+
+    def _viser(self, y: int) -> None:
+        rang = self._rang_a(y)
+        if rang != self.liste.indexOfTopLevelItem(self.liste.currentItem()):
+            self.liste.setCurrentItem(self.liste.topLevelItem(rang))
+        self.update()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._viser(int(event.position().y()))
+
+    def mouseMoveEvent(self, event) -> None:
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self._viser(int(event.position().y()))
+
+    def wheelEvent(self, event) -> None:
+        pas = -1 if event.angleDelta().y() > 0 else 1
+        courant = self.liste.indexOfTopLevelItem(self.liste.currentItem())
+        self._viser(self._y_de(max(courant, 0) + pas))
+        event.accept()
+
+
 def _numero_tete(charge: str) -> int:
     """Le nombre en tête d'une charge de glisser, zéro s'il n'y en a pas."""
     tete = (charge or "").strip().split(" ")[0].lstrip("Tt")
@@ -163,11 +247,11 @@ def _numero_poste(charge: str) -> int:
     return _numero_tete(charge)
 
 
-class ZoneUsinage(QScrollArea):
+class ZoneUsinage(QWidget):
     """La gamme : liste ordonnée, boutons d'ordre, et le réglage de la séquence choisie.
 
-    Le contenu défile : la liste montre toutes ses étapes d'un bloc, au lieu d'être réduite à quelques
-    lignes pour que le formulaire tienne.
+    **Les boutons et la gamme sont fixés en haut du volet** : ils restent sous la main quelle que soit la
+    longueur du formulaire, qui défile seul en dessous.
     """
 
     gamme_changee = Signal()                 # la gamme a changé : à enregistrer et à redessiner
@@ -177,16 +261,12 @@ class ZoneUsinage(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumWidth(360)
-        self.setWidgetResizable(True)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.gamme = Gamme()
         self.tourelle = None                 # garniture de la machine : dit ce que porte le poste choisi
         self._blocage = False
         self._trajectoire: Callable[[Sequence], object] = lambda s: None
 
-        interieur = QWidget()
-        v = QVBoxLayout(interieur)
+        v = QVBoxLayout(self)
         v.setContentsMargins(6, 6, 6, 6)
         v.setSpacing(5)
         entete = QLabel("Gamme d'usinage de la pièce : les séquences s'exécutent dans cet ordre. Choisir "
@@ -226,7 +306,13 @@ class ZoneUsinage(QScrollArea):
         self.liste.reordonne.connect(self.reordonner)
         self.liste.currentItemChanged.connect(self._ligne_choisie)
         self.liste.itemChanged.connect(self._case_changee)
-        v.addWidget(self.liste, 1)
+        # le curseur d'étape longe la liste, à sa droite : un trait, un cran par étape, une poignée
+        self.curseur = CurseurEtape(self.liste)
+        rangee = QHBoxLayout()
+        rangee.setSpacing(2)
+        rangee.addWidget(self.liste, 1)
+        rangee.addWidget(self.curseur)
+        v.addLayout(rangee)
 
         ordre = QHBoxLayout()
         ordre.setSpacing(3)
@@ -262,6 +348,9 @@ class ZoneUsinage(QScrollArea):
         self.diametre_fond = self._nombre(" mm", 0.0, 500.0, 2)
         self.diametre_fond.setSpecialValueText("jusqu'à l'axe")
         self.diametre_outil = self._nombre(" mm", 0.5, 100.0, 2)
+        self.foret = QComboBox()
+        self.foret.setToolTip("Le foret monté : sa pointe donne la forme du trou, pas seulement son Ø.")
+        self.foret.currentIndexChanged.connect(self._foret_change)
         self.pas = self._nombre(" mm", 0.2, 12.0, 2)
         self.hauteur_filet = self._nombre(" mm", 0.0, 20.0, 3)
         self.hauteur_filet.setSpecialValueText("profil ISO métrique")
@@ -286,6 +375,7 @@ class ZoneUsinage(QScrollArea):
                 ("largeur_outil", "Largeur de l'outil", self.largeur_outil),
                 ("largeur", "Largeur de la gorge", self.largeur),
                 ("diametre_fond", "Ø au fond", self.diametre_fond),
+                ("foret", "Foret", self.foret),
                 ("diametre_outil", "Ø du foret", self.diametre_outil),
                 ("pas", "Pas du filet", self.pas),
                 ("hauteur_filet", "Profondeur du filet", self.hauteur_filet),
@@ -303,12 +393,24 @@ class ZoneUsinage(QScrollArea):
             if cle:
                 self.champs[cle] = widget
                 self.intitules[cle] = intitule
-        v.addWidget(self.groupe)
 
         self.lbl_etat = QLabel("")
         self.lbl_etat.setWordWrap(True)
-        v.addWidget(self.lbl_etat)
-        self.setWidget(interieur)
+
+        # seul le réglage de la séquence défile : les boutons et la gamme restent en haut
+        bas = QWidget()
+        vbas = QVBoxLayout(bas)
+        vbas.setContentsMargins(0, 0, 0, 0)
+        vbas.setSpacing(5)
+        vbas.addWidget(self.groupe)
+        vbas.addWidget(self.lbl_etat)
+        vbas.addStretch(1)
+        self.defilement = QScrollArea()
+        self.defilement.setWidgetResizable(True)
+        self.defilement.setFrameShape(QFrame.Shape.NoFrame)
+        self.defilement.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.defilement.setWidget(bas)
+        v.addWidget(self.defilement, 1)
 
         for widget in (self.vitesse_coupe, self.vitesse_maxi, self.avance, self.largeur_outil,
                        self.largeur, self.diametre_fond, self.diametre_outil, self.pas,
@@ -441,6 +543,7 @@ class ZoneUsinage(QScrollArea):
             for col in range(len(COLONNES)):
                 it.setForeground(col, couleur)
         self._blocage = avant
+        self.curseur.update()
 
     # -- affichage ------------------------------------------------------------------------
 
@@ -490,7 +593,8 @@ class ZoneUsinage(QScrollArea):
     def _remplir_formulaire(self) -> None:
         s = self.sequence_courante()
         avant, self._blocage = self._blocage, True
-        self.groupe.setEnabled(s is not None)
+        # sur la ligne du brut, pas de réglage à montrer : le formulaire s'efface plutôt que de se griser
+        self.groupe.setVisible(s is not None)
         if s is None:
             self.groupe.setTitle("Séquence")
             self.lbl_etat.setText("Le brut, avant usinage. Choisissez une ligne pour voir la pièce après "
@@ -509,6 +613,7 @@ class ZoneUsinage(QScrollArea):
         self.largeur.setValue(s.largeur)
         self.diametre_fond.setValue(s.diametre_fond)
         self.diametre_outil.setValue(s.diametre_outil)
+        self._remplir_forets(s)
         self.pas.setValue(s.pas)
         self.hauteur_filet.setValue(s.hauteur_filet)
         self.profondeur.setValue(s.profondeur_passe)
@@ -522,6 +627,36 @@ class ZoneUsinage(QScrollArea):
         self._blocage = avant
         self._dire_l_outil()
         self._dire_l_etat(s)
+
+    def _remplir_forets(self, s: Sequence) -> None:
+        """Le choix de foret, selon le type : forets à centrer pour un centrage, hélicoïdaux sinon."""
+        if "foret" not in s.champs():
+            return
+        avant, self._blocage = self._blocage, True
+        self.foret.clear()
+        self.foret.addItem("— (Ø libre, pointe à 135°)", "")
+        for f in forets(a_centrer=s.type == TypeSequence.CENTRAGE):
+            self.foret.addItem(f.designation, f.designation)
+            self.foret.setItemData(self.foret.count() - 1, f.description(),
+                                   Qt.ItemDataRole.ToolTipRole)
+        self.foret.setCurrentIndex(max(0, self.foret.findData(s.foret)))
+        self._blocage = avant
+
+    def _foret_change(self) -> None:
+        """Choisir un foret fixe son diamètre : un foret a le sien, on ne le règle pas à part."""
+        if self._blocage:
+            return
+        s = self.sequence_courante()
+        designation = self.foret.currentData() or ""
+        if s is None:
+            return
+        from ..forets import foret as chercher
+        choisi = chercher(designation)
+        avant, self._blocage = self._blocage, True
+        if choisi is not None:
+            self.diametre_outil.setValue(choisi.diametre)
+        self._blocage = avant
+        self._reglage_change()
 
     def _adapter_au_type(self, s: Sequence) -> None:
         """Ne montre que les réglages qui comptent pour ce type, et les nomme pour ce qu'ils y sont."""
@@ -645,6 +780,10 @@ class ZoneUsinage(QScrollArea):
         s.arrosage = self.arrosage.isChecked()
         s.largeur_outil, s.largeur = self.largeur_outil.value(), self.largeur.value()
         s.diametre_fond, s.diametre_outil = self.diametre_fond.value(), self.diametre_outil.value()
+        # régler le Ø à la main détache le foret choisi : c'est alors un foret ordinaire de ce Ø
+        s.foret = self.foret.currentData() or ""
+        if s.foret and abs(s.outil_de_percage().diametre - s.diametre_outil) > 1e-6:
+            s.foret = ""
         s.pas, s.hauteur_filet = self.pas.value(), self.hauteur_filet.value()
         s.profondeur_passe, s.surepaisseur = self.profondeur.value(), self.surepaisseur.value()
         s.surepaisseur_face = self.surepaisseur_face.value()

@@ -148,13 +148,19 @@ def _plongee(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
 
 
 def _percage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
-    """Perçage et centrage : un alésage au diamètre du foret, de la face au fond du trou."""
+    """Perçage et centrage : le trou que laisse le foret, **sa pointe comprise**.
+
+    Le `z` le plus bas atteint est celui de la pointe ; le trou ne s'élargit au plein diamètre qu'en
+    arrière d'elle, du cône de pointe pour un foret ordinaire, du bout guide puis du cône de centre pour
+    un foret à centrer.
+    """
     coupes = [m for m in traj.mouvements if m.travail]
     if not coupes:
         return
-    rayon = sequence.diametre_outil / 2.0
-    for i in etat.tranches(min(m.z for m in coupes), max(m.z for m in traj.mouvements)):
-        etat.aleser(i, rayon)
+    outil = sequence.outil_de_percage()
+    z_pointe = min(m.z for m in coupes)
+    for i in etat.tranches(z_pointe, max(m.z for m in traj.mouvements)):
+        etat.aleser(i, outil.rayon_a(etat.z_milieu(i) - z_pointe))
 
 
 def _alesage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:

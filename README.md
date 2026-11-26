@@ -176,9 +176,16 @@ de tourelle, le nombre de passes et la longueur à couper. L'ordre d'usinage se 
 
 **La liste est le curseur d'étape.** Sa première ligne est le *brut*, tel qu'il est serré ; choisir une ligne
 montre la pièce telle qu'elle est après cette opération, et les lignes qui suivent se grisent, n'étant pas
-encore passées. La matière qui reste est teintée sur le dessin, et **ce que l'étape vient d'enlever ressort en
-orange**, à côté de la trajectoire qui l'a enlevée. Le modèle de matière sert à voir, pas à vérifier : il ne
-connaît pas la forme de l'outil et ne détecte aucune collision.
+encore passées. Le curseur se voit à droite de la liste : un trait, un cran par étape, et une **poignée** en
+face de la ligne choisie, que l'on tire à la souris ou que l'on pousse à la molette. La matière qui reste est
+teintée sur le dessin, et **ce que l'étape vient d'enlever ressort en orange**, à côté de la trajectoire qui
+l'a enlevée. Les boutons et la gamme restent fixés en haut du volet ; seul le formulaire défile.
+
+Le **perçage et le centrage** montrent le trou tel que le foret le laisse : fond conique à 135° pour un foret
+hélicoïdal, et pour un foret à centrer les deux étages — bout guide au petit diamètre, puis cône à 60° jusqu'au
+corps. Le foret se choisit dans un champ de l'opération ; le *Z de fin* est celui de la **pointe**, si bien
+qu'un centrage trop court ne fait que son avant-trou, et cela se voit. Le modèle de matière sert à voir, pas à
+vérifier : il ne détecte aucune collision.
 
 Le formulaire règle la séquence choisie et **ne montre que les réglages qui comptent pour son type**, nommés
 pour ce qu'ils y sont (« Fond du trou » plutôt que « Z de fin ») : une finition n'a ni passes ni surépaisseur,
@@ -319,6 +326,7 @@ ctgraph/
   outils.py                catalogue des porte-plaquettes montables en VDI 30 (ISO 5608 et ISO 6261)
   plaquettes.py            formes, géométrie et catalogue des plaquettes (ISO 1832)
   tourelle.py              tourelle VDI 30 à douze postes : répartition, poste en travail
+  forets.py                forets et forets à centrer : la forme du trou qu'ils laissent
   usinage/profil.py        le profil tourné tiré des contours fermés : rayon, tranches usinables
   usinage/sequences.py     la gamme et ses séquences : type, poste, conditions de coupe, passes
   usinage/trajectoires.py  les chemins d'outil, recalculés depuis le profil et le montage

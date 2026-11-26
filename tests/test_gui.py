@@ -1465,12 +1465,29 @@ def test_gamme_type_et_cote_de_percage(fenetre):
     assert zone.etape() == 0 and zone.liste.topLevelItemCount() == len(win.gamme) + 1
     assert zone.liste.minimumHeight() >= len(win.gamme) * zone.liste.sizeHintForRow(0)
 
+    # le curseur d'étape longe la liste : sa poignée est en face de la ligne choisie, et la tirer change
+    # l'étape montrée, liste et curseur étant la même chose
+    from ctgraph.ui.zone_usinage import CurseurEtape
+    assert zone.curseur.width() == CurseurEtape.LARGEUR and zone.curseur.parent() is not None
+    y_ligne_2 = zone.curseur._y_de(2)
+    zone.curseur._viser(y_ligne_2)
+    assert zone.etape() == 2 and zone.curseur._rang_a(y_ligne_2) == 2
+    zone.definir_etape(0)
+
     # le perçage : sa profondeur est une cote portée sur le dessin, et ce qu'il enlève y ressort
     percage = next(s for s in win.gamme if s.type == TypeSequence.PERCAGE)
     percage.active = True
     percage.z_fin = -30.0
     zone._choisir(percage.id)
     win._apres_reglage_sequence()
+    # le foret se choisit dans un champ de l'opération, et sa pointe donne la forme du fond
+    assert zone.formulaire.labelForField(zone.foret).text() == "Foret"
+    assert zone.foret.currentData() == percage.foret == "Foret Ø 10"
+    assert not percage.outil_de_percage().a_centrer
+    zone.foret.setCurrentIndex(zone.foret.findData("Foret Ø 13"))
+    assert percage.foret == "Foret Ø 13" and percage.diametre_outil == 13.0
+    creux = max(r for _, _, _, r in vue.matiere_enlevee if r < 10.0)
+    assert creux == pytest.approx(6.5)                       # le trou est bien au Ø du foret choisi
     cote = next(it for it in vue._items
                 if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence")
     assert cote.texte == "P 32" and cote.data(ROLE_ID) == "profondeur"   # 2 mm de marge + 30
@@ -1802,7 +1819,9 @@ def test_glisser_un_poste_vers_une_sequence(fenetre):
 
     poste_7 = charger_poste(7, tourelle.poste(7).libelle())
     assert survol(point_de(ebauche), poste_7)
-    assert not survol(QPointF(5.0, usinage.liste.viewport().height() - 2.0), poste_7)
+    # la ligne du brut n'est pas une opération : elle ne prend pas de poste
+    brut = QPointF(usinage.liste.visualItemRect(usinage.liste.topLevelItem(0)).center())
+    assert not survol(brut, poste_7)
     assert not deposer(point_de(ebauche), QMimeData())        # un glisser étranger n'est pas accueilli
     assert ebauche.poste == 0
     # un poste hors tourelle est refusé

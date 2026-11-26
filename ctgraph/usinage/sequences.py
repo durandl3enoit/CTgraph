@@ -78,8 +78,8 @@ USAGES_SEQUENCE: Dict[TypeSequence, str] = {
 # les réglages qui comptent pour chaque type : l'interface ne montre que ceux-là
 CHAMPS_SEQUENCE: Dict[TypeSequence, Tuple[str, ...]] = {
     TypeSequence.DRESSAGE: ("profondeur_passe", "surepaisseur_face", "garde", "degagement"),
-    TypeSequence.CENTRAGE: ("diametre_outil", "garde", "z_debut", "z_fin"),
-    TypeSequence.PERCAGE: ("diametre_outil", "profondeur_passe", "garde", "z_debut", "z_fin"),
+    TypeSequence.CENTRAGE: ("foret", "diametre_outil", "garde", "z_debut", "z_fin"),
+    TypeSequence.PERCAGE: ("foret", "diametre_outil", "profondeur_passe", "garde", "z_debut", "z_fin"),
     TypeSequence.EBAUCHE: ("profondeur_passe", "surepaisseur", "garde", "degagement", "z_debut", "z_fin"),
     TypeSequence.ALESAGE: ("diametre_outil", "diametre_fond", "profondeur_passe", "surepaisseur",
                            "garde", "degagement", "z_debut", "z_fin"),
@@ -94,9 +94,9 @@ CHAMPS_SEQUENCE: Dict[TypeSequence, Tuple[str, ...]] = {
 
 # comment nommer un champ selon le type : ce ne sont pas les mêmes choses d'une opération à l'autre
 LIBELLES_CHAMPS: Dict[TypeSequence, Dict[str, str]] = {
-    TypeSequence.CENTRAGE: {"diametre_outil": "Ø du foret à centrer", "z_debut": "Z de la face",
-                            "z_fin": "Fond du centre"},
-    TypeSequence.PERCAGE: {"z_debut": "Z de la face", "z_fin": "Fond du trou"},
+    TypeSequence.CENTRAGE: {"foret": "Foret à centrer", "diametre_outil": "Ø du corps",
+                            "z_debut": "Z de la face", "z_fin": "Pointe du centre"},
+    TypeSequence.PERCAGE: {"z_debut": "Z de la face", "z_fin": "Pointe du foret"},
     TypeSequence.ALESAGE: {"diametre_outil": "Ø du trou de départ", "diametre_fond": "Ø à aléser",
                            "z_debut": "Z de la face", "z_fin": "Fond de l'alésage"},
     TypeSequence.GORGE: {"z_debut": "Z du bord droit"},
@@ -107,9 +107,10 @@ LIBELLES_CHAMPS: Dict[TypeSequence, Dict[str, str]] = {
 # ce qui change des valeurs par défaut quand on ajoute une séquence de ce type
 DEFAUTS_SEQUENCE: Dict[TypeSequence, Dict[str, float]] = {
     TypeSequence.CENTRAGE: {"vitesse_coupe": 30.0, "avance": 0.08, "profondeur_passe": 10.0,
-                            "diametre_outil": 8.0, "z_fin": -3.0, "surepaisseur": 0.0},
+                            "foret": "À centrer 3,15 × 8", "diametre_outil": 8.0, "z_fin": -8.0,
+                            "surepaisseur": 0.0},
     TypeSequence.PERCAGE: {"vitesse_coupe": 60.0, "avance": 0.12, "profondeur_passe": 5.0,
-                           "surepaisseur": 0.0},
+                           "foret": "Foret Ø 10", "surepaisseur": 0.0},
     TypeSequence.ALESAGE: {"vitesse_coupe": 180.0, "avance": 0.12, "profondeur_passe": 1.0,
                            "diametre_outil": 10.0},
     TypeSequence.FINITION: {"vitesse_coupe": 250.0, "avance": 0.1},
@@ -177,6 +178,7 @@ class Sequence:
     largeur: float = 0.0             # largeur de la gorge à faire ; 0 = celle de l'outil
     diametre_fond: float = 0.0       # Ø au fond d'une gorge, Ø où s'arrête un tronçonnage (0 = l'axe)
     diametre_outil: float = 10.0     # Ø du foret
+    foret: str = ""                  # désignation au catalogue `ctgraph.forets` ; vide = foret ordinaire
     pas: float = 1.5                 # pas du filet
     hauteur_filet: float = 0.0       # profondeur du filet au rayon ; 0 = PROFONDEUR_FILET × pas
 
@@ -202,6 +204,14 @@ class Sequence:
     def dans_l_axe(self) -> bool:
         """Vrai si l'opération travaille dans l'axe : foret, centre, barre d'alésage."""
         return self.type in (TypeSequence.CENTRAGE, TypeSequence.PERCAGE, TypeSequence.ALESAGE)
+
+    def outil_de_percage(self):
+        """Le foret de l'opération, avec sa géométrie de pointe. Jamais None : au pire un foret ordinaire."""
+        from ..forets import foret as chercher, pour_diametre
+        trouve = chercher(self.foret) if self.foret else None
+        if trouve is not None and abs(trouve.diametre - self.diametre_outil) < 1e-6:
+            return trouve
+        return pour_diametre(self.diametre_outil, self.type == TypeSequence.CENTRAGE)
 
     # -- cotes portées sur le dessin -------------------------------------------------------
 

@@ -223,6 +223,24 @@ def test_alesage_et_centrage():
     tc = trajectoire(c, p, m)
     assert tc and tc.nb_passes() == 1 and min(q.z for q in tc.mouvements) == pytest.approx(-3.0)
     assert c.vitesse_fixe() and c.dans_l_axe()
+    # l'outil est pris au catalogue des forets à centrer : deux étages, pas un simple cylindre
+    c.foret = "À centrer 3,15 × 8"
+    assert c.outil_de_percage().a_centrer and c.outil_de_percage().pilote == 3.15
+    # enfoncé de 8 mm, le foret a passé son bout guide et son cône mord jusqu'au corps
+    c.z_fin = -8.0
+    etat = EtatMatiere.depuis_brut(m)
+    appliquer(etat, c, trajectoire(c, p, m))
+    assert etat.alesage_a(-6.0) == pytest.approx(1.575)       # le bout guide, au petit diamètre
+    assert 1.575 < etat.alesage_a(-1.0) < 4.0                 # le cône, en train de s'ouvrir
+    assert etat.alesage_a(1.5) == pytest.approx(4.0)          # ouvert jusqu'au corps
+    # moins enfoncé, il ne fait que son avant-trou : c'est bien ce que montre le dessin
+    c.z_fin = -3.0
+    court = EtatMatiere.depuis_brut(m)
+    appliquer(court, c, trajectoire(c, p, m))
+    assert court.alesage_a(1.5) == pytest.approx(1.575)
+    # un diamètre qui ne correspond plus au foret choisi : on retombe sur un foret ordinaire
+    c.diametre_outil = 9.0
+    assert not c.outil_de_percage().a_centrer and c.outil_de_percage().diametre == 9.0
 
     # l'alésage : des passes parallèles à l'axe qui ouvrent le trou du Ø 12 au Ø 20 moins la surépaisseur
     s = Sequence(id=9, type=TypeSequence.ALESAGE, diametre_outil=12.0, diametre_fond=20.0,
@@ -303,10 +321,14 @@ def test_matiere_etape_par_etape():
     assert apres_ebauche.rayon_a(-50.0) == pytest.approx(15.5)
     assert apres_ebauche.rayon_a(-90.0) == m.rayon_brut()        # au-delà de la pièce, rien n'est touché
 
-    # le perçage ouvre un alésage de la face au fond du trou, pas au-delà
+    # le perçage ouvre un alésage de la face au fond du trou, pas au-delà, et sa pointe est un cône
     apres_percage = suite[3]
     assert apres_percage.alesage_a(-20.0) == pytest.approx(6.0)
     assert apres_percage.alesage_a(-60.0) == 0.0
+    pointe = percage.outil_de_percage().hauteur_pointe()
+    assert pointe == pytest.approx(2.485, abs=0.01)
+    assert apres_percage.alesage_a(-45.0 + pointe / 2.0) == pytest.approx(3.0, abs=0.4)
+    assert apres_percage.alesage_a(-45.0 + pointe + 1.0) == pytest.approx(6.0)
 
     # le filetage ne change pas la silhouette : le filet est une rainure, l'enveloppe reste
     assert suite[4].exterieur == apres_percage.exterieur

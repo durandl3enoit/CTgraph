@@ -107,7 +107,12 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
   **Proposer la gamme type** pose l'enchaînement habituel d'une pièce sur barre dans l'ordre (dressage,
   centrage, perçage, ébauche, alésage ×2, finition, gorge, filetage, tronçonnage), postes repris de la
   tourelle par famille d'outil, les opérations à renseigner posées décochées. La **profondeur de perçage**
-  est une cote portée sur le dessin, réglable comme celles du brut. 156 tests.
+  est une cote portée sur le dessin, réglable comme celles du brut.
+- **Forets** (`ctgraph/forets.py`) : seize forets hélicoïdaux et huit forets à centrer forme A, choisis
+  dans un champ de l'opération. Le trou dessiné prend **la forme de l'outil** : fond conique à 135° pour un
+  foret, deux étages pour un foret à centrer (bout guide, puis cône à 60°). Le Z de fin est celui de la
+  pointe. Dimensions à vérifier sur les forets de l'atelier. Le curseur d'étape se voit à droite de la
+  liste, poignée comprise ; boutons et gamme sont fixés en haut du volet. 159 tests.
 
 ## En cours
 

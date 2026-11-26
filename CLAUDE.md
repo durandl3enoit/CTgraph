@@ -311,17 +311,33 @@ vérification par relecture du G-code généré, réception des programmes depui
   les lignes qui suivent se grisent (`_marquer_etape`). Il n'y a donc **qu'une seule notion d'étape
   courante**, la ligne choisie : un curseur séparé a existé une demi-journée, l'utilisateur l'a fait
   fondre dans la liste le 26 novembre 2026.
+  Le curseur se **voit** quand même : `CurseurEtape` longe la liste à sa droite, un trait avec un cran par
+  étape et une poignée en face de la ligne choisie, qui se tire à la souris ou se pousse à la molette. Il
+  n'a aucun état propre — il lit et écrit la ligne courante — donc il ne peut pas se désaccorder d'elle.
+  **Boutons et gamme sont fixés en haut du volet** ; seul le formulaire de réglage défile, dans son propre
+  `QScrollArea`. Sur la ligne du brut, le formulaire s'efface au lieu de se griser.
   `EtatMatiere` décrit la matière restante en **tranches** de `PAS_TRANCHE` (0,25 mm) le long de l'axe, chacune
   avec son rayon intérieur et son rayon extérieur ; `etats()` rend la suite des états, `enlevee_depuis` les
   copeaux d'une étape. La vue les dessine en rectangles (genre « matiere », non sélectionnable) : la matière
   restante en teinte sourde, ce que l'étape vient d'emporter en orange, comme sa trajectoire.
   **Chaque type enlève à sa façon** : le dressage fait avancer la face, l'ébauche et la finition rabotent
   sous leur chemin tranche par tranche, la gorge et le tronçonnage creusent sur la largeur de l'outil, le
-  perçage et le centrage ouvrent un alésage au diamètre du foret, l'alésage l'ouvre passe par passe, le
+  perçage et le centrage ouvrent le trou **à la forme du foret** (voir ci-dessous), l'alésage l'ouvre
+  passe par passe, le
   filetage ne change pas la silhouette (le filet est une rainure hélicoïdale,
   l'enveloppe reste au diamètre nominal). Un mouvement radial d'ébauche ou de finition ne fait que longer une
   face : il n'enlève rien de plus. **Ce modèle sert à voir, pas à vérifier** : il ignore la forme de l'outil
   et ne détecte aucune collision.
+- **Forets et forets à centrer** (`ctgraph/forets.py`, demandé le 26 novembre 2026) : un foret ne laisse
+  pas un trou à fond plat, et un foret à centrer en laisse un **à deux étages**. Chaque `Foret` se décrit
+  par `rayon_a(t)`, le rayon du trou à la distance `t` **en arrière de la pointe** : c'est tout ce dont le
+  modèle de matière a besoin, et c'est ce qui rend le dessin fidèle. Foret hélicoïdal : un cône de pointe
+  (`ANGLE_POINTE` = 135°, l'affûtage de l'atelier). Foret à centrer forme A (DIN 333) : pointe à 118°,
+  bout guide cylindrique au petit Ø, puis cône à 60° jusqu'au corps. **Le Z de fin est celui de la pointe**,
+  pas du plein diamètre : un centrage trop court ne fait que son avant-trou, et le dessin le montre.
+  Le foret se choisit dans un champ de l'opération (`Sequence.foret`, désignation au catalogue) ; régler le
+  Ø à la main détache le foret choisi et retombe sur un foret ordinaire de ce Ø. Dimensions et angles **à
+  vérifier sur les forets de l'atelier**, comme les autres catalogues.
 - **Cotes d'usinage sur le dessin** (demandé le 26 novembre 2026) : la séquence montrée pose ses valeurs
   réglables sur l'esquisse, comme le brut pose les siennes. Pour l'instant la seule est la **profondeur
   d'un perçage ou d'un centrage** (genre « cote_sequence », clé « profondeur », texte « P 47 »), comptée
