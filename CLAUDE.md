@@ -363,14 +363,41 @@ vérification par relecture du G-code généré, réception des programmes depui
   approche toujours du bout du brut (`Sequence.z_face`) : partir de plus loin n'est jamais faux, et la
   matière n'est enlevée que là où il y en a. La cote se dessine **sous l'axe**, plus bas que celles du
   brut : sur un centrage, l'étiquette cacherait le trou qu'elle mesure.
+- **Un outil enlève ce qui reste après l'opération d'avant** (rappelé par l'utilisateur le 26 novembre
+  2026, et c'est la règle). `trajectoire(sequence, profil, montage, etat, paroi)` reçoit donc
+  l'`EtatMatiere` que la séquence trouve en arrivant, et `matiere.etats()` le lui passe
+  (`calcul_trajectoire(sequence, etat)`). L'ébauche part du diamètre qui reste, l'alésage du trou déjà
+  percé (son Ø de départ n'est plus déclaré), le dressage de la face présente, et surtout **aucune
+  approche rapide ne traverse la matière** : on contourne par devant la face encore là
+  (`_face_matiere`, `_dehors`, `_dedans`). Sans état, on retombe sur le brut : l'ancien comportement,
+  prudent.
+  **Et les passes se limitent à la matière qui reste** : `EtatMatiere.intervalles_au_dessus` et
+  `intervalles_sous_la_paroi` découpent chaque passe là où il y a vraiment quelque chose à couper, de
+  sorte qu'une ébauche ne brasse plus l'air au-dessus d'un diamètre déjà fait. Les formes n'étant pas
+  toujours rectangulaires, c'est l'état tranche par tranche qui tranche, pas une hypothèse de cylindre.
+- **Surépaisseur avant et après un épaulement** (demandée le 26 novembre 2026) : une passe d'ébauche dont
+  le bout est fermé par la montée du profil s'arrête d'une surépaisseur avant lui, et repart d'une
+  surépaisseur après. Sans cela la finition trouvait la face d'épaulement déjà à cote, sans rien à
+  enlever. Les bouts fermés par l'étendue demandée (`z_debut`, `z_fin`), eux, ne reculent pas.
+- **Intérieur et extérieur se distinguent** : `FINITION` est la finition **extérieure**, `ALESAGE`
+  l'ébauche d'alésage, `FINITION_INTERIEURE` la finition d'alésage — un seul passage le long de la
+  paroi, comme la finition extérieure suit le profil. `NOMS_COURTS` donne le nom des boutons et des
+  libellés automatiques : « Finition ext. », « Finition int. », parce que « Finition » seul ne
+  distinguerait plus rien.
 - **Édition graphique de l'alésage** (demandée le 26 novembre 2026) : quand la séquence montrée est un
   alésage, sa zone rouge porte ses prises (genre « poignee_alesage », `VueEsquisse.alesage_montre`,
   `_dessiner_poignees_alesage`) : les trois arêtes — face d'entrée, fond, paroi —, les deux coins du haut,
-  et le corps, qui fait glisser la zone entière le long de Z. On les attrape à la souris en mode Sélection
-  (`_glisse_alesage`), et **l'aimantation de l'esquisse s'applique** (`accrocher`) : la zone s'aligne sur
-  les points, les faces et les plans de référence de la pièce finie.
+  **le point d'entrée**, et le corps, qui fait glisser la zone entière le long de Z. On les attrape à la
+  souris en mode Sélection (`_glisse_alesage`), et **l'aimantation de l'esquisse s'applique**
+  (`accrocher`) : la zone s'aligne sur les points, les faces et les plans de référence de la pièce finie.
+  Les poignées passent **avant tout** dans `element_sous` (ordre −1) : posées sur une ligne du dessin,
+  elles doivent rester attrapables.
   `FenetrePrincipale.deplacer_alesage` applique le mouvement en gardant la zone cohérente : jamais
   retournée, jamais plus petite que le trou de départ.
+  **Une zone à aléser n'est pas forcément rectangulaire** : lâcher la poignée « paroi » sur une ligne ou
+  un arc de l'esquisse enregistre cet élément dans `Sequence.paroi`, et l'alésage suit alors cette forme
+  (`_paroi_visee`, polyligne résolue par `FenetrePrincipale.paroi_de` via `VueEsquisse.polyligne_element`).
+  Chaque passe est plafonnée au rayon de la passe et épouse la paroi au-delà : un cône, un congé.
 - **Le nom d'une opération porte sa cote maîtresse** : « Perçage Ø 10 », « Alésage Ø 20 », « Gorge Ø 20 × 4 »,
   « Filetage pas 1,5 », « Tronçonnage ép. 3 » (`Sequence.libelle`). Deux lignes voisines se distinguent ainsi
   d'un coup d'œil. Un nom donné à la main l'emporte toujours.

@@ -1,8 +1,14 @@
-"""Les trajectoires : ce que l'outil parcourt, calculé à chaque fois depuis le profil et le brut.
+"""Les trajectoires : ce que l'outil parcourt, calculé à chaque fois depuis le profil et la matière.
 
 Une trajectoire est une suite de mouvements dans le plan (z, x) de l'esquisse, **x au rayon**. Chaque
 mouvement est soit un déplacement rapide, soit un déplacement en coupe : c'est exactement ce que le
 post-processeur traduira en `G0` et `G1` quand viendra le point 5 du périmètre.
+
+**Un outil enlève ce qui reste après l'opération d'avant.** C'est la règle, rappelée par l'utilisateur le
+26 novembre 2026, et c'est pourquoi chaque calcul reçoit l'`EtatMatiere` que la séquence trouve en
+arrivant : l'ébauche part du diamètre qui reste et non du brut, l'alésage part du trou déjà percé, et
+surtout **aucune approche rapide ne traverse la matière** — on contourne toujours par devant la face
+encore présente. Sans état fourni, on retombe sur le brut : c'est l'ancien comportement, prudent.
 
 Le chemin est celui de la **pointe théorique de l'outil**. Le rayon de bec est corrigé par la commande
 numérique (`G41` / `G42` posés sur la finition), comme le font les programmes Go2CAM archivés : on ne
@@ -11,7 +17,7 @@ décale donc pas la trajectoire ici.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional, Tuple
 
 from .profil import ProfilTourne
@@ -65,6 +71,32 @@ class Trajectoire:
         return nb
 
 
+def _face_matiere(etat, montage, defaut: float = 0.0) -> float:
+    """L'abscisse devant laquelle il n'y a plus rien : c'est par là qu'un outil arrive sans rien toucher."""
+    if etat is not None:
+        return etat.z_entree(montage.z_brut_avant() if montage is not None else defaut)
+    return montage.z_brut_avant() if montage is not None else defaut
+
+
+def _dehors(etat, montage, z_a: float, z_b: float) -> float:
+    """Le plus grand rayon de matière sur une tranche : au-dessus, l'outil circule librement."""
+    if etat is not None:
+        rayons = [etat.exterieur[i] for i in etat.tranches(z_a, z_b)]
+        if rayons:
+            return max(rayons)
+    return montage.rayon_brut() if montage is not None else 0.0
+
+
+def _dedans(etat, montage, z_a: float, z_b: float) -> float:
+    """Le plus petit trou déjà ouvert sur une tranche : c'est de là qu'une barre d'alésage part."""
+    if etat is not None:
+        rayons = [etat.interieur[i] for i in etat.tranches(z_a, z_b)
+                  if etat.exterieur[i] - etat.interieur[i] > 1e-9]
+        if rayons:
+            return min(rayons)
+    return montage.rayon_interieur_brut() if montage is not None else 0.0
+
+
 def _bornes(sequence: Sequence, profil: ProfilTourne, montage) -> Tuple[float, float]:
     """L'étendue en Z à usiner : du bout de la pièce au fond, bornée par la séquence et par les mors."""
     z_debut = sequence.z_debut if sequence.z_debut is not None else profil.z_bout
@@ -75,16 +107,16 @@ def _bornes(sequence: Sequence, profil: ProfilTourne, montage) -> Tuple[float, f
     return z_debut, min(z_fin, z_debut)
 
 
-def _dressage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+def _dressage(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> Trajectoire:
     """Dressage de la face avant : passes de la matière vers l'axe, en descendant en Z."""
     if montage is None:
         return Trajectoire(sequence.id, [], "Le dressage demande le montage : il part du bout du brut.")
-    z_brut = montage.z_brut_avant()
+    z_brut = _face_matiere(etat, montage)
     z_fini = profil.z_bout if profil else 0.0
     if z_brut <= z_fini + 1e-9:
-        return Trajectoire(sequence.id, [], "Rien à dresser : le brut n'avance pas au-delà de la face finie.")
-    rayon_depart = montage.rayon_brut() + sequence.degagement
-    rayon_fin = montage.rayon_interieur_brut()
+        return Trajectoire(sequence.id, [], "Rien à dresser : la face est déjà en place.")
+    rayon_depart = _dehors(etat, montage, z_brut, z_fini) + sequence.degagement
+    rayon_fin = _dedans(etat, montage, z_brut, z_fini)
     profondeur = max(sequence.profondeur_passe, 0.05)
     reste = z_brut - z_fini - sequence.surepaisseur_face
     nb = max(1, int(reste / profondeur + 0.999)) if reste > 1e-9 else 1
@@ -100,20 +132,22 @@ def _dressage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
     return Trajectoire(sequence.id, mouvements)
 
 
-def _ebauche(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
-    """Ébauche paraxiale : passes parallèles à l'axe, du brut vers le profil plus la surépaisseur."""
+def _ebauche(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> Trajectoire:
+    """Ébauche paraxiale : passes parallèles à l'axe, de la matière restante vers le profil + surépaisseur."""
     if not profil:
         return Trajectoire(sequence.id, [], "Pas de profil fermé : rien à ébaucher.")
     if montage is None:
         return Trajectoire(sequence.id, [], "L'ébauche demande le montage : elle part du diamètre du brut.")
     z_debut, z_fin = _bornes(sequence, profil, montage)
-    rayon_brut = montage.rayon_brut()
+    rayon_brut = _dehors(etat, montage, z_debut, z_fin)
     # l'ébauche descend jusqu'au plus petit diamètre de la tranche, pas seulement jusqu'au plus grand
     rayon_vise = profil.rayon_mini(z_debut, z_fin) + sequence.surepaisseur
     if rayon_brut <= rayon_vise + 1e-9:
-        return Trajectoire(sequence.id, [], "Le brut est déjà au diamètre : rien à ébaucher.")
+        return Trajectoire(sequence.id, [], "La matière est déjà au diamètre : rien à ébaucher.")
     profondeur = max(sequence.profondeur_passe, 0.05)
     nb = max(1, int((rayon_brut - rayon_vise) / profondeur + 0.999))
+    # on contourne toujours par devant la matière restante : un rapide ne traverse jamais le métal
+    z_libre = max(_face_matiere(etat, montage), z_debut)
 
     mouvements: List[Mouvement] = []
     for i in range(1, nb + 1):
@@ -121,23 +155,39 @@ def _ebauche(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
         # la passe ne coupe que là où le profil fini, surépaisseur comprise, reste sous elle : un
         # épaulement plus gros devant interdit de partir du bout, on entre après lui
         for z_haut, z_bas in profil.intervalles_sous(rayon - sequence.surepaisseur, z_debut, z_fin):
-            mouvements.append(Mouvement(z_haut + sequence.garde, rayon + sequence.degagement))
-            mouvements.append(Mouvement(z_haut, rayon + sequence.degagement))
-            mouvements.append(Mouvement(z_haut, rayon, travail=True))
-            mouvements.append(Mouvement(z_bas, rayon, travail=True))
-            mouvements.append(Mouvement(z_bas, rayon + sequence.degagement, travail=True))
-            mouvements.append(Mouvement(z_haut + sequence.garde, rayon + sequence.degagement))
+            # **surépaisseur avant et après l'épaulement** : un bout d'intervalle fermé par la montée du
+            # profil s'arrête à distance, pour que la finition ait de quoi dresser la face
+            if z_haut < z_debut - 1e-9:
+                z_haut -= sequence.surepaisseur
+            if z_bas > z_fin + 1e-9:
+                z_bas += sequence.surepaisseur
+            if z_haut - z_bas <= 1e-9:
+                continue
+            # et la passe se limite à la matière qui reste : ailleurs elle brasserait de l'air
+            tranches = (etat.intervalles_au_dessus(rayon, z_haut, z_bas) if etat is not None
+                        else [(z_haut, z_bas)])
+            for z_a, z_b in tranches:
+                approche = max(z_a, z_libre) + sequence.garde
+                mouvements.append(Mouvement(approche, rayon + sequence.degagement))
+                mouvements.append(Mouvement(z_a, rayon + sequence.degagement))
+                mouvements.append(Mouvement(z_a, rayon, travail=True))
+                mouvements.append(Mouvement(z_b, rayon, travail=True))
+                mouvements.append(Mouvement(z_b, rayon + sequence.degagement, travail=True))
+                mouvements.append(Mouvement(approche, rayon + sequence.degagement))
     if not mouvements:
-        return Trajectoire(sequence.id, [], "Aucune passe : le brut et le profil sont au même diamètre.")
+        return Trajectoire(sequence.id, [], "Aucune passe : la matière et le profil sont au même diamètre.")
     return Trajectoire(sequence.id, mouvements)
 
 
-def _finition(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+def _finition(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> Trajectoire:
     """Finition : un passage sur le profil fini, de son bout jusqu'au fond demandé.
 
     La face avant se finit depuis l'axe : elle est libre. La face arrière, elle, ne se descend pas
     jusqu'à l'axe : la pièce y tient encore à la barre, c'est au tronçonnage de la détacher. Le chemin
     s'arrête donc au dernier point du profil avant son retour sur l'axe.
+
+    L'approche se fait **devant la matière restante** : aller se placer sur l'axe au milieu du brut non
+    dressé serait une collision en rapide.
     """
     if not profil:
         return Trajectoire(sequence.id, [], "Pas de profil fermé : rien à finir.")
@@ -148,20 +198,25 @@ def _finition(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
     if len(chemin) < 2:
         return Trajectoire(sequence.id, [], "Le profil n'a rien à finir sur cette étendue.")
     depart, arrivee = chemin[0], chemin[-1]
-    mouvements = [Mouvement(depart[0] + sequence.garde, depart[1] + sequence.garde),
-                  Mouvement(depart[0] + sequence.garde, depart[1]),
+    z_libre = max(_face_matiere(etat, montage), depart[0]) + sequence.garde
+    mouvements = [Mouvement(z_libre, max(depart[1], _dehors(etat, montage, depart[0], depart[0]))
+                            + sequence.degagement),
+                  Mouvement(z_libre, depart[1]),
                   Mouvement(depart[0], depart[1], travail=True)]
     mouvements += [Mouvement(z, x, travail=True) for z, x in chemin[1:]]
     mouvements.append(Mouvement(arrivee[0], arrivee[1] + sequence.degagement, travail=True))
-    mouvements.append(Mouvement(depart[0] + sequence.garde, arrivee[1] + sequence.degagement))
+    mouvements.append(Mouvement(z_libre, arrivee[1] + sequence.degagement))
     return Trajectoire(sequence.id, mouvements)
 
 
-def _matiere_sur(profil: ProfilTourne, montage, z_droite: float, largeur: float) -> float:
+def _matiere_sur(profil: ProfilTourne, montage, z_droite: float, largeur: float, etat=None) -> float:
     """Le rayon de matière que l'outil rencontre sur sa largeur, à droite de `z_droite` vers la gauche.
 
-    Le profil fini donne la hauteur dans la pièce ; au-delà de ses bouts, c'est le brut qui reste en place.
+    L'état de la matière fait foi quand on l'a : c'est ce qui reste après les opérations précédentes. À
+    défaut, le profil fini donne la hauteur dans la pièce, et le brut règne au-delà de ses bouts.
     """
+    if etat is not None:
+        return _dehors(etat, montage, z_droite, z_droite - largeur)
     rayon_brut = montage.rayon_brut() if montage is not None else 0.0
     if not profil:
         return rayon_brut
@@ -188,7 +243,7 @@ def _plongee(sequence: Sequence, z: float, rayon_haut: float, rayon_fond: float)
     return mouvements
 
 
-def _gorge(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+def _gorge(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> Trajectoire:
     """Gorge : des plongées côte à côte, à la largeur de l'outil, jusqu'au diamètre de fond."""
     if sequence.z_debut is None or sequence.diametre_fond <= 0.0:
         return Trajectoire(sequence.id, [], "Indiquez le Z du bord droit de la gorge et son diamètre "
@@ -199,7 +254,7 @@ def _gorge(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
     if montage is not None and z_droite - largeur < montage.z_face_mors() - 1e-9:
         return Trajectoire(sequence.id, [], "La gorge entre dans les mors : rapprochez-la de la face.")
     rayon_fond = sequence.diametre_fond / 2.0 + sequence.surepaisseur
-    rayon_haut = _matiere_sur(profil, montage, z_droite, largeur)
+    rayon_haut = _matiere_sur(profil, montage, z_droite, largeur, etat)
     if rayon_haut <= rayon_fond + 1e-9:
         return Trajectoire(sequence.id, [], "Rien à creuser : le fond de gorge est déjà au diamètre.")
     # le point piloté est le coin droit de l'outil : il va du bord droit au bord gauche moins la largeur
@@ -212,21 +267,21 @@ def _gorge(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
     return Trajectoire(sequence.id, mouvements)
 
 
-def _tronconnage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+def _tronconnage(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> Trajectoire:
     """Tronçonnage : une plongée jusqu'au diamètre demandé, ou jusqu'à l'axe pour détacher la pièce."""
     z = sequence.z_debut if sequence.z_debut is not None else (profil.z_fond if profil else None)
     if z is None:
         return Trajectoire(sequence.id, [], "Indiquez le Z où tronçonner.")
     if montage is not None and z - sequence.largeur_outil < montage.z_face_mors() - 1e-9:
         return Trajectoire(sequence.id, [], "Ce Z est dans les mors : le tronçonnage n'y passe pas.")
-    rayon_haut = _matiere_sur(profil, montage, z, max(sequence.largeur_outil, 0.1))
+    rayon_haut = _matiere_sur(profil, montage, z, max(sequence.largeur_outil, 0.1), etat)
     rayon_fin = sequence.diametre_fond / 2.0
     if rayon_haut <= rayon_fin + 1e-9:
         return Trajectoire(sequence.id, [], "Rien à tronçonner : la matière est déjà à ce diamètre.")
     return Trajectoire(sequence.id, _plongee(sequence, z, rayon_haut, rayon_fin))
 
 
-def _filetage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+def _filetage(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> Trajectoire:
     """Filetage : des passes le long du filet, de plus en plus fines pour garder la section de copeau."""
     if sequence.z_fin is None:
         return Trajectoire(sequence.id, [], "Indiquez le Z de fin du filet.")
@@ -255,15 +310,18 @@ def _filetage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
     return Trajectoire(sequence.id, mouvements)
 
 
-def _percage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+def _percage(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> Trajectoire:
     """Perçage dans l'axe : des descentes successives, chacune suivie d'un débourrage complet.
 
     Sert aussi au centrage, qui n'en est qu'un cas court : une seule descente, pas de débourrage.
     """
     if sequence.z_fin is None:
         return Trajectoire(sequence.id, [], "Indiquez la profondeur du trou : son Z de fond.")
-    z_face = sequence.z_face(montage if montage is not None else None)
-    if sequence.z_debut is None and montage is None:
+    if sequence.z_debut is not None:
+        z_face = sequence.z_debut
+    elif etat is not None or montage is not None:
+        z_face = _face_matiere(etat, montage)
+    else:
         z_face = profil.z_bout if profil else 0.0
     if z_face - sequence.z_fin <= 1e-9:
         return Trajectoire(sequence.id, [], "Le trou n'a pas de profondeur : vérifiez les deux Z.")
@@ -281,31 +339,80 @@ def _percage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
     return Trajectoire(sequence.id, mouvements)
 
 
-def _alesage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
-    """Alésage : la barre reprend le trou percé, en passes parallèles à l'axe qui l'ouvrent peu à peu."""
+def _paroi_visee(sequence: Sequence, paroi, z_face: float, z_fin: float) -> List[Tuple[float, float]]:
+    """La paroi à obtenir, en points (z, rayon) du bord d'entrée vers le fond.
+
+    Sans paroi désignée, c'est un cylindre au diamètre demandé. Avec une ligne ou un arc de l'esquisse
+    (`paroi`, une polyligne que l'appelant a résolue), l'alésage **suit cette forme** : un cône, un congé,
+    un dégagement. C'est ce qui permet qu'une zone à aléser ne soit pas forcément rectangulaire.
+    """
+    rayon = sequence.diametre_fond / 2.0
+    if not paroi:
+        return [(z_face, rayon), (z_fin, rayon)]
+    points = sorted(((float(z), float(x)) for z, x in paroi), key=lambda q: -q[0])
+    haut, bas = points[0][0], points[-1][0]
+    suite: List[Tuple[float, float]] = []
+    for z in sorted({z_face, z_fin} | {z for z, _ in points if z_fin <= z <= z_face}, reverse=True):
+        if z >= haut:
+            suite.append((z, points[0][1]))
+        elif z <= bas:
+            suite.append((z, points[-1][1]))
+        else:
+            a = next(i for i in range(len(points) - 1) if points[i][0] >= z >= points[i + 1][0])
+            (z1, x1), (z2, x2) = points[a], points[a + 1]
+            t = 0.0 if abs(z2 - z1) < 1e-12 else (z - z1) / (z2 - z1)
+            suite.append((z, x1 + t * (x2 - x1)))
+    return suite
+
+
+def _alesage(sequence: Sequence, profil: ProfilTourne, montage, etat=None, paroi=None) -> Trajectoire:
+    """Alésage : la barre ouvre le trou **tel qu'il est** jusqu'à la paroi voulue, passe après passe.
+
+    Le trou de départ n'est pas déclaré : c'est celui que les opérations d'avant ont laissé. La paroi
+    visée peut être un cylindre ou suivre une ligne ou un arc de l'esquisse.
+    """
     if sequence.z_fin is None or sequence.diametre_fond <= 0.0:
         return Trajectoire(sequence.id, [], "Indiquez le diamètre à aléser et le fond de l'alésage.")
-    z_face = sequence.z_face(montage)
+    z_face = sequence.z_debut if sequence.z_debut is not None else _face_matiere(etat, montage)
     z_fin = sequence.z_fin
     if z_face - z_fin <= 1e-9:
         return Trajectoire(sequence.id, [], "L'alésage n'a pas de profondeur : vérifiez les deux Z.")
-    rayon_trou = sequence.diametre_outil / 2.0
-    rayon_vise = sequence.diametre_fond / 2.0 - sequence.surepaisseur
+    cible = [(z, max(x - sequence.surepaisseur, 0.0)) for z, x in
+             _paroi_visee(sequence, paroi, z_face, z_fin)]
+    rayon_trou = _dedans(etat, montage, z_face, z_fin) if etat is not None else sequence.diametre_outil / 2.0
+    rayon_vise = max(x for _, x in cible)
     if rayon_vise <= rayon_trou + 1e-9:
         return Trajectoire(sequence.id, [], "Le trou est déjà à ce diamètre : rien à aléser.")
     profondeur = max(sequence.profondeur_passe, 0.05)
     nb = max(1, int((rayon_vise - rayon_trou) / profondeur + 0.999))
+    z_libre = max(_face_matiere(etat, montage), z_face) + sequence.garde
 
     mouvements: List[Mouvement] = []
     for i in range(1, nb + 1):
-        rayon = min(rayon_trou + i * profondeur, rayon_vise)
-        retrait = max(rayon - sequence.degagement, 0.0)
-        mouvements.append(Mouvement(z_face + sequence.garde, rayon))
-        mouvements.append(Mouvement(z_face, rayon, travail=True))
-        mouvements.append(Mouvement(z_fin, rayon, travail=True))
-        mouvements.append(Mouvement(z_fin, retrait, travail=True))      # on décolle de la paroi
-        mouvements.append(Mouvement(z_face + sequence.garde, retrait))
+        plafond = min(rayon_trou + i * profondeur, rayon_vise)
+        # la passe ne court que là où le trou est encore plus petit qu'elle : le reste est déjà ouvert
+        tranches = (etat.intervalles_sous_la_paroi(plafond, z_face, z_fin) if etat is not None
+                    else [(z_face, z_fin)])
+        for z_a, z_b in tranches:
+            chemin = [(z, min(x, plafond)) for z, x in cible if z_b - 1e-9 <= z <= z_a + 1e-9]
+            if len(chemin) < 2:
+                continue
+            retrait = max(chemin[-1][1] - sequence.degagement, 0.0)
+            mouvements.append(Mouvement(z_libre, chemin[0][1]))
+            mouvements += [Mouvement(z, x, travail=True) for z, x in chemin]
+            mouvements.append(Mouvement(chemin[-1][0], retrait, travail=True))  # on décolle de la paroi
+            mouvements.append(Mouvement(z_libre, retrait))
+    if not mouvements:
+        return Trajectoire(sequence.id, [], "Le trou est déjà à ce diamètre : rien à aléser.")
     return Trajectoire(sequence.id, mouvements)
+
+
+def _finition_interieure(sequence: Sequence, profil: ProfilTourne, montage, etat=None,
+                         paroi=None) -> Trajectoire:
+    """Finition d'alésage : un seul passage le long de la paroi, comme la finition extérieure en suit le profil."""
+    une_passe = replace(sequence, profondeur_passe=1e6, surepaisseur=0.0)
+    traj = _alesage(une_passe, profil, montage, etat, paroi)
+    return Trajectoire(sequence.id, traj.mouvements, traj.message)
 
 
 def _rayon_travail(profil: ProfilTourne, montage, z: float) -> float:
@@ -320,16 +427,21 @@ _CALCULS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _ebauche,
             TypeSequence.FINITION: _finition, TypeSequence.GORGE: _gorge,
             TypeSequence.FILETAGE: _filetage, TypeSequence.PERCAGE: _percage,
             TypeSequence.CENTRAGE: _percage, TypeSequence.ALESAGE: _alesage,
+            TypeSequence.FINITION_INTERIEURE: _finition_interieure,
             TypeSequence.TRONCONNAGE: _tronconnage}
 
 
-def trajectoire(sequence: Sequence, profil: ProfilTourne, montage=None) -> Trajectoire:
-    """La trajectoire d'une séquence, recalculée depuis le profil résolu et le montage.
+def trajectoire(sequence: Sequence, profil: ProfilTourne, montage=None, etat=None, paroi=None) -> Trajectoire:
+    """La trajectoire d'une séquence, recalculée depuis le profil résolu, le montage et la matière.
 
-    `montage` est un `ctgraph.montage.Montage` : il donne le brut et la face des mors. Sans lui, seules
-    les séquences qui n'ont besoin que du profil fini peuvent être calculées.
+    `montage` est un `ctgraph.montage.Montage` : il donne le brut et la face des mors. `etat` est
+    l'`EtatMatiere` que la séquence trouve en arrivant — ce que les opérations d'avant ont laissé ; sans
+    lui, on raisonne sur le brut. `paroi` est la polyligne (z, rayon) que l'alésage doit suivre, résolue
+    par l'appelant depuis l'élément d'esquisse désigné.
     """
     calcul = _CALCULS.get(TypeSequence(sequence.type))
     if calcul is None:
         return Trajectoire(sequence.id, [], f"Type de séquence inconnu : {sequence.type}")
-    return calcul(sequence, profil, montage)
+    if calcul in (_alesage, _finition_interieure):
+        return calcul(sequence, profil, montage, etat, paroi)
+    return calcul(sequence, profil, montage, etat)

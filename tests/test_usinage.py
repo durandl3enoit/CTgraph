@@ -97,8 +97,10 @@ def test_ebauche_paraxiale():
     for a, b in zip(t.mouvements, t.mouvements[1:]):
         if b.travail and abs(b.x - a.x) < 1e-9:                   # une passe paraxiale
             assert b.x + 1e-9 >= p.rayon_mini(max(a.z, b.z), min(a.z, b.z)) + s.surepaisseur
+    # et elles s'arrêtent une surépaisseur avant l'épaulement : la finition aura de quoi dresser la face
     passes_profondes = [q for q in coupes if q.x < 25.0]
-    assert passes_profondes and max(q.z for q in passes_profondes) == pytest.approx(-30.0)
+    assert passes_profondes
+    assert max(q.z for q in passes_profondes) == pytest.approx(-30.0 - s.surepaisseur)
     # brut au diamètre du plus gros : il reste l'épaulement à dégager
     m.brut = Brut(diametre=50.0)
     assert trajectoire(s, p, m)
@@ -124,7 +126,7 @@ def test_finition_suit_le_profil():
     assert min(q.z for q in trajectoire(s, p, m).mouvements) >= m.z_face_mors() - 1e-6
     # longueur de coupe : l'approche, le profil sans la face arrière (25 + 30 + 10 + 50), le dégagement
     s.z_fin = None
-    assert trajectoire(s, p, m).longueur_coupe() == pytest.approx(s.garde + 115 + s.degagement, abs=0.01)
+    assert trajectoire(s, p, m).longueur_coupe() == pytest.approx(4.0 + 115 + s.degagement, abs=0.01)
     # une étendue réduite ne finit que la tranche demandée
     s.z_debut, s.z_fin = -10.0, -40.0
     court = trajectoire(s, p, m)
@@ -265,13 +267,14 @@ def test_gamme_type_dans_l_ordre():
     from ctgraph.usinage.sequences import FAMILLES_OUTIL
     g = Gamme().remplir_type()
     assert [s.type for s in g] == [TypeSequence.DRESSAGE, TypeSequence.CENTRAGE, TypeSequence.PERCAGE,
-                                   TypeSequence.EBAUCHE, TypeSequence.ALESAGE, TypeSequence.ALESAGE,
-                                   TypeSequence.FINITION, TypeSequence.GORGE, TypeSequence.FILETAGE,
-                                   TypeSequence.TRONCONNAGE]
+                                   TypeSequence.EBAUCHE, TypeSequence.ALESAGE,
+                                   TypeSequence.FINITION_INTERIEURE, TypeSequence.FINITION,
+                                   TypeSequence.GORGE, TypeSequence.FILETAGE, TypeSequence.TRONCONNAGE]
     # les opérations qui marchent sans autre renseignement sont cochées, les autres attendent leurs cotes
     assert [s.type for s in g.actives()] == [TypeSequence.DRESSAGE, TypeSequence.EBAUCHE,
                                              TypeSequence.FINITION, TypeSequence.TRONCONNAGE]
-    assert [s.libelle() for s in g][4:6] == ["Ébauche d'alésage", "Finition d'alésage"]
+    # l'intérieur a ses deux opérations, distinctes de la finition extérieure
+    assert [s.libelle() for s in g][4:7] == ["Alésage Ø 20", "Finition int. Ø 20", "Finition extérieure"]
     # chaque opération sait quelle famille d'outil la fait, sauf celles qui vont au foret
     assert FAMILLES_OUTIL[TypeSequence.FINITION] == "ext_pos" and FAMILLES_OUTIL[TypeSequence.PERCAGE] == ""
     assert set(FAMILLES_OUTIL) == set(TypeSequence)
@@ -320,7 +323,7 @@ def test_matiere_etape_par_etape():
     ebauche = g.ajouter(TypeSequence.EBAUCHE, profondeur_passe=2.0, surepaisseur=0.5, degagement=1.0)
     percage = g.ajouter(TypeSequence.PERCAGE, diametre_outil=12.0, z_fin=-45.0)
     filetage = g.ajouter(TypeSequence.FILETAGE, pas=2.0, z_debut=-35.0, z_fin=-70.0)
-    suite = etats(g, m, lambda s: trajectoire(s, p, m))
+    suite = etats(g, m, lambda s, e: trajectoire(s, p, m, e))
     assert len(suite) == len(g) + 1
 
     # le brut : plein, au diamètre, de l'arrière jusqu'à la surépaisseur de face
@@ -371,11 +374,11 @@ def test_matiere_etape_par_etape():
 
     # une séquence désactivée n'enlève rien, mais garde son rang dans la suite
     ebauche.active = False
-    sans = etats(g, m, lambda s: trajectoire(s, p, m))
+    sans = etats(g, m, lambda s, e: trajectoire(s, p, m, e))
     assert len(sans) == len(suite) and sans[2].exterieur == sans[1].exterieur
     ebauche.active = True
     assert [dressage.id, ebauche.id, percage.id, filetage.id] == [s.id for s in g]
-    assert etats(g, None, lambda s: None) == []
+    assert etats(g, None, lambda s, e: None) == []
 
 
 def test_ordre_de_la_gamme_par_rang():

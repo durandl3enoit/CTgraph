@@ -118,9 +118,15 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
   se dessinent en dents de scie au pas. Chaque opération de la gamme type part de réglages qui donnent un
   résultat visible dès qu'on la coche. Les quatre opérations en profondeur portent leur cote sous l'axe,
   **comptée depuis la surface travaillée** et non depuis le bout du brut.
-- **Édition graphique de l'alésage** : sa zone rouge s'attrape à la souris par une arête, un coin ou son
-  corps, avec l'aimantation de l'esquisse — elle s'aligne sur la pièce finie. Chaque opération porte sa
-  cote maîtresse dans son nom (« Perçage Ø 10 »). 160 tests.
+- **Édition graphique de l'alésage** : sa zone rouge s'attrape à la souris par une arête, un coin, le
+  point d'entrée ou son corps, avec l'aimantation de l'esquisse — elle s'aligne sur la pièce finie, et
+  lâcher la poignée de paroi sur une ligne ou un arc fait **suivre cette forme** à l'alésage : la zone
+  n'est plus forcément rectangulaire. Chaque opération porte sa cote maîtresse dans son nom
+  (« Perçage Ø 10 »).
+- **Un outil enlève ce qui reste après l'opération d'avant** : chaque trajectoire reçoit l'état de la
+  matière à son rang. Les approches rapides ne traversent plus le métal, les passes se limitent à ce
+  qu'il y a à couper, et une ébauche laisse une surépaisseur avant et après un épaulement. Intérieur et
+  extérieur sont deux finitions distinctes. 160 tests.
 
 ## En cours
 

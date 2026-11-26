@@ -1,4 +1,4 @@
-"""Fenêtre principale : colonne d'outils à gauche, esquisse à droite, menus, fichiers, annulation.
+﻿"""Fenêtre principale : colonne d'outils à gauche, esquisse à droite, menus, fichiers, annulation.
 
 C'est aussi le contrôleur de la vue : toute modification du modèle passe par ici, puis par le
 solveur, et est enregistrée dans la pile d'annulation.
@@ -43,6 +43,8 @@ OUTILS = (("selection", "Sélection", "S"), ("ligne", "Ligne", "L"), ("arc", "Ar
           ("cote", "Cote", "C"), ("arrondi", "Arrondi", "R"), ("chanfrein", "Chanfrein", "H"),
           ("elaguer", "Élaguer", "E"))
 PAS_MOLETTE = 1.0          # réglage d'une cote à la molette : 1 mm ou 1° par cran, 0,1 avec Maj
+# les opérations qui creusent un alésage : même zone à l'écran, mêmes poignées, même paroi suivie
+ALESAGES = (TypeSequence.ALESAGE, TypeSequence.FINITION_INTERIEURE)
 
 
 class FenetrePrincipale(QMainWindow):
@@ -697,8 +699,45 @@ class FenetrePrincipale(QMainWindow):
         return self._profil_usinage
 
     def trajectoire_de(self, sequence: Sequence) -> Trajectoire:
-        """La trajectoire d'une séquence, calculée depuis le profil résolu et le montage courant."""
-        return trajectoire(sequence, self.profil_usinage(), self.montage)
+        """La trajectoire d'une séquence, sur la matière qu'elle trouve en arrivant.
+
+        Un outil enlève ce qui reste après l'opération d'avant : on lui donne donc l'état de la matière
+        à son rang dans la gamme, et non le brut.
+        """
+        rang = next((i for i, s in enumerate(self.gamme) if s.id == sequence.id), -1)
+        suite = self._suite_matiere()
+        avant = suite[rang] if 0 <= rang < len(suite) - 1 else None
+        return self._trajectoire_sur(sequence, avant)
+
+    def _trajectoire_sur(self, sequence: Sequence, etat) -> Trajectoire:
+        return trajectoire(sequence, self.profil_usinage(), self.montage, etat,
+                           self.paroi_de(sequence))
+
+    def paroi_de(self, sequence: Sequence):
+        """La forme que doit prendre la paroi d'un alésage : l'élément d'esquisse qu'on lui a désigné."""
+        if sequence.type not in ALESAGES or not sequence.paroi:
+            return None
+        return self.vue.polyligne_element(sequence.paroi)
+
+    def trou_trouve(self, sequence: Optional[Sequence]) -> float:
+        """Le rayon du trou que la séquence trouve en arrivant : le départ de sa zone à aléser."""
+        if sequence is None:
+            return 0.0
+        rang = next((i for i, s in enumerate(self.gamme) if s.id == sequence.id), -1)
+        suite = self._suite_matiere()
+        if not (0 <= rang < len(suite) - 1):
+            return 0.0
+        avant, z_face = suite[rang], self.surface_travaillee(sequence)
+        z_fin = sequence.z_fin if sequence.z_fin is not None else z_face
+        rayons = [avant.interieur[i] for i in avant.tranches(z_face, z_fin)
+                  if avant.exterieur[i] - avant.interieur[i] > 1e-9]
+        return min(rayons) if rayons else 0.0
+
+    def _suite_matiere(self):
+        """La matière après chaque étape, calculée une fois et gardée jusqu'au prochain changement."""
+        if self._etats_matiere is None:
+            self._etats_matiere = etats(self.gamme, self.montage, self._trajectoire_sur)
+        return self._etats_matiere
 
     def _rafraichir_usinage(self, redessiner: bool = True) -> None:
         """Après une résolution ou un changement de montage : profil, passes et trajectoire montrée."""
@@ -714,6 +753,7 @@ class FenetrePrincipale(QMainWindow):
         self.vue.trajectoire = self.trajectoire_de(sequence) if sequence is not None else None
         self._pousser_matiere()          # remplit la suite des états, où se lit la surface travaillée
         self.vue.z_surface = self.surface_travaillee(sequence)
+        self.vue.rayon_trou = self.trou_trouve(sequence)
         if redessiner:
             self.vue.reconstruire()
 
@@ -728,8 +768,8 @@ class FenetrePrincipale(QMainWindow):
         if sequence.z_debut is not None:
             return sequence.z_debut
         rang = next((i for i, s in enumerate(self.gamme) if s.id == sequence.id), -1)
-        suite = self._etats_matiere
-        if suite is not None and 0 <= rang < len(suite) - 1:
+        suite = self._suite_matiere()
+        if 0 <= rang < len(suite) - 1:
             return suite[rang].z_entree(sequence.z_face(self.montage))
         return sequence.z_face(self.montage)
 
@@ -756,7 +796,7 @@ class FenetrePrincipale(QMainWindow):
         return s.texte_cote(cle, self.surface_travaillee(s))
 
     def deplacer_alesage(self, poignee: str, z: float, x: float,
-                         ancre: Optional[Tuple[float, float]] = None) -> bool:
+                         ancre: Optional[Tuple[float, float]] = None, element: int = 0) -> bool:
         """Pousse une limite de la zone à aléser, attrapée sur le dessin.
 
         `poignee` dit ce qu'on tient : « face » le bord d'entrée, « fond » le bord du fond, « paroi » le
@@ -764,7 +804,7 @@ class FenetrePrincipale(QMainWindow):
         Le point (z, x) est déjà aimanté par la vue : la zone s'aligne donc sur la pièce finie.
         """
         s = self.zone_usinage.sequence_courante()
-        if s is None or s.type != TypeSequence.ALESAGE:
+        if s is None or s.type not in ALESAGES:
             return False
         face = s.z_debut if s.z_debut is not None else self.surface_travaillee(s)
         fond = s.z_fin if s.z_fin is not None else face
@@ -772,12 +812,15 @@ class FenetrePrincipale(QMainWindow):
         if poignee == "corps" and ancre is not None:
             decalage = z - ancre[0]
             s.z_debut, s.z_fin = face + decalage, fond + decalage
-        elif poignee in ("face", "coin_face"):
+        elif poignee in ("face", "coin_face", "entree"):
             s.z_debut = max(z, fond + 0.1)
         elif poignee in ("fond", "coin_fond"):
             s.z_fin = min(z, face - 0.1)
         if poignee in ("paroi", "coin_face", "coin_fond"):
             s.diametre_fond = max(2.0 * x, mini)
+            # lâchée sur une ligne ou un arc du dessin, la paroi suit cette forme : la zone à aléser
+            # n'est alors plus un rectangle, elle épouse le cône ou le congé de la pièce finie
+            s.paroi = element if element and self.vue.polyligne_element(element) else 0
         self._apres_reglage_sequence()
         return True
 
@@ -790,9 +833,7 @@ class FenetrePrincipale(QMainWindow):
 
     def _pousser_matiere(self) -> None:
         """La matière qui reste après l'étape choisie, et en vif ce que cette étape vient d'enlever."""
-        if self._etats_matiere is None:
-            self._etats_matiere = etats(self.gamme, self.montage, self.trajectoire_de)
-        suite = self._etats_matiere
+        suite = self._suite_matiere()
         if len(suite) < 2:                   # pas de gamme : le dessin reste celui de l'esquisse seule
             self.vue.matiere = self.vue.matiere_enlevee = []
             self.vue.filets = self.vue.filets_neufs = []

@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 from ..forets import forets
 from ..tourelle import nom_poste
 from ..usinage import Gamme, Sequence, TypeSequence
-from ..usinage.sequences import FAMILLES_OUTIL, LIBELLES_SEQUENCE, USAGES_SEQUENCE
+from ..usinage.sequences import FAMILLES_OUTIL, LIBELLES_SEQUENCE, NOMS_COURTS, USAGES_SEQUENCE
 from .transfert import MIME_POSTE, MIME_SEQUENCE, accueillir, charger, lire
 
 COLONNES = ["#", "Opération", "Poste", "Passes", "Coupe"]
@@ -279,7 +279,7 @@ class ZoneUsinage(QWidget):
         grille.setSpacing(3)
         self.boutons_ajout: Dict[TypeSequence, QPushButton] = {}
         for i, type_ in enumerate(TypeSequence):
-            b = QPushButton("+ " + LIBELLES_SEQUENCE[type_].split(" ")[0])
+            b = QPushButton("+ " + NOMS_COURTS[type_])
             b.setToolTip(USAGES_SEQUENCE[type_])
             b.clicked.connect(lambda _=False, t=type_: self.ajouter(t))
             grille.addWidget(b, i // BOUTONS_PAR_RANGEE, i % BOUTONS_PAR_RANGEE)

@@ -152,7 +152,13 @@ tronçonnage. Les opérations qui demandent une cote que le dessin ne donne pas 
 est là, il reste à dire si la pièce en a besoin, et à les renseigner. Les postes sont pris de la tourelle,
 par famille d'outil, quand elle porte ce qu'il faut.
 
-Neuf opérations :
+Chaque opération **part de la matière que l'opération d'avant a laissée** : l'ébauche attaque le diamètre
+qui reste, l'alésage le trou déjà percé, et aucune approche rapide ne traverse le métal. Les passes se
+limitent à ce qu'il y a vraiment à couper — une ébauche ne brasse pas l'air au-dessus d'un diamètre déjà
+fait — et une ébauche s'arrête d'une surépaisseur avant un épaulement, pour que la finition ait de quoi
+dresser la face.
+
+Dix opérations :
 
 * **dressage de face** : passes de la matière vers l'axe, du bout du brut jusqu'à la face finie ;
 * **centrage** : pointe l'axe avant le foret, ou perce le centre de la contre-pointe ;
@@ -160,8 +166,10 @@ Neuf opérations :
 * **ébauche de chariotage** : passes parallèles à l'axe, du diamètre du brut jusqu'au profil augmenté de la
   surépaisseur de finition ; une passe plus profonde que l'épaulement qui la précède n'entre en matière
   qu'après lui ;
-* **alésage** : reprend le trou percé au diamètre voulu, à la barre, en passes parallèles à l'axe ;
-* **finition de profil** : un passage qui suit le profil fini ;
+* **ébauche d'alésage** : ouvre le trou percé jusqu'à la paroi voulue, à la barre, en passes parallèles à
+  l'axe, en laissant la surépaisseur de finition ;
+* **finition d'alésage** : un passage le long de la paroi ;
+* **finition extérieure** : un passage qui suit le profil fini ;
 * **gorge** : des plongées côte à côte, à la largeur de l'outil, jusqu'au diamètre de fond ; une gorge plus
   large que l'outil se fait en autant de plongées qu'il faut, qui se recouvrent ;
 * **filetage** : des passes le long du filet, de plus en plus fines pour garder la section de copeau. La

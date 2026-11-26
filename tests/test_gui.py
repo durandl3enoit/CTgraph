@@ -1531,11 +1531,14 @@ def test_alesage_attrape_a_la_souris(fenetre):
     alesage = zone.ajouter(TypeSequence.ALESAGE)
     assert alesage.libelle() == "Alésage Ø 20"        # la cote maîtresse est dans le nom
 
-    # la zone à aléser porte ses prises : trois arêtes, deux coins, et son corps
+    # la zone à aléser porte ses prises : trois arêtes, deux coins, le point d'entrée, et son corps
     poignees = {it.data(ROLE_ID) for it in vue._items if it.data(ROLE_GENRE) == "poignee_alesage"}
-    assert poignees == {"face", "fond", "paroi", "coin_face", "coin_fond", "corps"}
-    # sans dressage avant lui, l'alésage part du bout du brut : c'est la matière qu'il trouve
-    assert vue.alesage_montre() == (pytest.approx(win.montage.z_brut_avant(), abs=0.3), -20.0, 5.0, 10.0)
+    assert poignees == {"face", "fond", "paroi", "coin_face", "coin_fond", "entree", "corps"}
+    # une poignée posée sur une ligne du dessin reste attrapable : elle passe avant la géométrie
+    from ctgraph.ui.vue_esquisse import TOLERANCE_PX  # noqa: F401
+    assert vue.element_sous(vue.mapFromScene(0.0, 10.0), None) is not None
+    # sans dressage ni perçage avant lui, l'alésage part du plein : le trou qu'il trouve est nul
+    assert vue.alesage_montre() == (pytest.approx(win.montage.z_brut_avant(), abs=0.3), -20.0, 0.0, 10.0)
 
     # pousser la paroi change le diamètre ; pousser le fond change la profondeur
     assert win.deplacer_alesage("paroi", -10.0, 12.5)

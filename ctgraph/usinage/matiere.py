@@ -121,6 +121,43 @@ class EtatMatiere:
         if rayon > self.interieur[i]:
             self.interieur[i] = min(rayon, self.exterieur[i])
 
+    def intervalles_au_dessus(self, rayon: float, z_a: float, z_b: float) -> List[Tuple[float, float]]:
+        """Les tranches où il **reste** de la matière au-dessus de ce rayon, en z décroissant.
+
+        C'est là qu'une passe d'ébauche a quelque chose à couper : partout ailleurs elle brasserait de
+        l'air. Ce que les opérations d'avant ont enlevé est donc déduit, quelle que soit la forme.
+        """
+        haut, bas = max(z_a, z_b), min(z_a, z_b)
+        morceaux: List[Tuple[float, float]] = []
+        debut = fin = None
+        for i in self.tranches(bas, haut):
+            if self.exterieur[i] > rayon + TOLERANCE:
+                debut = self.z0 + i * self.pas if debut is None else debut
+                fin = self.z0 + (i + 1) * self.pas
+            elif debut is not None:
+                morceaux.append((debut, fin))
+                debut = None
+        if debut is not None:
+            morceaux.append((debut, fin))
+        return [(min(f, haut), max(d, bas)) for d, f in reversed(morceaux) if min(f, haut) > max(d, bas)]
+
+    def intervalles_sous_la_paroi(self, rayon: float, z_a: float, z_b: float) -> List[Tuple[float, float]]:
+        """Les tranches où le trou est **plus petit** que ce rayon : là qu'une passe d'alésage mord."""
+        haut, bas = max(z_a, z_b), min(z_a, z_b)
+        morceaux: List[Tuple[float, float]] = []
+        debut = fin = None
+        for i in self.tranches(bas, haut):
+            plein = self.exterieur[i] - self.interieur[i] > TOLERANCE
+            if plein and self.interieur[i] < rayon - TOLERANCE:
+                debut = self.z0 + i * self.pas if debut is None else debut
+                fin = self.z0 + (i + 1) * self.pas
+            elif debut is not None:
+                morceaux.append((debut, fin))
+                debut = None
+        if debut is not None:
+            morceaux.append((debut, fin))
+        return [(min(f, haut), max(d, bas)) for d, f in reversed(morceaux) if min(f, haut) > max(d, bas)]
+
     def z_entree(self, defaut: float = 0.0) -> float:
         """L'abscisse de la face avant de la matière : la surface qu'un outil axial attaque.
 
@@ -240,7 +277,7 @@ _ENLEVEMENTS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _chariot
                 TypeSequence.FINITION: _chariotage, TypeSequence.GORGE: _plongee,
                 TypeSequence.TRONCONNAGE: _plongee, TypeSequence.PERCAGE: _percage,
                 TypeSequence.CENTRAGE: _percage, TypeSequence.ALESAGE: _alesage,
-                TypeSequence.FILETAGE: _filetage}
+                TypeSequence.FINITION_INTERIEURE: _alesage, TypeSequence.FILETAGE: _filetage}
 
 
 def appliquer(etat: EtatMatiere, sequence: Sequence, traj: Optional[Trajectoire]) -> EtatMatiere:
@@ -251,9 +288,13 @@ def appliquer(etat: EtatMatiere, sequence: Sequence, traj: Optional[Trajectoire]
     return etat
 
 
-def etats(gamme: Gamme, montage, calcul_trajectoire: Callable[[Sequence], Optional[Trajectoire]],
+def etats(gamme: Gamme, montage,
+          calcul_trajectoire: Callable[[Sequence, Optional[EtatMatiere]], Optional[Trajectoire]],
           pas: float = PAS_TRANCHE) -> List[EtatMatiere]:
     """La matière après chaque étape de la gamme : `etats[0]` est le brut, `etats[k]` l'état après la k-ième.
+
+    Le calcul reçoit la matière que la séquence **trouve en arrivant** : un outil enlève ce qui reste
+    après l'opération d'avant, et sa trajectoire en dépend.
 
     Une séquence désactivée ne retire rien, mais garde sa place dans la suite : l'étape k est bien la
     k-ième ligne de la liste.
@@ -262,8 +303,9 @@ def etats(gamme: Gamme, montage, calcul_trajectoire: Callable[[Sequence], Option
         return []
     suite = [EtatMatiere.depuis_brut(montage, pas)]
     for sequence in gamme:
-        etat = suite[-1].copie()
+        avant = suite[-1]
+        etat = avant.copie()
         if sequence.active:
-            appliquer(etat, sequence, calcul_trajectoire(sequence))
+            appliquer(etat, sequence, calcul_trajectoire(sequence, avant))
         suite.append(etat)
     return suite

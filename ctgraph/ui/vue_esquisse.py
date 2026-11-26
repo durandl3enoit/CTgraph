@@ -257,6 +257,7 @@ class VueEsquisse(QGraphicsView):
         self.trajectoire = None
         self.sequence = None
         self.z_surface = 0.0              # la surface que la séquence attaque : origine de ses profondeurs
+        self.rayon_trou = 0.0             # le trou que la séquence trouve : départ de la zone à aléser
         # matière restante à l'étape choisie, et ce que cette étape vient d'enlever : des polygones (z, x)
         self.matiere: List[List[Tuple[float, float]]] = []
         self.matiere_enlevee: List[List[Tuple[float, float]]] = []
@@ -639,15 +640,30 @@ class VueEsquisse(QGraphicsView):
         self._scene.addItem(marque)
         self._items.append(marque)
 
+    def polyligne_element(self, ident: int) -> List[Tuple[float, float]]:
+        """Une ligne ou un arc de l'esquisse en points (z, x) : la forme qu'une paroi d'alésage suit."""
+        e = self.esquisse
+        genre = e.genre(ident) if ident else ""
+        if genre == "ligne":
+            a, b = (e.points[i] for i in e.extremites(ident))
+            return [(a.z, a.x), (b.z, b.x)]
+        if genre == "arc":
+            return list(self._points_arc(ident, 32))
+        return []
+
     def alesage_montre(self) -> Optional[Tuple[float, float, float, float]]:
-        """La zone à aléser de la séquence montrée : (z face, z fond, rayon de départ, rayon visé)."""
+        """La zone à aléser de la séquence montrée : (z face, z fond, rayon de départ, rayon visé).
+
+        Le rayon de départ est celui du trou que la séquence trouve, poussé par la fenêtre dans
+        `rayon_trou` : un outil ouvre ce qui reste, il ne part pas d'un diamètre déclaré.
+        """
         s = self.sequence
-        if s is None or str(getattr(s.type, "value", s.type)) != "alesage":
+        if s is None or str(getattr(s.type, "value", s.type)) not in ("alesage", "finition_interieure"):
             return None
         z_face = s.z_debut if s.z_debut is not None else self.z_surface
         if s.z_fin is None or s.diametre_fond <= 0.0 or z_face - s.z_fin <= 1e-9:
             return None
-        return z_face, s.z_fin, s.diametre_outil / 2.0, s.diametre_fond / 2.0
+        return z_face, s.z_fin, self.rayon_trou, s.diametre_fond / 2.0
 
     def _dessiner_poignees_alesage(self, c: Dict[str, QColor]) -> None:
         """Les prises de la zone à aléser : ses trois arêtes, ses deux coins, et son corps.
@@ -683,7 +699,8 @@ class VueEsquisse(QGraphicsView):
             it.setData(ROLE_ID, cle)
             self._scene.addItem(it)
             self._items.append(it)
-        for cle, (z, x) in (("coin_face", (z_face, r1)), ("coin_fond", (z_fond, r1))):
+        for cle, (z, x) in (("coin_face", (z_face, r1)), ("coin_fond", (z_fond, r1)),
+                            ("entree", (z_face, r0))):
             it = QGraphicsRectItem(-4, -4, 8, 8)
             it.setPos(z, x)
             it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
@@ -1596,8 +1613,11 @@ class VueEsquisse(QGraphicsView):
                      and (genres is None or it.data(ROLE_GENRE) in genres)]
         if not candidats:
             return None
-        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "cote_sequence": 5,
-                 "reference_mors": 7, "mors": 8, "reference": 9, "trajectoire": 10, "matiere": 11}
+        # les poignées d'usinage passent avant tout : posées sur une ligne du dessin, elles doivent
+        # rester attrapables, sinon on ne peut plus les déplacer une fois alignées
+        ordre = {"poignee_alesage": -1, "point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4,
+                 "cote_sequence": 5, "reference_mors": 7, "mors": 8, "reference": 9, "trajectoire": 10,
+                 "matiere": 11}
         candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
         return candidats[0]
 
@@ -2151,7 +2171,7 @@ class VueEsquisse(QGraphicsView):
             # l'aimantation de l'esquisse s'applique : la zone s'aligne sur les points et faces du profil
             acc = self.accrocher(pos)
             ancre, self._alesage_ancre = self._alesage_ancre, (acc.z, acc.x)
-            self.controleur.deplacer_alesage(self._glisse_alesage, acc.z, acc.x, ancre)
+            self.controleur.deplacer_alesage(self._glisse_alesage, acc.z, acc.x, ancre, acc.courbe or 0)
             return
         if self._glisse_point is not None and gauche:
             if not self._glisse_actif:
