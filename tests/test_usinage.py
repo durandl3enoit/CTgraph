@@ -332,14 +332,25 @@ def test_matiere_etape_par_etape():
 
     # le filetage ne change pas la silhouette : le filet est une rainure, l'enveloppe reste
     assert suite[4].exterieur == apres_percage.exterieur
+    # mais il pose un filet, qui se dessine, et que l'étape signale comme neuf
+    assert len(suite[4].filets) == 1 and not apres_percage.filets
+    filet = suite[4].filets[0]
+    assert filet.pas == 2.0 and filet.rayon == pytest.approx(15.0)
+    assert filet.hauteur == pytest.approx(filetage.profondeur_filet())
+    assert suite[4].filets_depuis(suite[3]) == [filet] and not suite[3].filets_depuis(suite[2])
 
-    # ce que chaque étape a enlevé, pour le mettre en évidence
+    # ce que chaque étape a enlevé, pour le mettre en évidence : des polygones (z, rayon)
     copeaux = apres_ebauche.enlevee_depuis(apres_dressage)
-    assert copeaux and max(r_ext for _, _, _, r_ext in copeaux) == pytest.approx(m.rayon_brut())
-    assert min(r_int for _, _, r_int, _ in copeaux) == pytest.approx(15.5)
+    rayons = [x for poly in copeaux for _, x in poly]
+    assert copeaux and max(rayons) == pytest.approx(m.rayon_brut())
+    assert min(rayons) == pytest.approx(15.5)
     assert not suite[4].enlevee_depuis(suite[3])                  # le filetage n'enlève rien de visible
-    # une bande ne garde que la matière vraiment partie : rien de vide
-    assert all(z1 > z0 and r1 > r0 for z0, z1, r0, r1 in copeaux)
+    # un contour suit le milieu des tranches : un cône y devient une pente, pas un escalier
+    assert all(len(poly) >= 4 for poly in copeaux)
+    trou = suite[3].enlevee_depuis(suite[2])
+    penchants = [(a, b) for poly in trou for a, b in zip(poly, poly[1:])
+                 if abs(a[0] - b[0]) > 1e-9 and abs(a[1] - b[1]) > 1e-9]
+    assert penchants, "la pointe du foret doit être une pente, pas une marche d'escalier"
 
     # une séquence désactivée n'enlève rien, mais garde son rang dans la suite
     ebauche.active = False

@@ -112,7 +112,10 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
   dans un champ de l'opération. Le trou dessiné prend **la forme de l'outil** : fond conique à 135° pour un
   foret, deux étages pour un foret à centrer (bout guide, puis cône à 60°). Le Z de fin est celui de la
   pointe. Dimensions à vérifier sur les forets de l'atelier. Le curseur d'étape se voit à droite de la
-  liste, poignée comprise ; boutons et gamme sont fixés en haut du volet. 159 tests.
+  liste, poignée comprise ; boutons et gamme sont fixés en haut du volet. Une opération ajoutée se pose
+  juste après l'étape montrée. La matière enlevée est dessinée en polygones suivant le milieu des tranches
+  (plus d'escalier sur les cônes) et par-dessus le remplissage du profil (un trou se voit). Les **filetages**
+  se dessinent en dents de scie au pas. 159 tests.
 
 ## En cours
 

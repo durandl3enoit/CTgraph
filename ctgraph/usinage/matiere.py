@@ -11,8 +11,8 @@ Chaque type d'opération enlève la matière à sa façon, et seulement la sienn
 * l'**ébauche** et la **finition** rabotent ce qui dépasse au-dessus de leur chemin, tranche par tranche ;
 * la **gorge** et le **tronçonnage** creusent sur la largeur de l'outil ;
 * le **perçage** ouvre un alésage du diamètre du foret ;
-* le **filetage** ne change pas la silhouette : le filet est une rainure hélicoïdale, l'enveloppe reste au
-  diamètre nominal.
+* le **filetage** ne change pas la silhouette — le filet est une rainure hélicoïdale, l'enveloppe reste au
+  diamètre nominal — mais il pose un `Filet`, qui se dessine : sinon rien ne dirait qu'il est fait.
 
 Ce modèle sert à voir, pas à vérifier : il ne tient pas compte de la forme de l'outil, et ne détecte donc
 aucune collision.
@@ -28,23 +28,50 @@ from .trajectoires import Trajectoire
 PAS_TRANCHE = 0.25          # mm : finesse du modèle de matière
 TOLERANCE = 1e-6
 
-# une bande dessinable : (z gauche, z droite, rayon intérieur, rayon extérieur)
-Bande = Tuple[float, float, float, float]
+# un contour dessinable : le polygone fermé d'une zone de matière, en points (z, rayon)
+Contour = List[Tuple[float, float]]
 
 
-def _bandes(z0: float, pas: float, paires: List[Tuple[float, float]]) -> List[Bande]:
-    """Regroupe les tranches voisines de mêmes rayons en rectangles, pour n'en dessiner que quelques-uns."""
-    bandes: List[Bande] = []
-    debut = 0
-    for i in range(len(paires) + 1):
-        fini = i == len(paires)
-        vide = fini or paires[i][1] - paires[i][0] <= TOLERANCE
-        change = fini or vide or (i > debut and paires[i] != paires[debut])
-        if change and debut < i and paires[debut][1] - paires[debut][0] > TOLERANCE:
-            bandes.append((z0 + debut * pas, z0 + i * pas, paires[debut][0], paires[debut][1]))
-        if change:
-            debut = i + 1 if vide else i
-    return bandes
+def _contours(z0: float, pas: float, paires: List[Tuple[float, float]]) -> List[Contour]:
+    """Les zones non vides, en polygones qui passent par le milieu des tranches.
+
+    Relier les milieux plutôt que les bords fait d'un cône une pente franche et non un escalier : c'est
+    ce qui rend lisible la pointe d'un foret ou le cône d'un foret à centrer, larges de quelques tranches.
+    """
+    contours: List[Contour] = []
+    n = len(paires)
+    i = 0
+    while i < n:
+        if paires[i][1] - paires[i][0] <= TOLERANCE:
+            i += 1
+            continue
+        j = i
+        while j < n and paires[j][1] - paires[j][0] > TOLERANCE:
+            j += 1
+        milieux = [z0 + (k + 0.5) * pas for k in range(i, j)]
+        bas = [paires[k][0] for k in range(i, j)]
+        haut = [paires[k][1] for k in range(i, j)]
+        gauche, droite = z0 + i * pas, z0 + j * pas
+        poly: Contour = [(gauche, bas[0])] + list(zip(milieux, bas)) + [(droite, bas[-1]),
+                                                                        (droite, haut[-1])]
+        poly += list(zip(reversed(milieux), reversed(haut))) + [(gauche, haut[0])]
+        contours.append(poly)
+        i = j
+    return contours
+
+
+@dataclass(frozen=True)
+class Filet:
+    """Un filetage posé sur la pièce.
+
+    Il ne change pas la silhouette — c'est une rainure hélicoïdale, l'enveloppe reste au diamètre
+    nominal — mais il se dessine, sinon rien ne dirait que le filet est fait.
+    """
+    z_debut: float
+    z_fin: float
+    rayon: float                     # rayon de crête, le diamètre nominal du filet
+    hauteur: float                   # profondeur du filet, au rayon
+    pas: float
 
 
 @dataclass
@@ -54,6 +81,11 @@ class EtatMatiere:
     pas: float
     interieur: List[float]
     exterieur: List[float]
+    filets: List[Filet] = None       # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.filets is None:
+            self.filets = []
 
     @classmethod
     def depuis_brut(cls, montage, pas: float = PAS_TRANCHE) -> "EtatMatiere":
@@ -63,7 +95,8 @@ class EtatMatiere:
         return cls(z_arriere, pas, [montage.rayon_interieur_brut()] * nb, [montage.rayon_brut()] * nb)
 
     def copie(self) -> "EtatMatiere":
-        return EtatMatiere(self.z0, self.pas, list(self.interieur), list(self.exterieur))
+        return EtatMatiere(self.z0, self.pas, list(self.interieur), list(self.exterieur),
+                           list(self.filets))
 
     def __len__(self) -> int:
         return len(self.exterieur)
@@ -103,17 +136,21 @@ class EtatMatiere:
         i = self.indice(z)
         return self.interieur[i] if i >= 0 else 0.0
 
-    def bandes(self) -> List[Bande]:
-        """La matière restante, en rectangles : ce qu'il faut pour la dessiner."""
-        return _bandes(self.z0, self.pas, list(zip(self.interieur, self.exterieur)))
+    def contours(self) -> List[Contour]:
+        """La matière restante, en polygones : ce qu'il faut pour la dessiner."""
+        return _contours(self.z0, self.pas, list(zip(self.interieur, self.exterieur)))
 
-    def enlevee_depuis(self, avant: "EtatMatiere") -> List[Bande]:
+    def enlevee_depuis(self, avant: "EtatMatiere") -> List[Contour]:
         """Ce qui a disparu entre un état antérieur et celui-ci : les copeaux de l'étape."""
         if avant.pas != self.pas or abs(avant.z0 - self.z0) > TOLERANCE or len(avant) != len(self):
             return []
         dehors = [(max(self.exterieur[i], avant.interieur[i]), avant.exterieur[i]) for i in range(len(self))]
         dedans = [(avant.interieur[i], min(self.interieur[i], avant.exterieur[i])) for i in range(len(self))]
-        return _bandes(self.z0, self.pas, dehors) + _bandes(self.z0, self.pas, dedans)
+        return _contours(self.z0, self.pas, dehors) + _contours(self.z0, self.pas, dedans)
+
+    def filets_depuis(self, avant: "EtatMatiere") -> List[Filet]:
+        """Les filets que cette étape vient de tailler."""
+        return [f for f in self.filets if f not in avant.filets]
 
 
 def _dressage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
@@ -172,10 +209,27 @@ def _alesage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
             etat.aleser(i, max(a.x, b.x))
 
 
+def _filetage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
+    """Filetage : l'enveloppe ne bouge pas, mais le filet est posé et se dessinera.
+
+    L'étendue se lit sur les **segments** de coupe, pas sur leurs points : une passe de filetage est un
+    seul mouvement, dont le point d'arrivée est le bout du filet et le départ son entrée, garde comprise.
+    """
+    segments = [(a, b) for a, b in zip(traj.mouvements, traj.mouvements[1:]) if b.travail]
+    if not segments:
+        return
+    depart, arrivee = segments[0]
+    hauteur = sequence.profondeur_filet()
+    fond = min(m.x for _, m in segments)
+    etat.filets.append(Filet(max(depart.z, arrivee.z) - sequence.garde, min(depart.z, arrivee.z),
+                             fond + hauteur, hauteur, sequence.pas))
+
+
 _ENLEVEMENTS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _chariotage,
                 TypeSequence.FINITION: _chariotage, TypeSequence.GORGE: _plongee,
                 TypeSequence.TRONCONNAGE: _plongee, TypeSequence.PERCAGE: _percage,
-                TypeSequence.CENTRAGE: _percage, TypeSequence.ALESAGE: _alesage}
+                TypeSequence.CENTRAGE: _percage, TypeSequence.ALESAGE: _alesage,
+                TypeSequence.FILETAGE: _filetage}
 
 
 def appliquer(etat: EtatMatiere, sequence: Sequence, traj: Optional[Trajectoire]) -> EtatMatiere:

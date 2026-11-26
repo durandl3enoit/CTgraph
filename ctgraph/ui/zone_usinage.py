@@ -686,7 +686,10 @@ class ZoneUsinage(QWidget):
     # -- actions --------------------------------------------------------------------------
 
     def ajouter(self, type_: TypeSequence) -> Sequence:
+        """Ajoute une opération **juste après l'étape montrée**, et la choisit : on construit la gamme
+        de proche en proche, sans avoir à remonter chaque ajout depuis la fin."""
         s = self.gamme.ajouter(type_)
+        self.gamme.deplacer_a(s.id, self.etape())
         self.rafraichir()
         self._choisir(s.id)
         self.gamme_changee.emit()

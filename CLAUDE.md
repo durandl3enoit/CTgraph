@@ -316,16 +316,25 @@ vérification par relecture du G-code généré, réception des programmes depui
   n'a aucun état propre — il lit et écrit la ligne courante — donc il ne peut pas se désaccorder d'elle.
   **Boutons et gamme sont fixés en haut du volet** ; seul le formulaire de réglage défile, dans son propre
   `QScrollArea`. Sur la ligne du brut, le formulaire s'efface au lieu de se griser.
+  **Une opération ajoutée se pose juste après l'étape montrée**, pas en fin de gamme : on la construit de
+  proche en proche (demandé le 26 novembre 2026).
   `EtatMatiere` décrit la matière restante en **tranches** de `PAS_TRANCHE` (0,25 mm) le long de l'axe, chacune
   avec son rayon intérieur et son rayon extérieur ; `etats()` rend la suite des états, `enlevee_depuis` les
-  copeaux d'une étape. La vue les dessine en rectangles (genre « matiere », non sélectionnable) : la matière
-  restante en teinte sourde, ce que l'étape vient d'emporter en orange, comme sa trajectoire.
+  copeaux d'une étape. `contours()` et `enlevee_depuis` rendent des **polygones passant par le milieu des
+  tranches**, pas des rectangles : sans cela un cône de pointe de foret se dessine en escalier, ce que
+  l'utilisateur a refusé le 26 novembre 2026. La vue les dessine (genre « matiere », non sélectionnable) :
+  la matière restante en teinte sourde sous le profil, ce que l'étape vient d'emporter en orange **au-dessus
+  du remplissage du contour**, faute de quoi un trou de foret, étant à l'intérieur de la pièce, reste invisible.
   **Chaque type enlève à sa façon** : le dressage fait avancer la face, l'ébauche et la finition rabotent
   sous leur chemin tranche par tranche, la gorge et le tronçonnage creusent sur la largeur de l'outil, le
   perçage et le centrage ouvrent le trou **à la forme du foret** (voir ci-dessous), l'alésage l'ouvre
   passe par passe, le
   filetage ne change pas la silhouette (le filet est une rainure hélicoïdale,
-  l'enveloppe reste au diamètre nominal). Un mouvement radial d'ébauche ou de finition ne fait que longer une
+  l'enveloppe reste au diamètre nominal) mais pose un `Filet`, que la vue dessine en **dents de scie au
+  pas**, entre la crête et le fond de filet, par-dessus tout le reste : un filet est fin, il se perdrait
+  sous sa propre trajectoire. L'étendue du filet se lit sur les *segments* de coupe, pas sur leurs points :
+  une passe de filetage est un seul mouvement, dont le départ porte la garde.
+  Un mouvement radial d'ébauche ou de finition ne fait que longer une
   face : il n'enlève rien de plus. **Ce modèle sert à voir, pas à vérifier** : il ignore la forme de l'outil
   et ne détecte aucune collision.
 - **Forets et forets à centrer** (`ctgraph/forets.py`, demandé le 26 novembre 2026) : un foret ne laisse

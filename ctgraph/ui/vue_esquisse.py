@@ -256,9 +256,12 @@ class VueEsquisse(QGraphicsView):
         # réglables (la profondeur d'un perçage) se posent sur le dessin comme celles du brut
         self.trajectoire = None
         self.sequence = None
-        # matière restante à l'étape choisie, et ce que cette étape vient d'enlever (bandes z0,z1,r0,r1)
-        self.matiere: List[Tuple[float, float, float, float]] = []
-        self.matiere_enlevee: List[Tuple[float, float, float, float]] = []
+        # matière restante à l'étape choisie, et ce que cette étape vient d'enlever : des polygones (z, x)
+        self.matiere: List[List[Tuple[float, float]]] = []
+        self.matiere_enlevee: List[List[Tuple[float, float]]] = []
+        # filets taillés : ceux qui sont là, et ceux que l'étape choisie vient de tailler
+        self.filets = []
+        self.filets_neufs = []
         # édition des cotes du mors : elles s'affichent et se règlent, tout le reste est grisé et inerte
         self.mode_mors = False
         self._items_mors: List[QGraphicsItem] = []
@@ -454,7 +457,8 @@ class VueEsquisse(QGraphicsView):
 
         if self.montage is not None and self.montage_visible:
             self._dessiner_montage(c)
-        self._dessiner_matiere(c)
+        if self.matiere or self.matiere_enlevee or self.filets:
+            self._dessiner_matiere(c)
 
         # contours fermés : un remplissage discret valide que le profil se referme, et la vue 3D les révolutionne
         contours = self.contours_fermes()
@@ -544,21 +548,53 @@ class VueEsquisse(QGraphicsView):
         self._dessiner_apercu()
 
     def _dessiner_matiere(self, c: Dict[str, QColor]) -> None:
-        """La matière restante à l'étape choisie, et en vif ce que cette étape vient d'enlever."""
-        if not self.matiere and not self.matiere_enlevee:
-            return
+        """La matière restante à l'étape choisie, et en vif ce que cette étape vient d'enlever.
+
+        Les copeaux passent **au-dessus** du remplissage du profil : un trou de foret est à l'intérieur
+        de la pièce, il resterait invisible sous la teinte du contour fermé.
+        """
         reste = QColor(c["texte"].red(), c["texte"].green(), c["texte"].blue(), 40)
-        copeau = QColor(225, 90, 60, 90)
-        for bandes, couleur, z in ((self.matiere, reste, 0.6), (self.matiere_enlevee, copeau, 0.7)):
-            if not bandes:
+        copeau = QColor(225, 90, 60, 110)
+        for contours, couleur, z in ((self.matiere, reste, 0.6), (self.matiere_enlevee, copeau, 1.5)):
+            if not contours:
                 continue
             chemin = QPainterPath()
-            for z_gauche, z_droite, r_int, r_ext in bandes:
-                chemin.addRect(QRectF(z_gauche, r_int, z_droite - z_gauche, r_ext - r_int))
+            for polygone in contours:
+                chemin.addPolygon(QPolygonF([QPointF(pz, px) for pz, px in polygone]))
             it = QGraphicsPathItem(chemin.simplified())
             it.setPen(QPen(Qt.PenStyle.NoPen))
             it.setBrush(QBrush(couleur))
             it.setZValue(z)
+            it.setData(ROLE_GENRE, "matiere")
+            self._scene.addItem(it)
+            self._items.append(it)
+        self._dessiner_filets(c)
+
+    def _dessiner_filets(self, c: Dict[str, QColor]) -> None:
+        """Les filetages : un profil en dents de scie au pas, entre la crête et le fond de filet."""
+        muet = QColor(c["texte"].red(), c["texte"].green(), c["texte"].blue(), 150)
+        vif = QColor(225, 90, 60)
+        neufs = set(self.filets_neufs)
+        for f in self.filets:
+            if f.pas <= 1e-6 or f.z_debut - f.z_fin <= 1e-9:
+                continue
+            fond = max(f.rayon - f.hauteur, 0.0)
+            chemin = QPainterPath()
+            chemin.moveTo(f.z_debut, fond)
+            chemin.lineTo(f.z_fin, fond)
+            nb = int((f.z_debut - f.z_fin) / f.pas)
+            if nb <= 200:                         # au-delà, les dents se confondent : le fond suffit
+                for k in range(nb + 1):
+                    z = f.z_debut - k * f.pas
+                    chemin.moveTo(z, f.rayon)
+                    chemin.lineTo(max(z - f.pas / 2.0, f.z_fin), fond)
+                    if z - f.pas >= f.z_fin - 1e-9:
+                        chemin.lineTo(z - f.pas, f.rayon)
+            it = QGraphicsPathItem(chemin)
+            stylo = QPen(vif if f in neufs else muet, 1.6 if f in neufs else 1.0)
+            stylo.setCosmetic(True)
+            it.setPen(stylo)
+            it.setZValue(13)          # au-dessus de la trajectoire : un filet est fin, il se perdrait
             it.setData(ROLE_GENRE, "matiere")
             self._scene.addItem(it)
             self._items.append(it)
@@ -612,13 +648,14 @@ class VueEsquisse(QGraphicsView):
         z1, z2 = s.z_face(self.montage), s.z_fin
         if abs(z1 - z2) <= 1e-9:
             return
-        x = max(s.diametre_outil / 4.0, self.px_en_mm(8))
+        # sous l'axe, plus bas que les cotes du brut : un centrage est petit, l'étiquette le cacherait
+        x = -self.px_en_mm(46)
         path = QPainterPath()
         path.moveTo(z1, x)
         path.lineTo(z2, x)
         for z in (z1, z2):
             path.moveTo(z, 0.0)
-            path.lineTo(z, x + self.px_en_mm(5))
+            path.lineTo(z, x - self.px_en_mm(5))
         self._fleche(path, (z1, x), (1.0, 0.0))
         self._fleche(path, (z2, x), (-1.0, 0.0))
         it = QGraphicsPathItem(path)

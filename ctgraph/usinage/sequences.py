@@ -110,7 +110,7 @@ DEFAUTS_SEQUENCE: Dict[TypeSequence, Dict[str, float]] = {
                             "foret": "À centrer 3,15 × 8", "diametre_outil": 8.0, "z_fin": -8.0,
                             "surepaisseur": 0.0},
     TypeSequence.PERCAGE: {"vitesse_coupe": 60.0, "avance": 0.12, "profondeur_passe": 5.0,
-                           "foret": "Foret Ø 10", "surepaisseur": 0.0},
+                           "foret": "Foret Ø 10", "z_fin": -20.0, "surepaisseur": 0.0},
     TypeSequence.ALESAGE: {"vitesse_coupe": 180.0, "avance": 0.12, "profondeur_passe": 1.0,
                            "diametre_outil": 10.0},
     TypeSequence.FINITION: {"vitesse_coupe": 250.0, "avance": 0.1},

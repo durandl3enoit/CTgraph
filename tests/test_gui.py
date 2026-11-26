@@ -1390,20 +1390,20 @@ def test_volet_usinage_curseur_matiere_et_ordre(fenetre):
     assert zone.sequence_courante() is None and vue.trajectoire is None
     assert "brut" in zone.lbl_etat.text().lower()
     assert vue.matiere and not vue.matiere_enlevee
-    assert max(r for _, _, _, r in vue.matiere) == pytest.approx(win.montage.rayon_brut())
+    assert max(x for poly in vue.matiere for _, x in poly) == pytest.approx(win.montage.rayon_brut())
 
     # étape 1 : le dressage a emporté la surépaisseur de face, devant Z = 0
     zone.definir_etape(1)
     assert zone.sequence_courante() is dressage and vue.trajectoire is not None
-    assert vue.matiere_enlevee and max(z for _, z, _, _ in vue.matiere_enlevee) > 0.0
+    assert vue.matiere_enlevee and max(z for poly in vue.matiere_enlevee for z, _ in poly) > 0.0
     # les lignes qui suivent l'étape montrée sont grisées, celles d'avant non
     assert zone.liste.topLevelItem(1).foreground(1) != zone.liste.topLevelItem(2).foreground(1)
 
     # étape 2 : l'ébauche a emporté la matière au diamètre, du brut jusqu'au profil
     zone.definir_etape(2)
     enleve = vue.matiere_enlevee
-    assert enleve and max(r for _, _, _, r in enleve) == pytest.approx(win.montage.rayon_brut())
-    assert min(r for _, _, r, _ in enleve) < win.montage.rayon_brut()
+    assert enleve and max(x for poly in enleve for _, x in poly) == pytest.approx(win.montage.rayon_brut())
+    assert min(x for poly in enleve for _, x in poly) < win.montage.rayon_brut()
 
     # la liste est une source de glisser : une ligne emporte sa séquence
     index = zone.liste.indexFromItem(zone.liste.topLevelItem(2))
@@ -1431,6 +1431,15 @@ def test_volet_usinage_curseur_matiere_et_ordre(fenetre):
     # lâchée là où elle est déjà : rien ne bouge
     assert lacher_au_dessus_de(1, ebauche)
     assert [s.id for s in win.gamme] == [ebauche.id, dressage.id]
+
+    # une opération ajoutée se pose juste après l'étape montrée, pas à la fin
+    zone.definir_etape(1)
+    gorge = zone.ajouter(TypeSequence.GORGE)
+    assert [s.id for s in win.gamme] == [ebauche.id, gorge.id, dressage.id]
+    assert zone.sequence_courante() is gorge and zone.etape() == 2
+    zone.definir_etape(0)
+    tete = zone.ajouter(TypeSequence.CENTRAGE)
+    assert [s.id for s in win.gamme][0] == tete.id and zone.etape() == 1
 
     # gamme vide : il ne reste que la ligne du brut, et le dessin redevient celui de l'esquisse seule
     while zone.supprimer():
@@ -1486,12 +1495,12 @@ def test_gamme_type_et_cote_de_percage(fenetre):
     assert not percage.outil_de_percage().a_centrer
     zone.foret.setCurrentIndex(zone.foret.findData("Foret Ø 13"))
     assert percage.foret == "Foret Ø 13" and percage.diametre_outil == 13.0
-    creux = max(r for _, _, _, r in vue.matiere_enlevee if r < 10.0)
+    creux = max(x for poly in vue.matiere_enlevee for _, x in poly if x < 10.0)
     assert creux == pytest.approx(6.5)                       # le trou est bien au Ø du foret choisi
     cote = next(it for it in vue._items
                 if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence")
     assert cote.texte == "P 32" and cote.data(ROLE_ID) == "profondeur"   # 2 mm de marge + 30
-    assert vue.matiere_enlevee and min(r for _, _, r, _ in vue.matiere_enlevee) == 0.0
+    assert vue.matiere_enlevee and min(x for poly in vue.matiere_enlevee for _, x in poly) == 0.0
 
     # la cote se règle comme celles du brut : à la molette, et au double-clic
     assert win.ajuster_valeur_sequence("profondeur", 1, False) == "P 33"

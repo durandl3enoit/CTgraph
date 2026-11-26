@@ -750,10 +750,13 @@ class FenetrePrincipale(QMainWindow):
         suite = self._etats_matiere
         if len(suite) < 2:                   # pas de gamme : le dessin reste celui de l'esquisse seule
             self.vue.matiere = self.vue.matiere_enlevee = []
+            self.vue.filets = self.vue.filets_neufs = []
             return
         k = min(max(self.zone_usinage.etape(), 0), len(suite) - 1)
-        self.vue.matiere = suite[k].bandes()
+        self.vue.matiere = suite[k].contours()
         self.vue.matiere_enlevee = suite[k].enlevee_depuis(suite[k - 1]) if k else []
+        self.vue.filets = list(suite[k].filets)
+        self.vue.filets_neufs = suite[k].filets_depuis(suite[k - 1]) if k else []
 
     def _gamme_changee(self) -> None:
         self._marquer_modifie(True)
@@ -1262,6 +1265,7 @@ class FenetrePrincipale(QMainWindow):
         self.vue.definir_esquisse(self.esquisse)
         self.vue.trajectoire = self.vue.sequence = None
         self.vue.matiere = self.vue.matiere_enlevee = []
+        self.vue.filets = self.vue.filets_neufs = []
         self._profil_usinage = self._etats_matiere = None
         self.zone_usinage.definir_gamme(self.gamme, self.trajectoire_de)
         self._pousser_montage_3d()

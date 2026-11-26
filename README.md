@@ -169,10 +169,11 @@ Neuf opérations :
   filetage est son pas ;
 * **tronçonnage** : une plongée jusqu'au diamètre demandé, ou jusqu'à l'axe pour détacher la pièce.
 
-Les boutons du haut ajoutent une séquence, chacun avec les conditions de coupe habituelles de son type ; la
-case de chaque ligne l'active ou la met de côté sans la perdre. La liste donne pour chaque séquence son poste
-de tourelle, le nombre de passes et la longueur à couper. L'ordre d'usinage se change avec les flèches, ou en
-**tirant une ligne sur une autre** : un trait montre où elle va se poser.
+Les boutons du haut ajoutent une séquence, chacun avec les conditions de coupe habituelles de son type ;
+elle se pose **juste après l'étape montrée**, pas en fin de gamme. La case de chaque ligne l'active ou la met
+de côté sans la perdre. La liste donne pour chaque séquence son poste de tourelle, le nombre de passes et la
+longueur à couper. L'ordre d'usinage se change avec les flèches, ou en **tirant une ligne sur une autre** :
+un trait montre où elle va se poser.
 
 **La liste est le curseur d'étape.** Sa première ligne est le *brut*, tel qu'il est serré ; choisir une ligne
 montre la pièce telle qu'elle est après cette opération, et les lignes qui suivent se grisent, n'étant pas
@@ -184,8 +185,10 @@ l'a enlevée. Les boutons et la gamme restent fixés en haut du volet ; seul le 
 Le **perçage et le centrage** montrent le trou tel que le foret le laisse : fond conique à 135° pour un foret
 hélicoïdal, et pour un foret à centrer les deux étages — bout guide au petit diamètre, puis cône à 60° jusqu'au
 corps. Le foret se choisit dans un champ de l'opération ; le *Z de fin* est celui de la **pointe**, si bien
-qu'un centrage trop court ne fait que son avant-trou, et cela se voit. Le modèle de matière sert à voir, pas à
-vérifier : il ne détecte aucune collision.
+qu'un centrage trop court ne fait que son avant-trou, et cela se voit. Le **filetage** se dessine en dents de
+scie au pas, entre la crête et le fond de filet : il n'enlève pas de matière à la silhouette — un filet est une
+rainure hélicoïdale — mais on voit qu'il est fait. Le modèle de matière sert à voir, pas à vérifier : il ne
+détecte aucune collision.
 
 Le formulaire règle la séquence choisie et **ne montre que les réglages qui comptent pour son type**, nommés
 pour ce qu'ils y sont (« Fond du trou » plutôt que « Z de fin ») : une finition n'a ni passes ni surépaisseur,
