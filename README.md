@@ -198,8 +198,14 @@ tourelle, écrit `T1` à `T12` comme sur la machine, se saisit au numéro, ou
 **en glissant une ligne du volet Tourelle sur la séquence** : elle prend ce poste avec la combinaison qui y
 est montée, rappelée sous le numéro.
 
-Certaines valeurs se règlent **directement sur le dessin**, comme les cotes du brut : la **profondeur d'un
-perçage** est cotée « P 47 » depuis la face d'attaque, et se change au double-clic ou au clic droit + molette.
+Certaines valeurs se règlent **directement sur le dessin**, comme les cotes du brut. Les quatre opérations
+en profondeur — centrage, perçage, alésage, filetage — portent la leur sous l'axe : « P 30 » pour une
+profondeur, « L 20 » pour une longueur de filet. Elle se change au double-clic ou au clic droit + molette.
+**Sa référence est la surface travaillée** : après un dressage, on perce depuis la face dressée, pas depuis
+le bout du brut.
+
+Les opérations proposées par la gamme type sont décochées quand elles demandent une cote que le dessin ne
+donne pas, mais elles partent de réglages qui donnent un résultat visible : on coche, on voit, on ajuste.
 
 La **trajectoire de la séquence choisie se dessine sur l'esquisse** : trait plein pour la coupe, pointillé pour
 les déplacements rapides, un cercle au point de départ. Elle est **recalculée depuis le profil résolu**, jamais

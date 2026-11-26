@@ -256,6 +256,7 @@ class VueEsquisse(QGraphicsView):
         # réglables (la profondeur d'un perçage) se posent sur le dessin comme celles du brut
         self.trajectoire = None
         self.sequence = None
+        self.z_surface = 0.0              # la surface que la séquence attaque : origine de ses profondeurs
         # matière restante à l'étape choisie, et ce que cette étape vient d'enlever : des polygones (z, x)
         self.matiere: List[List[Tuple[float, float]]] = []
         self.matiere_enlevee: List[List[Tuple[float, float]]] = []
@@ -645,7 +646,7 @@ class VueEsquisse(QGraphicsView):
         if s is None or "profondeur" not in s.cotes_dessinees() or s.z_fin is None:
             return
         couleur = QColor(225, 90, 60)
-        z1, z2 = s.z_face(self.montage), s.z_fin
+        z1, z2 = self.z_surface, s.z_fin
         if abs(z1 - z2) <= 1e-9:
             return
         # sous l'axe, plus bas que les cotes du brut : un centrage est petit, l'étiquette le cacherait
@@ -667,7 +668,7 @@ class VueEsquisse(QGraphicsView):
         it.setData(ROLE_ID, "profondeur")
         self._scene.addItem(it)
         self._items.append(it)
-        et = Etiquette(s.texte_cote("profondeur", self.montage), couleur, c["fond"], gras=False)
+        et = Etiquette(s.texte_cote("profondeur", self.z_surface), couleur, c["fond"], gras=False)
         et.setPos((z1 + z2) / 2.0, x)
         et.setData(ROLE_GENRE, "cote_sequence")
         et.setData(ROLE_ID, "profondeur")

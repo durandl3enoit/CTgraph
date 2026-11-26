@@ -115,7 +115,9 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
   liste, poignée comprise ; boutons et gamme sont fixés en haut du volet. Une opération ajoutée se pose
   juste après l'étape montrée. La matière enlevée est dessinée en polygones suivant le milieu des tranches
   (plus d'escalier sur les cônes) et par-dessus le remplissage du profil (un trou se voit). Les **filetages**
-  se dessinent en dents de scie au pas. 159 tests.
+  se dessinent en dents de scie au pas. Chaque opération de la gamme type part de réglages qui donnent un
+  résultat visible dès qu'on la coche. Les quatre opérations en profondeur portent leur cote sous l'axe,
+  **comptée depuis la surface travaillée** et non depuis le bout du brut. 159 tests.
 
 ## En cours
 

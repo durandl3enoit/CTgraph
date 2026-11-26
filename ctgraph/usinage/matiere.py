@@ -121,6 +121,17 @@ class EtatMatiere:
         if rayon > self.interieur[i]:
             self.interieur[i] = min(rayon, self.exterieur[i])
 
+    def z_entree(self, defaut: float = 0.0) -> float:
+        """L'abscisse de la face avant de la matière : la surface qu'un outil axial attaque.
+
+        C'est elle, et non le bout du brut, qui sert de référence aux cotes de profondeur : après un
+        dressage, on perce depuis la face dressée.
+        """
+        for i in range(len(self) - 1, -1, -1):
+            if self.exterieur[i] - self.interieur[i] > TOLERANCE:
+                return self.z0 + (i + 1) * self.pas
+        return defaut
+
     def indice(self, z: float) -> int:
         """L'indice de la tranche qui contient cette abscisse, −1 s'il n'y a plus de matière là."""
         i = int((z - self.z0) / self.pas)

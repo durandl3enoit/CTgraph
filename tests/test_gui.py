@@ -1499,15 +1499,18 @@ def test_gamme_type_et_cote_de_percage(fenetre):
     assert creux == pytest.approx(6.5)                       # le trou est bien au Ø du foret choisi
     cote = next(it for it in vue._items
                 if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence")
-    assert cote.texte == "P 32" and cote.data(ROLE_ID) == "profondeur"   # 2 mm de marge + 30
+    # la profondeur se compte depuis la surface percée — la face dressée, pas le bout du brut
+    assert win.surface_travaillee(percage) == pytest.approx(0.0, abs=0.3)
+    assert win.montage.z_brut_avant() > 1.0
+    assert cote.texte == "P 30" and cote.data(ROLE_ID) == "profondeur"
     assert vue.matiere_enlevee and min(x for poly in vue.matiere_enlevee for _, x in poly) == 0.0
 
     # la cote se règle comme celles du brut : à la molette, et au double-clic
-    assert win.ajuster_valeur_sequence("profondeur", 1, False) == "P 33"
+    assert win.ajuster_valeur_sequence("profondeur", 1, False) == "P 31"
     assert percage.z_fin == pytest.approx(-31.0)
     win._demander_valeur = lambda libelle, unite, defaut, mini: (50.0, True)
     win.editer_valeur_sequence("profondeur")
-    assert percage.z_fin == pytest.approx(-48.0) and win._modifie
+    assert percage.z_fin == pytest.approx(-50.0) and win._modifie
     # la cote redessinée porte la nouvelle valeur
     assert next(it.texte for it in vue._items
                 if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence") == "P 50"

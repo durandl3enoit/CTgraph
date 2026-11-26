@@ -277,19 +277,36 @@ def test_gamme_type_dans_l_ordre():
     assert set(FAMILLES_OUTIL) == set(TypeSequence)
 
 
-def test_cote_de_profondeur_de_percage():
+def test_cote_de_profondeur_depuis_la_surface_travaillee():
+    from ctgraph.usinage.matiere import EtatMatiere, appliquer
     m = montage_essai()
     s = Sequence(id=10, type=TypeSequence.PERCAGE, diametre_outil=12.0, z_fin=-45.0)
-    # la profondeur se compte depuis la face d'attaque, qui est le bout du brut tant qu'on n'en dit rien
     assert s.cotes_dessinees() == ("profondeur",)
+    # la trajectoire approche depuis le bout du brut : jamais après la matière
     assert s.z_face(m) == pytest.approx(m.z_brut_avant())
-    assert s.valeur_cote("profondeur", m) == pytest.approx(47.0)
-    assert s.texte_cote("profondeur", m) == "P 47"
-    # la régler déplace le fond du trou, pas la face
-    s.definir_valeur_cote("profondeur", 30.0, m)
-    assert s.z_fin == pytest.approx(m.z_brut_avant() - 30.0)
-    s.definir_valeur_cote("profondeur", -5.0, m)          # jamais de profondeur négative
-    assert s.z_fin == pytest.approx(m.z_brut_avant())
+    # la cote, elle, se compte depuis la surface qu'on relève et qu'on lui donne
+    assert s.valeur_cote("profondeur", 0.0) == pytest.approx(45.0)
+    assert s.texte_cote("profondeur", 0.0) == "P 45"
+    assert s.valeur_cote("profondeur", 2.0) == pytest.approx(47.0)
+    # la régler déplace le fond du trou, pas la surface
+    s.definir_valeur_cote("profondeur", 30.0, 0.0)
+    assert s.z_fin == pytest.approx(-30.0)
+    s.definir_valeur_cote("profondeur", -5.0, 0.0)        # jamais de profondeur négative
+    assert s.z_fin == pytest.approx(0.0)
+    # la surface se lit sur la matière : le brut d'abord, la face dressée ensuite
+    brut = EtatMatiere.depuis_brut(m)
+    assert brut.z_entree() == pytest.approx(m.z_brut_avant(), abs=brut.pas)
+    dresse = brut.copie()
+    appliquer(dresse, Sequence(id=1, type=TypeSequence.DRESSAGE, surepaisseur_face=0.0),
+              trajectoire(Sequence(id=1, type=TypeSequence.DRESSAGE, surepaisseur_face=0.0), None, m))
+    assert dresse.z_entree() == pytest.approx(0.0, abs=brut.pas)
+    # chaque opération en profondeur nomme la sienne
+    assert s.libelle_cote("profondeur") == "Profondeur du trou"
+    filetage = Sequence(id=12, type=TypeSequence.FILETAGE, z_fin=-20.0)
+    assert filetage.cotes_dessinees() == ("profondeur",)
+    assert filetage.libelle_cote("profondeur") == "Longueur du filet"
+    assert filetage.texte_cote("profondeur", 0.0) == "L 20"
+    assert Sequence(id=13, type=TypeSequence.ALESAGE).cotes_dessinees() == ("profondeur",)
     # une opération qui ne se cote pas sur le dessin n'en propose aucune
     assert Sequence(id=11, type=TypeSequence.EBAUCHE).cotes_dessinees() == ()
 

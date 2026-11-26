@@ -712,18 +712,36 @@ class FenetrePrincipale(QMainWindow):
         sequence = self.zone_usinage.sequence_courante()
         self.vue.sequence = sequence
         self.vue.trajectoire = self.trajectoire_de(sequence) if sequence is not None else None
-        self._pousser_matiere()
+        self._pousser_matiere()          # remplit la suite des états, où se lit la surface travaillée
+        self.vue.z_surface = self.surface_travaillee(sequence)
         if redessiner:
             self.vue.reconstruire()
+
+    def surface_travaillee(self, sequence: Optional[Sequence]) -> float:
+        """La surface que la séquence attaque : la face de la matière **telle qu'elle est à son tour**.
+
+        C'est la référence des cotes de profondeur : après un dressage, on perce depuis la face dressée,
+        pas depuis le bout du brut. Un `z_debut` donné à la main l'emporte.
+        """
+        if sequence is None:
+            return 0.0
+        if sequence.z_debut is not None:
+            return sequence.z_debut
+        rang = next((i for i, s in enumerate(self.gamme) if s.id == sequence.id), -1)
+        suite = self._etats_matiere
+        if suite is not None and 0 <= rang < len(suite) - 1:
+            return suite[rang].z_entree(sequence.z_face(self.montage))
+        return sequence.z_face(self.montage)
 
     def editer_valeur_sequence(self, cle: str) -> None:
         """Double-clic sur une cote de la séquence montrée : la profondeur d'un perçage, par exemple."""
         s = self.zone_usinage.sequence_courante()
         if s is None or cle not in s.cotes_dessinees():
             return
-        valeur, ok = self._demander_valeur(s.libelle_cote(cle), "mm", s.valeur_cote(cle, self.montage), 0.0)
+        surface = self.surface_travaillee(s)
+        valeur, ok = self._demander_valeur(s.libelle_cote(cle), "mm", s.valeur_cote(cle, surface), 0.0)
         if ok:
-            s.definir_valeur_cote(cle, valeur, self.montage)
+            s.definir_valeur_cote(cle, valeur, surface)
             self._apres_reglage_sequence()
 
     def ajuster_valeur_sequence(self, cle: str, sens: int, fin: bool) -> Optional[str]:
@@ -732,9 +750,10 @@ class FenetrePrincipale(QMainWindow):
         if s is None or cle not in s.cotes_dessinees():
             return None
         pas = PAS_MOLETTE / 10.0 if fin else PAS_MOLETTE
-        s.definir_valeur_cote(cle, max(0.0, s.valeur_cote(cle, self.montage) + sens * pas), self.montage)
+        surface = self.surface_travaillee(s)
+        s.definir_valeur_cote(cle, max(0.0, s.valeur_cote(cle, surface) + sens * pas), surface)
         self._apres_reglage_sequence()
-        return s.texte_cote(cle, self.montage)
+        return s.texte_cote(cle, self.surface_travaillee(s))
 
     def _apres_reglage_sequence(self) -> None:
         """Une cote de séquence a changé : passes, longueur de coupe, trajectoire et matière suivent."""

@@ -112,14 +112,26 @@ DEFAUTS_SEQUENCE: Dict[TypeSequence, Dict[str, float]] = {
     TypeSequence.PERCAGE: {"vitesse_coupe": 60.0, "avance": 0.12, "profondeur_passe": 5.0,
                            "foret": "Foret Ø 10", "z_fin": -20.0, "surepaisseur": 0.0},
     TypeSequence.ALESAGE: {"vitesse_coupe": 180.0, "avance": 0.12, "profondeur_passe": 1.0,
-                           "diametre_outil": 10.0},
+                           "diametre_outil": 10.0, "diametre_fond": 20.0, "z_fin": -20.0},
     TypeSequence.FINITION: {"vitesse_coupe": 250.0, "avance": 0.1},
     TypeSequence.GORGE: {"vitesse_coupe": 120.0, "avance": 0.08, "profondeur_passe": 1.5,
-                         "surepaisseur": 0.0},
-    TypeSequence.FILETAGE: {"vitesse_coupe": 100.0, "profondeur_passe": 0.25, "surepaisseur": 0.0},
+                         "surepaisseur": 0.0, "largeur_outil": 3.0, "largeur": 4.0,
+                         "diametre_fond": 20.0, "z_debut": -10.0},
+    TypeSequence.FILETAGE: {"vitesse_coupe": 100.0, "profondeur_passe": 0.25, "surepaisseur": 0.0,
+                            "pas": 1.5, "z_fin": -20.0},
     TypeSequence.TRONCONNAGE: {"vitesse_coupe": 110.0, "avance": 0.08, "profondeur_passe": 2.0,
                                "surepaisseur": 0.0},
 }
+
+# les opérations dont la profondeur se cote sur le dessin, et comment la nommer : (intitulé, lettre).
+# Elle se compte toujours depuis la surface travaillée, jamais depuis le bout du brut.
+LIBELLES_PROFONDEUR: Dict[TypeSequence, Tuple[str, str]] = {
+    TypeSequence.CENTRAGE: ("Profondeur du centre", "P"),
+    TypeSequence.PERCAGE: ("Profondeur du trou", "P"),
+    TypeSequence.ALESAGE: ("Profondeur de l'alésage", "P"),
+    TypeSequence.FILETAGE: ("Longueur du filet", "L"),
+}
+COTES_PROFONDEUR: Tuple[TypeSequence, ...] = tuple(LIBELLES_PROFONDEUR)
 
 # la famille de porte-plaquettes (`ctgraph.outils`) qui fait cette opération ; vide pour un foret
 FAMILLES_OUTIL: Dict[TypeSequence, str] = {
@@ -137,17 +149,21 @@ FAMILLES_OUTIL: Dict[TypeSequence, str] = {
 # La gamme type : l'enchaînement habituel d'une pièce prise en mandrin sur barre, du plus rigide au
 # moins rigide. Les opérations qui demandent une cote que le dessin ne donne pas (un trou, une gorge,
 # un filet) sont posées **désactivées** : l'ordre est là, il reste à dire si la pièce en a besoin.
-GAMME_TYPE: Tuple[Tuple[TypeSequence, str, bool], ...] = (
-    (TypeSequence.DRESSAGE, "", True),
-    (TypeSequence.CENTRAGE, "", False),
-    (TypeSequence.PERCAGE, "", False),
-    (TypeSequence.EBAUCHE, "", True),
-    (TypeSequence.ALESAGE, "Ébauche d'alésage", False),
-    (TypeSequence.ALESAGE, "Finition d'alésage", False),
-    (TypeSequence.FINITION, "", True),
-    (TypeSequence.GORGE, "", False),
-    (TypeSequence.FILETAGE, "", False),
-    (TypeSequence.TRONCONNAGE, "", True),
+# Chacune part tout de même de réglages qui donnent un résultat visible : on coche, on voit, on ajuste.
+GAMME_TYPE: Tuple[Tuple[TypeSequence, str, bool, Dict[str, Any]], ...] = (
+    (TypeSequence.DRESSAGE, "", True, {}),
+    (TypeSequence.CENTRAGE, "", False, {}),
+    (TypeSequence.PERCAGE, "", False, {}),
+    (TypeSequence.EBAUCHE, "", True, {}),
+    (TypeSequence.ALESAGE, "Ébauche d'alésage", False, {}),
+    # la finition part du trou que l'ébauche a laissé : son Ø moins deux fois la surépaisseur
+    (TypeSequence.ALESAGE, "Finition d'alésage", False,
+     {"vitesse_coupe": 220.0, "avance": 0.08, "profondeur_passe": 0.3, "surepaisseur": 0.0,
+      "diametre_outil": 19.4}),
+    (TypeSequence.FINITION, "", True, {}),
+    (TypeSequence.GORGE, "", False, {}),
+    (TypeSequence.FILETAGE, "", False, {}),
+    (TypeSequence.TRONCONNAGE, "", True, {}),
 )
 
 
@@ -217,29 +233,38 @@ class Sequence:
 
     def cotes_dessinees(self) -> Tuple[str, ...]:
         """Les valeurs de la séquence que l'on cote sur l'esquisse, et qu'on y règle."""
-        return ("profondeur",) if self.type in (TypeSequence.CENTRAGE, TypeSequence.PERCAGE) else ()
+        return ("profondeur",) if self.type in COTES_PROFONDEUR else ()
 
     def z_face(self, montage=None) -> float:
-        """L'abscisse d'où part une opération dans l'axe : celle qu'on donne, sinon le bout du brut."""
+        """L'abscisse d'où part une opération dans l'axe : celle qu'on donne, sinon le bout du brut.
+
+        C'est la borne d'approche de la trajectoire, qui part toujours de la matière brute, jamais après
+        elle. La **cote** de profondeur, elle, se compte depuis la surface réellement travaillée : voir
+        `valeur_cote`, à qui l'appelant donne cette surface.
+        """
         if self.z_debut is not None:
             return self.z_debut
         return montage.z_brut_avant() if montage is not None else 0.0
 
     def libelle_cote(self, cle: str) -> str:
-        return "Profondeur de perçage" if cle == "profondeur" else cle
-
-    def valeur_cote(self, cle: str, montage=None) -> float:
-        if cle == "profondeur":
-            return self.z_face(montage) - (self.z_fin if self.z_fin is not None else self.z_face(montage))
-        raise KeyError(cle)
-
-    def definir_valeur_cote(self, cle: str, valeur: float, montage=None) -> None:
         if cle != "profondeur":
             raise KeyError(cle)
-        self.z_fin = self.z_face(montage) - max(valeur, 0.0)
+        return LIBELLES_PROFONDEUR.get(self.type, ("Profondeur", "P"))[0]
 
-    def texte_cote(self, cle: str, montage=None) -> str:
-        return f"P {self.valeur_cote(cle, montage):g}"
+    def valeur_cote(self, cle: str, z_surface: float) -> float:
+        """La profondeur, comptée depuis la surface travaillée que l'appelant a relevée."""
+        if cle != "profondeur":
+            raise KeyError(cle)
+        return z_surface - (self.z_fin if self.z_fin is not None else z_surface)
+
+    def definir_valeur_cote(self, cle: str, valeur: float, z_surface: float) -> None:
+        if cle != "profondeur":
+            raise KeyError(cle)
+        self.z_fin = z_surface - max(valeur, 0.0)
+
+    def texte_cote(self, cle: str, z_surface: float) -> str:
+        lettre = LIBELLES_PROFONDEUR.get(self.type, ("Profondeur", "P"))[1]
+        return f"{lettre} {self.valeur_cote(cle, z_surface):g}"
 
     def profondeur_filet(self) -> float:
         """La profondeur du filet au rayon, celle qui est saisie ou celle du profil ISO métrique."""
@@ -324,8 +349,8 @@ class Gamme:
 
     def remplir_type(self) -> "Gamme":
         """Pose la gamme type : les dix lignes de l'enchaînement habituel, dans l'ordre, à la suite."""
-        for type_, nom, active in GAMME_TYPE:
-            s = self.ajouter(type_, nom=nom)
+        for type_, nom, active, reglages in GAMME_TYPE:
+            s = self.ajouter(type_, nom=nom, **reglages)
             s.active = active
         return self
 

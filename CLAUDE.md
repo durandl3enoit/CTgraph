@@ -302,7 +302,11 @@ vérification par relecture du G-code généré, réception des programmes depui
   l'ordre, du plus rigide au moins rigide (deux lignes d'alésage, ébauche et finition : dix lignes pour
   neuf étapes). Les opérations qui demandent une cote que le dessin ne donne pas (centrage, perçage,
   alésage, gorge, filetage) sont posées **décochées** : l'ordre est là, il reste à dire si la pièce en a
-  besoin. Le poste est pris de la tourelle courante, par famille d'outil (`FAMILLES_OUTIL`, rapproché du
+  besoin. Mais chacune part de réglages qui **donnent un résultat visible** (`DEFAUTS_SEQUENCE` et les
+  réglages propres à `GAMME_TYPE`) : on coche, on voit, on ajuste. Une opération qui ne montrerait rien
+  tant qu'on ne l'a pas renseignée est indiscernable d'une opération cassée — c'est ce qui s'est produit
+  le 26 novembre 2026 avec le perçage, l'alésage et le filetage.
+  Le poste est pris de la tourelle courante, par famille d'outil (`FAMILLES_OUTIL`, rapproché du
   champ `famille` du catalogue `outils`) ; rien n'est inventé si la tourelle ne porte pas l'outil voulu.
   Remplacer une gamme existante demande confirmation.
 - **Matière enlevée, étape par étape** (`usinage/matiere.py`, demandé le 26 novembre 2026) : **la liste
@@ -348,12 +352,17 @@ vérification par relecture du G-code généré, réception des programmes depui
   Ø à la main détache le foret choisi et retombe sur un foret ordinaire de ce Ø. Dimensions et angles **à
   vérifier sur les forets de l'atelier**, comme les autres catalogues.
 - **Cotes d'usinage sur le dessin** (demandé le 26 novembre 2026) : la séquence montrée pose ses valeurs
-  réglables sur l'esquisse, comme le brut pose les siennes. Pour l'instant la seule est la **profondeur
-  d'un perçage ou d'un centrage** (genre « cote_sequence », clé « profondeur », texte « P 47 »), comptée
-  depuis la face d'attaque — `Sequence.z_face`, le `z_debut` donné ou le bout du brut. Même maniement que
-  les cotes du brut : double-clic pour saisir, clic droit + molette ou glisser pour régler
-  (`Sequence.cotes_dessinees`, `valeur_cote`, `definir_valeur_cote`, `texte_cote` ;
-  `FenetrePrincipale.editer_valeur_sequence` et `ajuster_valeur_sequence`). Non sélectionnable.
+  réglables sur l'esquisse, comme le brut pose les siennes. Genre « cote_sequence », non sélectionnable,
+  même maniement que les cotes du brut : double-clic pour saisir, clic droit + molette ou glisser pour
+  régler (`Sequence.cotes_dessinees`, `valeur_cote`, `definir_valeur_cote`, `texte_cote` ;
+  `FenetrePrincipale.editer_valeur_sequence` et `ajuster_valeur_sequence`).
+  Les quatre opérations en profondeur la portent (`LIBELLES_PROFONDEUR`) : centrage, perçage et alésage
+  en « P », filetage en « L » (c'est une longueur de filet). **La référence est la surface travaillée**,
+  relevée sur la matière de l'étape (`EtatMatiere.z_entree`, `FenetrePrincipale.surface_travaillee`) :
+  après un dressage on perce depuis la face dressée, pas depuis le bout du brut. La *trajectoire*, elle,
+  approche toujours du bout du brut (`Sequence.z_face`) : partir de plus loin n'est jamais faux, et la
+  matière n'est enlevée que là où il y en a. La cote se dessine **sous l'axe**, plus bas que celles du
+  brut : sur un centrage, l'étiquette cacherait le trou qu'elle mesure.
 
 ## Points ouverts
 
