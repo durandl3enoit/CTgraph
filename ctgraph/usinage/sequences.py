@@ -26,6 +26,7 @@ from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from ..forets import nombre
 from ..tourelle import nom_poste
 
 # profondeur du filet au rayon, en part du pas, pour un filetage ISO métrique extérieur (H1 = 0,6134 × P)
@@ -203,7 +204,25 @@ class Sequence:
     z_fin: Optional[float] = None
 
     def libelle(self) -> str:
-        return self.nom.strip() or LIBELLES_SEQUENCE[self.type]
+        """Le nom montré dans la gamme : celui qu'on a donné, sinon le type **avec sa cote maîtresse**.
+
+        « Perçage Ø 10 » dit tout de suite de quel perçage il s'agit, là où « Perçage dans l'axe » ne
+        distingue pas deux lignes voisines.
+        """
+        if self.nom.strip():
+            return self.nom.strip()
+        court = LIBELLES_SEQUENCE[self.type].split(" ")[0]
+        if self.type in (TypeSequence.CENTRAGE, TypeSequence.PERCAGE):
+            return f"{court} Ø {nombre(self.diametre_outil)}"
+        if self.type == TypeSequence.ALESAGE and self.diametre_fond > 0:
+            return f"{court} Ø {nombre(self.diametre_fond)}"
+        if self.type == TypeSequence.GORGE and self.diametre_fond > 0:
+            return f"{court} Ø {nombre(self.diametre_fond)} × {nombre(max(self.largeur, self.largeur_outil))}"
+        if self.type == TypeSequence.FILETAGE:
+            return f"{court} pas {nombre(self.pas)}"
+        if self.type == TypeSequence.TRONCONNAGE:
+            return f"{court} ép. {nombre(self.largeur_outil)}"
+        return LIBELLES_SEQUENCE[self.type]
 
     def champs(self) -> Tuple[str, ...]:
         """Les réglages qui comptent pour ce type d'opération."""

@@ -26,7 +26,7 @@ from ..icons import icone_action, icone_outil, icone_relation
 from ..log import get as get_log
 from ..montage import Montage, Piece
 from ..settings import Settings
-from ..usinage import Gamme, Sequence, Trajectoire, etats, profil_exterieur, trajectoire
+from ..usinage import Gamme, Sequence, Trajectoire, TypeSequence, etats, profil_exterieur, trajectoire
 from .dialogue_montage import DialogueMontage
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
 from ..tourelle import Tourelle
@@ -754,6 +754,32 @@ class FenetrePrincipale(QMainWindow):
         s.definir_valeur_cote(cle, max(0.0, s.valeur_cote(cle, surface) + sens * pas), surface)
         self._apres_reglage_sequence()
         return s.texte_cote(cle, self.surface_travaillee(s))
+
+    def deplacer_alesage(self, poignee: str, z: float, x: float,
+                         ancre: Optional[Tuple[float, float]] = None) -> bool:
+        """Pousse une limite de la zone à aléser, attrapée sur le dessin.
+
+        `poignee` dit ce qu'on tient : « face » le bord d'entrée, « fond » le bord du fond, « paroi » le
+        diamètre, les deux coins les deux à la fois, « corps » la zone entière, qui glisse le long de Z.
+        Le point (z, x) est déjà aimanté par la vue : la zone s'aligne donc sur la pièce finie.
+        """
+        s = self.zone_usinage.sequence_courante()
+        if s is None or s.type != TypeSequence.ALESAGE:
+            return False
+        face = s.z_debut if s.z_debut is not None else self.surface_travaillee(s)
+        fond = s.z_fin if s.z_fin is not None else face
+        mini = max(s.diametre_outil, 0.1) + 0.02          # un alésage ouvre toujours le trou de départ
+        if poignee == "corps" and ancre is not None:
+            decalage = z - ancre[0]
+            s.z_debut, s.z_fin = face + decalage, fond + decalage
+        elif poignee in ("face", "coin_face"):
+            s.z_debut = max(z, fond + 0.1)
+        elif poignee in ("fond", "coin_fond"):
+            s.z_fin = min(z, face - 0.1)
+        if poignee in ("paroi", "coin_face", "coin_fond"):
+            s.diametre_fond = max(2.0 * x, mini)
+        self._apres_reglage_sequence()
+        return True
 
     def _apres_reglage_sequence(self) -> None:
         """Une cote de séquence a changé : passes, longueur de coupe, trajectoire et matière suivent."""

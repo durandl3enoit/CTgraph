@@ -117,7 +117,10 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
   (plus d'escalier sur les cônes) et par-dessus le remplissage du profil (un trou se voit). Les **filetages**
   se dessinent en dents de scie au pas. Chaque opération de la gamme type part de réglages qui donnent un
   résultat visible dès qu'on la coche. Les quatre opérations en profondeur portent leur cote sous l'axe,
-  **comptée depuis la surface travaillée** et non depuis le bout du brut. 159 tests.
+  **comptée depuis la surface travaillée** et non depuis le bout du brut.
+- **Édition graphique de l'alésage** : sa zone rouge s'attrape à la souris par une arête, un coin ou son
+  corps, avec l'aimantation de l'esquisse — elle s'aligne sur la pièce finie. Chaque opération porte sa
+  cote maîtresse dans son nom (« Perçage Ø 10 »). 160 tests.
 
 ## En cours
 

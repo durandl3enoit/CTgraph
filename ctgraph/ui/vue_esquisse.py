@@ -17,8 +17,8 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPolygonF, QTransform
 from PySide6.QtWidgets import (QApplication, QGraphicsEllipseItem, QGraphicsItem, QGraphicsLineItem,
-                               QGraphicsPathItem, QGraphicsScene, QGraphicsView, QLabel, QStyleOptionGraphicsItem,
-                               QWidget)
+                               QGraphicsPathItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QLabel,
+                               QStyleOptionGraphicsItem, QWidget)
 
 from ..esquisse import geometrie as geo
 from ..esquisse.elagage import courbe as courbe_de
@@ -295,6 +295,8 @@ class VueEsquisse(QGraphicsView):
         self._apercu: List[QGraphicsItem] = []
         self._glisse_point: Optional[int] = None
         self._glisse_cote: Optional[int] = None
+        self._glisse_alesage: Optional[str] = None     # poignée de la zone à aléser en cours de glissement
+        self._alesage_ancre: Optional[Tuple[float, float]] = None
         self._glisse_dernier: Optional[QPointF] = None
         self._glisse_actif = False
         self._pan_dernier = None
@@ -537,6 +539,7 @@ class VueEsquisse(QGraphicsView):
                 self._enregistrer(et, "relation", r.id)
 
         self._dessiner_trajectoire(c)
+        self._dessiner_poignees_alesage(c)
         self._dessiner_cotes_usinage(c)
 
         if self.mode_mors:
@@ -635,6 +638,63 @@ class VueEsquisse(QGraphicsView):
         marque.setData(ROLE_ID, traj.sequence_id)
         self._scene.addItem(marque)
         self._items.append(marque)
+
+    def alesage_montre(self) -> Optional[Tuple[float, float, float, float]]:
+        """La zone à aléser de la séquence montrée : (z face, z fond, rayon de départ, rayon visé)."""
+        s = self.sequence
+        if s is None or str(getattr(s.type, "value", s.type)) != "alesage":
+            return None
+        z_face = s.z_debut if s.z_debut is not None else self.z_surface
+        if s.z_fin is None or s.diametre_fond <= 0.0 or z_face - s.z_fin <= 1e-9:
+            return None
+        return z_face, s.z_fin, s.diametre_outil / 2.0, s.diametre_fond / 2.0
+
+    def _dessiner_poignees_alesage(self, c: Dict[str, QColor]) -> None:
+        """Les prises de la zone à aléser : ses trois arêtes, ses deux coins, et son corps.
+
+        On attrape une arête pour pousser une seule limite, un coin pour en pousser deux, le corps pour
+        déplacer la zone entière le long de l'axe. L'aimantation de l'esquisse s'applique : la zone
+        s'aligne sur les points et les faces de la pièce finie.
+        """
+        zone = self.alesage_montre()
+        if zone is None:
+            return
+        z_face, z_fond, r0, r1 = zone
+        couleur = QColor(225, 90, 60)
+        corps = QGraphicsRectItem(QRectF(min(z_face, z_fond), r0, abs(z_face - z_fond), r1 - r0))
+        corps.setPen(QPen(Qt.PenStyle.NoPen))
+        corps.setBrush(QBrush(QColor(couleur.red(), couleur.green(), couleur.blue(), 1)))
+        corps.setCursor(Qt.CursorShape.SizeHorCursor)
+        corps.setZValue(1.7)
+        corps.setData(ROLE_GENRE, "poignee_alesage")
+        corps.setData(ROLE_ID, "corps")
+        self._scene.addItem(corps)
+        self._items.append(corps)
+        for cle, (a, b), curseur in (("face", ((z_face, r0), (z_face, r1)), Qt.CursorShape.SizeHorCursor),
+                                     ("fond", ((z_fond, r0), (z_fond, r1)), Qt.CursorShape.SizeHorCursor),
+                                     ("paroi", ((z_fond, r1), (z_face, r1)), Qt.CursorShape.SizeVerCursor)):
+            it = QGraphicsLineItem(a[0], a[1], b[0], b[1])
+            stylo = QPen(couleur, 3)
+            stylo.setCosmetic(True)
+            it.setPen(stylo)
+            it.setCursor(curseur)
+            it.setZValue(1.8)
+            it.setData(ROLE_GENRE, "poignee_alesage")
+            it.setData(ROLE_ID, cle)
+            self._scene.addItem(it)
+            self._items.append(it)
+        for cle, (z, x) in (("coin_face", (z_face, r1)), ("coin_fond", (z_fond, r1))):
+            it = QGraphicsRectItem(-4, -4, 8, 8)
+            it.setPos(z, x)
+            it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+            it.setPen(QPen(c["fond"], 1))
+            it.setBrush(QBrush(couleur))
+            it.setCursor(Qt.CursorShape.SizeFDiagCursor)
+            it.setZValue(1.9)
+            it.setData(ROLE_GENRE, "poignee_alesage")
+            it.setData(ROLE_ID, cle)
+            self._scene.addItem(it)
+            self._items.append(it)
 
     def _dessiner_cotes_usinage(self, c: Dict[str, QColor]) -> None:
         """Les cotes réglables de la séquence montrée : pour l'instant, la profondeur d'un perçage.
@@ -1734,6 +1794,11 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
+        if genre == "poignee_alesage":
+            # la zone à aléser s'attrape par une arête, un coin ou son corps, et se pousse à la souris
+            self._glisse_alesage = str(ident)
+            self._alesage_ancre = self.position_scene(pos)
+            return
         if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference", "trajectoire", "matiere",
                      "cote_sequence"):
             return                              # montage et usinage : pas de sélection
@@ -2082,6 +2147,12 @@ class VueEsquisse(QGraphicsView):
             return
         if gauche and self._timer_geste.isActive() and self._a_bouge(pos):
             self._timer_geste.stop()           # on a bougé trop tôt : ce n'est pas un clic semi-long
+        if self._glisse_alesage is not None and gauche:
+            # l'aimantation de l'esquisse s'applique : la zone s'aligne sur les points et faces du profil
+            acc = self.accrocher(pos)
+            ancre, self._alesage_ancre = self._alesage_ancre, (acc.z, acc.x)
+            self.controleur.deplacer_alesage(self._glisse_alesage, acc.z, acc.x, ancre)
+            return
         if self._glisse_point is not None and gauche:
             if not self._glisse_actif:
                 self._glisse_actif = True
@@ -2141,6 +2212,10 @@ class VueEsquisse(QGraphicsView):
         self._timer_geste.stop()
         if self._geste:
             self._terminer_geste()
+            self._press_pos = None
+            return
+        if self._glisse_alesage is not None:
+            self._glisse_alesage = self._alesage_ancre = None
             self._press_pos = None
             return
         etiquette_prise = self._glisse_cote is not None

@@ -1520,6 +1520,53 @@ def test_gamme_type_et_cote_de_percage(fenetre):
     win.zone_tourelle.definir_tourelle(Tourelle())
 
 
+def test_alesage_attrape_a_la_souris(fenetre):
+    from ctgraph.montage import Montage
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE, ROLE_ID
+    from ctgraph.usinage import TypeSequence
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())
+    rectangle(win, 40.0, 20.0)
+    zone = win.zone_usinage
+    alesage = zone.ajouter(TypeSequence.ALESAGE)
+    assert alesage.libelle() == "Alésage Ø 20"        # la cote maîtresse est dans le nom
+
+    # la zone à aléser porte ses prises : trois arêtes, deux coins, et son corps
+    poignees = {it.data(ROLE_ID) for it in vue._items if it.data(ROLE_GENRE) == "poignee_alesage"}
+    assert poignees == {"face", "fond", "paroi", "coin_face", "coin_fond", "corps"}
+    # sans dressage avant lui, l'alésage part du bout du brut : c'est la matière qu'il trouve
+    assert vue.alesage_montre() == (pytest.approx(win.montage.z_brut_avant(), abs=0.3), -20.0, 5.0, 10.0)
+
+    # pousser la paroi change le diamètre ; pousser le fond change la profondeur
+    assert win.deplacer_alesage("paroi", -10.0, 12.5)
+    assert alesage.diametre_fond == pytest.approx(25.0)
+    assert win.deplacer_alesage("fond", -32.0, 0.0)
+    assert alesage.z_fin == pytest.approx(-32.0)
+    # un coin pousse les deux à la fois
+    assert win.deplacer_alesage("coin_fond", -40.0, 7.0)
+    assert alesage.z_fin == pytest.approx(-40.0) and alesage.diametre_fond == pytest.approx(14.0)
+    # jamais plus petit que le trou de départ, ni retourné
+    assert win.deplacer_alesage("paroi", 0.0, 1.0)
+    assert alesage.diametre_fond > alesage.diametre_outil
+    face_avant = alesage.z_debut if alesage.z_debut is not None else win.surface_travaillee(alesage)
+    assert win.deplacer_alesage("fond", face_avant + 50.0, 0.0)
+    assert alesage.z_fin < face_avant
+
+    # le corps déplace la zone entière le long de l'axe, sans changer sa longueur
+    alesage.z_debut, alesage.z_fin, alesage.diametre_fond = -5.0, -35.0, 20.0
+    assert win.deplacer_alesage("corps", -12.0, 0.0, ancre=(-10.0, 0.0))
+    assert (alesage.z_debut, alesage.z_fin) == (pytest.approx(-7.0), pytest.approx(-37.0))
+
+    # une séquence qui n'est pas un alésage n'offre aucune prise
+    zone.ajouter(TypeSequence.EBAUCHE)
+    assert vue.alesage_montre() is None
+    assert not any(it.data(ROLE_GENRE) == "poignee_alesage" for it in vue._items)
+    assert not win.deplacer_alesage("paroi", 0.0, 5.0)
+
+    while zone.supprimer():
+        pass
+
+
 def test_volet_usinage_un_formulaire_par_type(fenetre):
     from ctgraph.usinage import TypeSequence
     from ctgraph.usinage.sequences import CHAMPS_SEQUENCE, LIBELLES_CHAMPS

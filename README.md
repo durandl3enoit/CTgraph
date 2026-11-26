@@ -207,6 +207,16 @@ le bout du brut.
 Les opérations proposées par la gamme type sont décochées quand elles demandent une cote que le dessin ne
 donne pas, mais elles partent de réglages qui donnent un résultat visible : on coche, on voit, on ajuste.
 
+L'**alésage s'édite directement sur le dessin**. Quand il est l'opération montrée, sa zone rouge porte ses
+prises : attrapez une **arête** — la face d'entrée, le fond, la paroi — pour pousser une seule limite, un
+**coin** pour en pousser deux, ou le **corps** pour faire glisser la zone entière le long de l'axe.
+L'aimantation de l'esquisse joue : la zone s'aligne sur les points, les faces et les plans de référence de
+la pièce finie.
+
+Chaque opération porte sa cote maîtresse dans son nom — « Perçage Ø 10 », « Alésage Ø 20 »,
+« Gorge Ø 20 × 4 », « Filetage pas 1,5 » — pour que deux lignes voisines se distinguent d'un coup d'œil.
+Un nom donné à la main l'emporte.
+
 La **trajectoire de la séquence choisie se dessine sur l'esquisse** : trait plein pour la coupe, pointillé pour
 les déplacements rapides, un cercle au point de départ. Elle est **recalculée depuis le profil résolu**, jamais
 recopiée : changer une cote, un diamètre de brut ou la prise de pièce la refait aussitôt. Le chemin est celui

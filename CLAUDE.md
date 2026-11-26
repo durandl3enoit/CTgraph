@@ -363,6 +363,17 @@ vérification par relecture du G-code généré, réception des programmes depui
   approche toujours du bout du brut (`Sequence.z_face`) : partir de plus loin n'est jamais faux, et la
   matière n'est enlevée que là où il y en a. La cote se dessine **sous l'axe**, plus bas que celles du
   brut : sur un centrage, l'étiquette cacherait le trou qu'elle mesure.
+- **Édition graphique de l'alésage** (demandée le 26 novembre 2026) : quand la séquence montrée est un
+  alésage, sa zone rouge porte ses prises (genre « poignee_alesage », `VueEsquisse.alesage_montre`,
+  `_dessiner_poignees_alesage`) : les trois arêtes — face d'entrée, fond, paroi —, les deux coins du haut,
+  et le corps, qui fait glisser la zone entière le long de Z. On les attrape à la souris en mode Sélection
+  (`_glisse_alesage`), et **l'aimantation de l'esquisse s'applique** (`accrocher`) : la zone s'aligne sur
+  les points, les faces et les plans de référence de la pièce finie.
+  `FenetrePrincipale.deplacer_alesage` applique le mouvement en gardant la zone cohérente : jamais
+  retournée, jamais plus petite que le trou de départ.
+- **Le nom d'une opération porte sa cote maîtresse** : « Perçage Ø 10 », « Alésage Ø 20 », « Gorge Ø 20 × 4 »,
+  « Filetage pas 1,5 », « Tronçonnage ép. 3 » (`Sequence.libelle`). Deux lignes voisines se distinguent ainsi
+  d'un coup d'œil. Un nom donné à la main l'emporte toujours.
 
 ## Points ouverts
 
