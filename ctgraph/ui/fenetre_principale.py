@@ -710,10 +710,38 @@ class FenetrePrincipale(QMainWindow):
     def _pousser_trajectoire(self, redessiner: bool = True) -> None:
         """Dessine sur l'esquisse la trajectoire de la séquence choisie et la matière à cette étape."""
         sequence = self.zone_usinage.sequence_courante()
+        self.vue.sequence = sequence
         self.vue.trajectoire = self.trajectoire_de(sequence) if sequence is not None else None
         self._pousser_matiere()
         if redessiner:
             self.vue.reconstruire()
+
+    def editer_valeur_sequence(self, cle: str) -> None:
+        """Double-clic sur une cote de la séquence montrée : la profondeur d'un perçage, par exemple."""
+        s = self.zone_usinage.sequence_courante()
+        if s is None or cle not in s.cotes_dessinees():
+            return
+        valeur, ok = self._demander_valeur(s.libelle_cote(cle), "mm", s.valeur_cote(cle, self.montage), 0.0)
+        if ok:
+            s.definir_valeur_cote(cle, valeur, self.montage)
+            self._apres_reglage_sequence()
+
+    def ajuster_valeur_sequence(self, cle: str, sens: int, fin: bool) -> Optional[str]:
+        """Molette ou glisser sur une cote de la séquence : un pas par cran, un dixième avec Maj."""
+        s = self.zone_usinage.sequence_courante()
+        if s is None or cle not in s.cotes_dessinees():
+            return None
+        pas = PAS_MOLETTE / 10.0 if fin else PAS_MOLETTE
+        s.definir_valeur_cote(cle, max(0.0, s.valeur_cote(cle, self.montage) + sens * pas), self.montage)
+        self._apres_reglage_sequence()
+        return s.texte_cote(cle, self.montage)
+
+    def _apres_reglage_sequence(self) -> None:
+        """Une cote de séquence a changé : passes, longueur de coupe, trajectoire et matière suivent."""
+        self._etats_matiere = None
+        self.zone_usinage.rafraichir()
+        self._marquer_modifie(True)
+        self._pousser_trajectoire()
 
     def _pousser_matiere(self) -> None:
         """La matière qui reste après l'étape choisie, et en vif ce que cette étape vient d'enlever."""
@@ -1232,7 +1260,7 @@ class FenetrePrincipale(QMainWindow):
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.vue.montage = self.montage
         self.vue.definir_esquisse(self.esquisse)
-        self.vue.trajectoire = None
+        self.vue.trajectoire = self.vue.sequence = None
         self.vue.matiere = self.vue.matiere_enlevee = []
         self._profil_usinage = self._etats_matiere = None
         self.zone_usinage.definir_gamme(self.gamme, self.trajectoire_de)

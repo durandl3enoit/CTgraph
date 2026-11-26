@@ -214,6 +214,68 @@ def test_percage_dans_l_axe_avec_debourrage():
     assert trajectoire(Sequence(id=7, type=TypeSequence.PERCAGE), p, m).message
 
 
+def test_alesage_et_centrage():
+    from ctgraph.usinage.matiere import EtatMatiere, appliquer
+    p = profil_exterieur([ARBRE])
+    m = montage_essai()
+    # le centrage : une seule descente courte dans l'axe, pas de débourrage
+    c = Sequence(id=8, type=TypeSequence.CENTRAGE, diametre_outil=8.0, profondeur_passe=10.0, z_fin=-3.0)
+    tc = trajectoire(c, p, m)
+    assert tc and tc.nb_passes() == 1 and min(q.z for q in tc.mouvements) == pytest.approx(-3.0)
+    assert c.vitesse_fixe() and c.dans_l_axe()
+
+    # l'alésage : des passes parallèles à l'axe qui ouvrent le trou du Ø 12 au Ø 20 moins la surépaisseur
+    s = Sequence(id=9, type=TypeSequence.ALESAGE, diametre_outil=12.0, diametre_fond=20.0,
+                 profondeur_passe=1.0, surepaisseur=0.2, garde=2.0, degagement=1.0, z_fin=-45.0)
+    t = trajectoire(s, p, m)
+    assert t and not t.message
+    coupes = [q for q in t.mouvements if q.travail]
+    assert max(q.x for q in coupes) == pytest.approx(9.8)      # 20/2 - 0,2
+    assert min(q.z for q in coupes) == pytest.approx(-45.0)
+    assert t.nb_passes() == 4                                  # de 6 à 9,8 par pas de 1
+    # la matière suit : le trou s'ouvre sur la longueur alésée, pas au-delà
+    etat = EtatMatiere.depuis_brut(m)
+    appliquer(etat, s, t)
+    assert etat.alesage_a(-20.0) == pytest.approx(9.8) and etat.alesage_a(-60.0) == 0.0
+    # un trou déjà au diamètre, ou sans fond donné : on le dit au lieu de couper
+    s.diametre_fond = 12.0
+    assert not trajectoire(s, p, m) and "déjà à ce diamètre" in trajectoire(s, p, m).message
+    assert trajectoire(Sequence(id=9, type=TypeSequence.ALESAGE), p, m).message
+
+
+def test_gamme_type_dans_l_ordre():
+    from ctgraph.usinage.sequences import FAMILLES_OUTIL
+    g = Gamme().remplir_type()
+    assert [s.type for s in g] == [TypeSequence.DRESSAGE, TypeSequence.CENTRAGE, TypeSequence.PERCAGE,
+                                   TypeSequence.EBAUCHE, TypeSequence.ALESAGE, TypeSequence.ALESAGE,
+                                   TypeSequence.FINITION, TypeSequence.GORGE, TypeSequence.FILETAGE,
+                                   TypeSequence.TRONCONNAGE]
+    # les opérations qui marchent sans autre renseignement sont cochées, les autres attendent leurs cotes
+    assert [s.type for s in g.actives()] == [TypeSequence.DRESSAGE, TypeSequence.EBAUCHE,
+                                             TypeSequence.FINITION, TypeSequence.TRONCONNAGE]
+    assert [s.libelle() for s in g][4:6] == ["Ébauche d'alésage", "Finition d'alésage"]
+    # chaque opération sait quelle famille d'outil la fait, sauf celles qui vont au foret
+    assert FAMILLES_OUTIL[TypeSequence.FINITION] == "ext_pos" and FAMILLES_OUTIL[TypeSequence.PERCAGE] == ""
+    assert set(FAMILLES_OUTIL) == set(TypeSequence)
+
+
+def test_cote_de_profondeur_de_percage():
+    m = montage_essai()
+    s = Sequence(id=10, type=TypeSequence.PERCAGE, diametre_outil=12.0, z_fin=-45.0)
+    # la profondeur se compte depuis la face d'attaque, qui est le bout du brut tant qu'on n'en dit rien
+    assert s.cotes_dessinees() == ("profondeur",)
+    assert s.z_face(m) == pytest.approx(m.z_brut_avant())
+    assert s.valeur_cote("profondeur", m) == pytest.approx(47.0)
+    assert s.texte_cote("profondeur", m) == "P 47"
+    # la régler déplace le fond du trou, pas la face
+    s.definir_valeur_cote("profondeur", 30.0, m)
+    assert s.z_fin == pytest.approx(m.z_brut_avant() - 30.0)
+    s.definir_valeur_cote("profondeur", -5.0, m)          # jamais de profondeur négative
+    assert s.z_fin == pytest.approx(m.z_brut_avant())
+    # une opération qui ne se cote pas sur le dessin n'en propose aucune
+    assert Sequence(id=11, type=TypeSequence.EBAUCHE).cotes_dessinees() == ()
+
+
 def test_matiere_etape_par_etape():
     from ctgraph.usinage.matiere import EtatMatiere, etats
     p = profil_exterieur([ARBRE])

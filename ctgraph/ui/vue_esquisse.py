@@ -252,8 +252,10 @@ class VueEsquisse(QGraphicsView):
         self.vue3d = None                 # incrustation 3D en haut à droite, posée par la fenêtre
         self.montage = None               # mandrin, brut, contre-pointe : dessinés en arrière-plan du profil
         self.montage_visible = True
-        # trajectoire de la séquence d'usinage choisie, dessinée par-dessus le profil
+        # séquence d'usinage choisie : sa trajectoire se dessine par-dessus le profil, et ses cotes
+        # réglables (la profondeur d'un perçage) se posent sur le dessin comme celles du brut
         self.trajectoire = None
+        self.sequence = None
         # matière restante à l'étape choisie, et ce que cette étape vient d'enlever (bandes z0,z1,r0,r1)
         self.matiere: List[Tuple[float, float, float, float]] = []
         self.matiere_enlevee: List[Tuple[float, float, float, float]] = []
@@ -530,6 +532,7 @@ class VueEsquisse(QGraphicsView):
                 self._enregistrer(et, "relation", r.id)
 
         self._dessiner_trajectoire(c)
+        self._dessiner_cotes_usinage(c)
 
         if self.mode_mors:
             # édition des cotes du mors : tout le reste s'efface à demi
@@ -595,6 +598,45 @@ class VueEsquisse(QGraphicsView):
         marque.setData(ROLE_ID, traj.sequence_id)
         self._scene.addItem(marque)
         self._items.append(marque)
+
+    def _dessiner_cotes_usinage(self, c: Dict[str, QColor]) -> None:
+        """Les cotes réglables de la séquence montrée : pour l'instant, la profondeur d'un perçage.
+
+        Elles se tiennent comme celles du brut : double-clic pour saisir, clic droit + molette ou glisser
+        pour régler. Le genre « cote_sequence » les rend inertes à la sélection.
+        """
+        s = self.sequence
+        if s is None or "profondeur" not in s.cotes_dessinees() or s.z_fin is None:
+            return
+        couleur = QColor(225, 90, 60)
+        z1, z2 = s.z_face(self.montage), s.z_fin
+        if abs(z1 - z2) <= 1e-9:
+            return
+        x = max(s.diametre_outil / 4.0, self.px_en_mm(8))
+        path = QPainterPath()
+        path.moveTo(z1, x)
+        path.lineTo(z2, x)
+        for z in (z1, z2):
+            path.moveTo(z, 0.0)
+            path.lineTo(z, x + self.px_en_mm(5))
+        self._fleche(path, (z1, x), (1.0, 0.0))
+        self._fleche(path, (z2, x), (-1.0, 0.0))
+        it = QGraphicsPathItem(path)
+        stylo = QPen(couleur, 1)
+        stylo.setCosmetic(True)
+        it.setPen(stylo)
+        it.setZValue(12)
+        it.setData(ROLE_GENRE, "cote_sequence")
+        it.setData(ROLE_ID, "profondeur")
+        self._scene.addItem(it)
+        self._items.append(it)
+        et = Etiquette(s.texte_cote("profondeur", self.montage), couleur, c["fond"], gras=False)
+        et.setPos((z1 + z2) / 2.0, x)
+        et.setData(ROLE_GENRE, "cote_sequence")
+        et.setData(ROLE_ID, "profondeur")
+        self._scene.addItem(et)
+        self._items.append(et)
+        self._direction_cotes["profondeur"] = (z2 - z1, 0.0, False)
 
     def _dessiner_montage(self, c: Dict[str, QColor]) -> None:
         """Brut en pointillés, mors hachurés, face du mandrin, contre-pointe : au-dessus de l'axe, en retrait."""
@@ -1456,8 +1498,8 @@ class VueEsquisse(QGraphicsView):
                      and (genres is None or it.data(ROLE_GENRE) in genres)]
         if not candidats:
             return None
-        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "reference_mors": 7, "mors": 8,
-                 "reference": 9, "trajectoire": 10, "matiere": 11}
+        ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "cote_sequence": 5,
+                 "reference_mors": 7, "mors": 8, "reference": 9, "trajectoire": 10, "matiere": 11}
         candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
         return candidats[0]
 
@@ -1582,6 +1624,8 @@ class VueEsquisse(QGraphicsView):
                 return it.data(ROLE_ID), "brut"
             if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_mors":
                 return it.data(ROLE_ID), "montage"
+            if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence":
+                return it.data(ROLE_ID), "sequence"
         return None
 
     def _aide(self) -> None:
@@ -1652,7 +1696,8 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
-        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference", "trajectoire", "matiere"):
+        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference", "trajectoire", "matiere",
+                     "cote_sequence"):
             return                              # montage et usinage : pas de sélection
         if genre == "point":
             self._glisse_point = ident          # sélection ou glissement : tranché au relâchement
@@ -2112,6 +2157,9 @@ class VueEsquisse(QGraphicsView):
         if el is not None and el[0] == "brut":
             self.controleur.editer_valeur_montage(el[1])
             return
+        if el is not None and el[0] == "cote_sequence":
+            self.controleur.editer_valeur_sequence(el[1])
+            return
         if el is not None and el[0] == "mors":
             self.controleur.retourner_mors()
             return
@@ -2162,6 +2210,8 @@ class VueEsquisse(QGraphicsView):
         for _ in range(nb_pas):
             if variante in ("brut", "montage"):
                 t = self.controleur.ajuster_valeur_montage(cote_id, sens, fin)
+            elif variante == "sequence":
+                t = self.controleur.ajuster_valeur_sequence(cote_id, sens, fin)
             else:
                 t = self.controleur.ajuster_cote(cote_id, sens, variante, fin)
             if t is None:

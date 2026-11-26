@@ -256,14 +256,14 @@ def _filetage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
 
 
 def _percage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
-    """Perçage dans l'axe : des descentes successives, chacune suivie d'un débourrage complet."""
+    """Perçage dans l'axe : des descentes successives, chacune suivie d'un débourrage complet.
+
+    Sert aussi au centrage, qui n'en est qu'un cas court : une seule descente, pas de débourrage.
+    """
     if sequence.z_fin is None:
         return Trajectoire(sequence.id, [], "Indiquez la profondeur du trou : son Z de fond.")
-    if sequence.z_debut is not None:
-        z_face = sequence.z_debut
-    elif montage is not None:
-        z_face = montage.z_brut_avant()
-    else:
+    z_face = sequence.z_face(montage if montage is not None else None)
+    if sequence.z_debut is None and montage is None:
         z_face = profil.z_bout if profil else 0.0
     if z_face - sequence.z_fin <= 1e-9:
         return Trajectoire(sequence.id, [], "Le trou n'a pas de profondeur : vérifiez les deux Z.")
@@ -281,6 +281,33 @@ def _percage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
     return Trajectoire(sequence.id, mouvements)
 
 
+def _alesage(sequence: Sequence, profil: ProfilTourne, montage) -> Trajectoire:
+    """Alésage : la barre reprend le trou percé, en passes parallèles à l'axe qui l'ouvrent peu à peu."""
+    if sequence.z_fin is None or sequence.diametre_fond <= 0.0:
+        return Trajectoire(sequence.id, [], "Indiquez le diamètre à aléser et le fond de l'alésage.")
+    z_face = sequence.z_face(montage)
+    z_fin = sequence.z_fin
+    if z_face - z_fin <= 1e-9:
+        return Trajectoire(sequence.id, [], "L'alésage n'a pas de profondeur : vérifiez les deux Z.")
+    rayon_trou = sequence.diametre_outil / 2.0
+    rayon_vise = sequence.diametre_fond / 2.0 - sequence.surepaisseur
+    if rayon_vise <= rayon_trou + 1e-9:
+        return Trajectoire(sequence.id, [], "Le trou est déjà à ce diamètre : rien à aléser.")
+    profondeur = max(sequence.profondeur_passe, 0.05)
+    nb = max(1, int((rayon_vise - rayon_trou) / profondeur + 0.999))
+
+    mouvements: List[Mouvement] = []
+    for i in range(1, nb + 1):
+        rayon = min(rayon_trou + i * profondeur, rayon_vise)
+        retrait = max(rayon - sequence.degagement, 0.0)
+        mouvements.append(Mouvement(z_face + sequence.garde, rayon))
+        mouvements.append(Mouvement(z_face, rayon, travail=True))
+        mouvements.append(Mouvement(z_fin, rayon, travail=True))
+        mouvements.append(Mouvement(z_fin, retrait, travail=True))      # on décolle de la paroi
+        mouvements.append(Mouvement(z_face + sequence.garde, retrait))
+    return Trajectoire(sequence.id, mouvements)
+
+
 def _rayon_travail(profil: ProfilTourne, montage, z: float) -> float:
     """Le rayon de la matière à une abscisse : le profil s'il y est, sinon le brut."""
     rayon = profil.rayon(z) if profil else 0.0
@@ -292,6 +319,7 @@ def _rayon_travail(profil: ProfilTourne, montage, z: float) -> float:
 _CALCULS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _ebauche,
             TypeSequence.FINITION: _finition, TypeSequence.GORGE: _gorge,
             TypeSequence.FILETAGE: _filetage, TypeSequence.PERCAGE: _percage,
+            TypeSequence.CENTRAGE: _percage, TypeSequence.ALESAGE: _alesage,
             TypeSequence.TRONCONNAGE: _tronconnage}
 
 

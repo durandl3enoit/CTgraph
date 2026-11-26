@@ -1317,20 +1317,20 @@ def test_volet_usinage_gamme_et_trajectoires(fenetre, tmp_path):
     assert any(it.data(ROLE_GENRE) == "trajectoire" for it in vue._items)
     # du brut Ø 60 au Ø 40 plus la surépaisseur, par passes de 2 mm au rayon
     passes = win.trajectoire_de(ebauche).nb_passes()
-    assert passes == 5 and zone.liste.topLevelItem(0).text(3) == "5"
+    assert passes == 5 and zone.liste.topLevelItem(1).text(3) == "5"   # la ligne 0 est le brut
     assert "5 passe(s)" in zone.lbl_etat.text()
 
     # changer une cote du brut recalcule les trajectoires : rien n'est figé
     win._demander_valeur = lambda libelle, unite, defaut, mini: (80.0, True)
     win.editer_brut("diametre")
     assert win.trajectoire_de(ebauche).nb_passes() > passes
-    assert int(zone.liste.topLevelItem(0).text(3)) == win.trajectoire_de(ebauche).nb_passes()
+    assert int(zone.liste.topLevelItem(1).text(3)) == win.trajectoire_de(ebauche).nb_passes()
 
     # le formulaire règle la séquence choisie, et la vue suit
     zone.profondeur.setValue(4.0)
     zone.poste.setValue(11)
     assert ebauche.profondeur_passe == 4.0 and ebauche.poste == 11
-    assert zone.liste.topLevelItem(0).text(2) == "T11"
+    assert zone.liste.topLevelItem(1).text(2) == "T11"
     assert zone.lbl_outil.text().startswith(win.zone_tourelle.tourelle.poste(11).libelle())
     assert vue.trajectoire.sequence_id == ebauche.id
 
@@ -1344,7 +1344,7 @@ def test_volet_usinage_gamme_et_trajectoires(fenetre, tmp_path):
 
     # l'ordre d'usinage se change, et la case décoche une séquence sans la retirer de la gamme
     assert zone.deplacer(-1) and [s.id for s in win.gamme] == [finition.id, ebauche.id]
-    zone.liste.topLevelItem(0).setCheckState(0, Qt.CheckState.Unchecked)
+    zone.liste.topLevelItem(1).setCheckState(0, Qt.CheckState.Unchecked)
     assert not finition.active and len(win.gamme.actives()) == 1
 
     # la gamme fait partie de la pièce enregistrée
@@ -1354,11 +1354,11 @@ def test_volet_usinage_gamme_et_trajectoires(fenetre, tmp_path):
     assert len(win.gamme) == 0 and vue.trajectoire is None
     assert win.ouvrir_fichier(str(chemin))
     assert [s.type for s in win.gamme] == [TypeSequence.FINITION, TypeSequence.EBAUCHE]
-    assert win.zone_usinage.liste.topLevelItemCount() == 2
+    assert win.zone_usinage.liste.topLevelItemCount() == 3      # le brut et les deux opérations
     assert not win.gamme.sequences[0].active and win.gamme.sequences[1].poste == 11
 
     # choisir une ligne montre sa trajectoire ; la supprimer la retire du dessin
-    win.zone_usinage.liste.setCurrentItem(win.zone_usinage.liste.topLevelItem(1))
+    win.zone_usinage.liste.setCurrentItem(win.zone_usinage.liste.topLevelItem(2))
     assert vue.trajectoire.sequence_id == win.gamme.sequences[1].id
     win.zone_usinage.supprimer()
     win.zone_usinage.supprimer()
@@ -1379,32 +1379,34 @@ def test_volet_usinage_curseur_matiere_et_ordre(fenetre):
     dressage = zone.ajouter(TypeSequence.DRESSAGE)
     ebauche = zone.ajouter(TypeSequence.EBAUCHE)
 
-    # une étape de curseur par opération ; la ligne choisie et le curseur ne se quittent pas
-    assert zone.curseur.maximum() == 2 and zone.etape() == 2
-    assert "2/2" in zone.lbl_etape.text()
-    zone.liste.setCurrentItem(zone.liste.topLevelItem(0))
+    # la liste est le curseur : une ligne par étape, la première étant le brut
+    assert zone.liste.topLevelItemCount() == 3 and zone.liste.topLevelItem(0).text(1) == "Brut"
+    assert zone.etape() == 2 and zone.sequence_courante() is ebauche
+    zone.liste.setCurrentItem(zone.liste.topLevelItem(1))
     assert zone.etape() == 1 and zone.sequence_courante() is dressage
 
     # étape 0 : le brut, rien d'enlevé, aucune trajectoire
-    zone.curseur.setValue(0)
+    zone.definir_etape(0)
     assert zone.sequence_courante() is None and vue.trajectoire is None
-    assert "Brut" in zone.lbl_etape.text()
+    assert "brut" in zone.lbl_etat.text().lower()
     assert vue.matiere and not vue.matiere_enlevee
     assert max(r for _, _, _, r in vue.matiere) == pytest.approx(win.montage.rayon_brut())
 
     # étape 1 : le dressage a emporté la surépaisseur de face, devant Z = 0
-    zone.curseur.setValue(1)
+    zone.definir_etape(1)
     assert zone.sequence_courante() is dressage and vue.trajectoire is not None
     assert vue.matiere_enlevee and max(z for _, z, _, _ in vue.matiere_enlevee) > 0.0
+    # les lignes qui suivent l'étape montrée sont grisées, celles d'avant non
+    assert zone.liste.topLevelItem(1).foreground(1) != zone.liste.topLevelItem(2).foreground(1)
 
     # étape 2 : l'ébauche a emporté la matière au diamètre, du brut jusqu'au profil
-    zone.curseur.setValue(2)
+    zone.definir_etape(2)
     enleve = vue.matiere_enlevee
     assert enleve and max(r for _, _, _, r in enleve) == pytest.approx(win.montage.rayon_brut())
     assert min(r for _, _, r, _ in enleve) < win.montage.rayon_brut()
 
     # la liste est une source de glisser : une ligne emporte sa séquence
-    index = zone.liste.indexFromItem(zone.liste.topLevelItem(1))
+    index = zone.liste.indexFromItem(zone.liste.topLevelItem(2))
     assert zone.liste.dragEnabled()
     type_mime, charge = lire(zone.liste.model().mimeData([index]))
     assert type_mime == MIME_SEQUENCE and charge.startswith(str(ebauche.id))
@@ -1420,25 +1422,78 @@ def test_volet_usinage_curseur_matiere_et_ordre(fenetre):
         QTest.qWait(10)        # la liste se reconstruit après la sortie de l'événement
         return ev.isAccepted()
 
-    # lâchée au-dessus de la première ligne, l'ébauche passe devant le dressage
-    assert lacher_au_dessus_de(0, ebauche)
+    # lâchée au-dessus de la première opération, l'ébauche passe devant le dressage
+    assert lacher_au_dessus_de(1, ebauche)
     assert [s.id for s in win.gamme] == [ebauche.id, dressage.id]
-    assert zone.liste.topLevelItem(0).text(1) == ebauche.libelle()
+    assert zone.liste.topLevelItem(1).text(1) == ebauche.libelle()
     assert zone.sequence_courante() is ebauche and zone.etape() == 1
 
     # lâchée là où elle est déjà : rien ne bouge
-    assert lacher_au_dessus_de(0, ebauche)
+    assert lacher_au_dessus_de(1, ebauche)
     assert [s.id for s in win.gamme] == [ebauche.id, dressage.id]
 
-    # gamme vide : le dessin redevient celui de l'esquisse seule
+    # gamme vide : il ne reste que la ligne du brut, et le dessin redevient celui de l'esquisse seule
     while zone.supprimer():
         pass
-    assert not vue.matiere and not vue.matiere_enlevee and zone.curseur.maximum() == 0
+    assert not vue.matiere and not vue.matiere_enlevee
+    assert zone.liste.topLevelItemCount() == 1 and zone.etape() == 0
+
+
+def test_gamme_type_et_cote_de_percage(fenetre):
+    from ctgraph.montage import Montage
+    from ctgraph.tourelle import Tourelle
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE, ROLE_ID, Etiquette
+    from ctgraph.usinage import TypeSequence
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())
+    rectangle(win, 40.0, 20.0)
+    zone = win.zone_usinage
+    tourelle = Tourelle()
+    tourelle.garnir(3, "SDJCR 2020 K11", "DCMT 11T308")      # extérieur positif : la finition
+    tourelle.garnir(11, "PCLNR 2020 K12", "CNMG 120408")     # extérieur négatif : dressage et ébauche
+    win.zone_tourelle.definir_tourelle(tourelle)
+
+    # la gamme type pose les neuf étapes dans l'ordre, et affecte les postes que la tourelle porte
+    assert zone.proposer_gamme_type(confirmer=False)
+    assert [s.type for s in win.gamme][:4] == [TypeSequence.DRESSAGE, TypeSequence.CENTRAGE,
+                                               TypeSequence.PERCAGE, TypeSequence.EBAUCHE]
+    assert [s.type for s in win.gamme][-1] == TypeSequence.TRONCONNAGE
+    assert win.gamme.sequences[0].poste == 11 and win.gamme.sequences[3].poste == 11
+    assert next(s for s in win.gamme if s.type == TypeSequence.FINITION).poste == 3
+    assert next(s for s in win.gamme if s.type == TypeSequence.PERCAGE).poste == 0   # pas de foret monté
+    # elle part sur le brut, et la liste montre toutes ses étapes
+    assert zone.etape() == 0 and zone.liste.topLevelItemCount() == len(win.gamme) + 1
+    assert zone.liste.minimumHeight() >= len(win.gamme) * zone.liste.sizeHintForRow(0)
+
+    # le perçage : sa profondeur est une cote portée sur le dessin, et ce qu'il enlève y ressort
+    percage = next(s for s in win.gamme if s.type == TypeSequence.PERCAGE)
+    percage.active = True
+    percage.z_fin = -30.0
+    zone._choisir(percage.id)
+    win._apres_reglage_sequence()
+    cote = next(it for it in vue._items
+                if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence")
+    assert cote.texte == "P 32" and cote.data(ROLE_ID) == "profondeur"   # 2 mm de marge + 30
+    assert vue.matiere_enlevee and min(r for _, _, r, _ in vue.matiere_enlevee) == 0.0
+
+    # la cote se règle comme celles du brut : à la molette, et au double-clic
+    assert win.ajuster_valeur_sequence("profondeur", 1, False) == "P 33"
+    assert percage.z_fin == pytest.approx(-31.0)
+    win._demander_valeur = lambda libelle, unite, defaut, mini: (50.0, True)
+    win.editer_valeur_sequence("profondeur")
+    assert percage.z_fin == pytest.approx(-48.0) and win._modifie
+    # la cote redessinée porte la nouvelle valeur
+    assert next(it.texte for it in vue._items
+                if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence") == "P 50"
+
+    while zone.supprimer():
+        pass
+    win.zone_tourelle.definir_tourelle(Tourelle())
 
 
 def test_volet_usinage_un_formulaire_par_type(fenetre):
     from ctgraph.usinage import TypeSequence
-    from ctgraph.usinage.sequences import CHAMPS_SEQUENCE, LIBELLES_Z
+    from ctgraph.usinage.sequences import CHAMPS_SEQUENCE, LIBELLES_CHAMPS
     win = fenetre
     zone = win.zone_usinage
     assert set(zone.boutons_ajout) == set(TypeSequence)        # un bouton d'ajout par opération
@@ -1448,12 +1503,13 @@ def test_volet_usinage_un_formulaire_par_type(fenetre):
         montres = {cle for cle, widget in zone.champs.items()
                    if not widget.isHidden() and cle not in ("vitesse_maxi", "avance")}
         assert montres == attendus, type_
-        # filetage et perçage tournent à broche fixe : pas de limitation de broche à régler,
+        # filetage, perçage et centrage tournent à broche fixe : pas de limitation de broche à régler,
         # et l'avance d'un filetage est son pas
         assert zone.vitesse_maxi.isHidden() == s.vitesse_fixe()
         assert zone.avance.isHidden() == (type_ == TypeSequence.FILETAGE)
-        if type_ in LIBELLES_Z:
-            assert zone.formulaire.labelForField(zone.z_debut).text() == LIBELLES_Z[type_][0]
+        # chaque type nomme ses champs pour ce qu'ils y sont : « Fond du trou », pas « Z de fin »
+        for cle, intitule in LIBELLES_CHAMPS.get(type_, {}).items():
+            assert zone.formulaire.labelForField(zone.champs[cle]).text() == intitule
     for s in list(win.gamme.sequences):
         win.gamme.supprimer(s.id)
     zone.rafraichir()

@@ -145,19 +145,28 @@ Au premier lancement, seul le stock d'outils est déplié : cliquez les autres b
 
 ### Usinage
 
-La **gamme** de la pièce : la suite ordonnée des séquences à exécuter. Sept opérations :
+La **gamme** de la pièce : la suite ordonnée des séquences à exécuter. Le bouton **Proposer la gamme type**
+pose d'un coup l'enchaînement habituel d'une pièce sur barre, dans l'ordre, du plus rigide au moins rigide :
+dressage, centrage, perçage, ébauche, alésage (ébauche puis finition), finition de profil, gorge, filetage,
+tronçonnage. Les opérations qui demandent une cote que le dessin ne donne pas sont posées décochées : l'ordre
+est là, il reste à dire si la pièce en a besoin, et à les renseigner. Les postes sont pris de la tourelle,
+par famille d'outil, quand elle porte ce qu'il faut.
+
+Neuf opérations :
 
 * **dressage de face** : passes de la matière vers l'axe, du bout du brut jusqu'à la face finie ;
+* **centrage** : pointe l'axe avant le foret, ou perce le centre de la contre-pointe ;
+* **perçage dans l'axe** : de la face vers le fond du trou, par débourrages successifs ;
 * **ébauche de chariotage** : passes parallèles à l'axe, du diamètre du brut jusqu'au profil augmenté de la
   surépaisseur de finition ; une passe plus profonde que l'épaulement qui la précède n'entre en matière
   qu'après lui ;
+* **alésage** : reprend le trou percé au diamètre voulu, à la barre, en passes parallèles à l'axe ;
 * **finition de profil** : un passage qui suit le profil fini ;
 * **gorge** : des plongées côte à côte, à la largeur de l'outil, jusqu'au diamètre de fond ; une gorge plus
   large que l'outil se fait en autant de plongées qu'il faut, qui se recouvrent ;
 * **filetage** : des passes le long du filet, de plus en plus fines pour garder la section de copeau. La
   profondeur du filet est celle du profil ISO métrique tant qu'on n'en donne pas une autre, et l'avance d'un
   filetage est son pas ;
-* **perçage dans l'axe** : de la face vers le fond du trou, par débourrages successifs ;
 * **tronçonnage** : une plongée jusqu'au diamètre demandé, ou jusqu'à l'axe pour détacher la pièce.
 
 Les boutons du haut ajoutent une séquence, chacun avec les conditions de coupe habituelles de son type ; la
@@ -165,18 +174,22 @@ case de chaque ligne l'active ou la met de côté sans la perdre. La liste donne
 de tourelle, le nombre de passes et la longueur à couper. L'ordre d'usinage se change avec les flèches, ou en
 **tirant une ligne sur une autre** : un trait montre où elle va se poser.
 
-Le **curseur** sous la liste choisit l'étape que montre le dessin : à zéro, le brut tel qu'il est serré ; à
-l'étape *k*, la pièce telle qu'elle est après la *k*-ième opération. La matière qui reste est teintée, et
-**ce que l'étape vient d'enlever ressort en orange**, à côté de la trajectoire qui l'a enlevée. Le curseur et
-la ligne choisie vont ensemble : bouger l'un bouge l'autre. Le modèle de matière sert à voir, pas à
-vérifier : il ne connaît pas la forme de l'outil et ne détecte aucune collision.
+**La liste est le curseur d'étape.** Sa première ligne est le *brut*, tel qu'il est serré ; choisir une ligne
+montre la pièce telle qu'elle est après cette opération, et les lignes qui suivent se grisent, n'étant pas
+encore passées. La matière qui reste est teintée sur le dessin, et **ce que l'étape vient d'enlever ressort en
+orange**, à côté de la trajectoire qui l'a enlevée. Le modèle de matière sert à voir, pas à vérifier : il ne
+connaît pas la forme de l'outil et ne détecte aucune collision.
 
-Le formulaire règle la séquence choisie et **ne montre que les réglages qui comptent pour son type** : une
-finition n'a ni passes ni surépaisseur, une gorge demande la largeur de l'outil et le diamètre de fond, un
-filetage son pas. Le filetage et le perçage tournent à vitesse de broche fixe : il n'y a pas de limitation de
-broche à régler. Le poste de tourelle, écrit `T1` à `T12` comme sur la machine, se saisit au numéro, ou
+Le formulaire règle la séquence choisie et **ne montre que les réglages qui comptent pour son type**, nommés
+pour ce qu'ils y sont (« Fond du trou » plutôt que « Z de fin ») : une finition n'a ni passes ni surépaisseur,
+une gorge demande la largeur de l'outil et le diamètre de fond, un filetage son pas. Le filetage, le perçage
+et le centrage tournent à vitesse de broche fixe : il n'y a pas de limitation de broche à régler. Le poste de
+tourelle, écrit `T1` à `T12` comme sur la machine, se saisit au numéro, ou
 **en glissant une ligne du volet Tourelle sur la séquence** : elle prend ce poste avec la combinaison qui y
 est montée, rappelée sous le numéro.
+
+Certaines valeurs se règlent **directement sur le dessin**, comme les cotes du brut : la **profondeur d'un
+perçage** est cotée « P 47 » depuis la face d'attaque, et se change au double-clic ou au clic droit + molette.
 
 La **trajectoire de la séquence choisie se dessine sur l'esquisse** : trait plein pour la coupe, pointillé pour
 les déplacements rapides, un cercle au point de départ. Elle est **recalculée depuis le profil résolu**, jamais

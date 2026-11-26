@@ -148,7 +148,7 @@ def _plongee(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
 
 
 def _percage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
-    """Perçage : un alésage au diamètre du foret, de la face au fond du trou."""
+    """Perçage et centrage : un alésage au diamètre du foret, de la face au fond du trou."""
     coupes = [m for m in traj.mouvements if m.travail]
     if not coupes:
         return
@@ -157,9 +157,19 @@ def _percage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
         etat.aleser(i, rayon)
 
 
+def _alesage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
+    """Alésage : chaque passe ouvre le trou à son rayon, sur la longueur qu'elle parcourt."""
+    for a, b in zip(traj.mouvements, traj.mouvements[1:]):
+        if not b.travail or abs(b.z - a.z) <= TOLERANCE:
+            continue                      # un mouvement radial ne fait que décoller de la paroi
+        for i in etat.tranches(a.z, b.z):
+            etat.aleser(i, max(a.x, b.x))
+
+
 _ENLEVEMENTS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _chariotage,
                 TypeSequence.FINITION: _chariotage, TypeSequence.GORGE: _plongee,
-                TypeSequence.TRONCONNAGE: _plongee, TypeSequence.PERCAGE: _percage}
+                TypeSequence.TRONCONNAGE: _plongee, TypeSequence.PERCAGE: _percage,
+                TypeSequence.CENTRAGE: _percage, TypeSequence.ALESAGE: _alesage}
 
 
 def appliquer(etat: EtatMatiere, sequence: Sequence, traj: Optional[Trajectoire]) -> EtatMatiere:

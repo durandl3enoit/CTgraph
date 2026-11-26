@@ -7,26 +7,31 @@ dessine aussitôt sur l'esquisse. Rien n'est figé : la trajectoire se recalcule
 Chaque type d'opération n'a pas les mêmes réglages : le formulaire ne montre que ceux qui comptent
 (`CHAMPS_SEQUENCE`). On affecte un poste de tourelle en tapant son numéro, ou en y glissant la
 combinaison montée sur un poste, tirée du volet Tourelle. Les lignes se tirent entre elles pour changer
-l'ordre d'usinage, et le curseur sous la liste montre la pièce telle qu'elle est après l'étape choisie.
+l'ordre d'usinage.
+
+**La liste est le curseur d'étape.** Sa première ligne est le brut, avant tout usinage ; choisir une
+ligne, c'est voir la pièce telle qu'elle est après cette opération, avec en vif ce qu'elle vient
+d'enlever. Les lignes qui suivent sont grisées : elles ne sont pas encore passées.
 """
 from __future__ import annotations
 
 from typing import Callable, Dict, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QPainter, QPalette, QPen
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox, QFormLayout, QGridLayout,
-                               QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider, QSpinBox,
-                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QPainter, QPalette, QPen
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox, QFormLayout, QFrame,
+                               QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+                               QPushButton, QScrollArea, QSpinBox, QTreeWidget, QTreeWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from ..tourelle import nom_poste
 from ..usinage import Gamme, Sequence, TypeSequence
-from ..usinage.sequences import LIBELLES_SEQUENCE, LIBELLES_Z, USAGES_SEQUENCE
+from ..usinage.sequences import FAMILLES_OUTIL, LIBELLES_SEQUENCE, USAGES_SEQUENCE
 from .transfert import MIME_POSTE, MIME_SEQUENCE, accueillir, charger, lire
 
 COLONNES = ["#", "Opération", "Poste", "Passes", "Coupe"]
 ROLE_ID = Qt.ItemDataRole.UserRole
-BOUTONS_PAR_RANGEE = 4
+BOUTONS_PAR_RANGEE = 3
 
 
 class ListeSequences(QTreeWidget):
@@ -62,12 +67,15 @@ class ListeSequences(QTreeWidget):
         return charger(MIME_SEQUENCE, "")
 
     def rang_sous(self, point) -> int:
-        """Le rang où une ligne lâchée ici viendrait se poser : avant ou après celle qu'on survole."""
+        """Le rang où une ligne lâchée ici viendrait se poser : avant ou après celle qu'on survole.
+
+        Compté dans la liste, où la ligne 0 est le brut : le rang dans la gamme vaut un de moins.
+        """
         it = self.itemAt(point)
         if it is None:
             return self.topLevelItemCount()
         rect = self.visualItemRect(it)
-        return self.indexOfTopLevelItem(it) + (1 if point.y() > rect.center().y() else 0)
+        return max(1, self.indexOfTopLevelItem(it) + (1 if point.y() > rect.center().y() else 0))
 
     def _y_du_rang(self, rang: int) -> int:
         if not self.topLevelItemCount():
@@ -155,8 +163,12 @@ def _numero_poste(charge: str) -> int:
     return _numero_tete(charge)
 
 
-class ZoneUsinage(QWidget):
-    """La gamme : liste ordonnée, boutons d'ordre, et le réglage de la séquence choisie."""
+class ZoneUsinage(QScrollArea):
+    """La gamme : liste ordonnée, boutons d'ordre, et le réglage de la séquence choisie.
+
+    Le contenu défile : la liste montre toutes ses étapes d'un bloc, au lieu d'être réduite à quelques
+    lignes pour que le formulaire tienne.
+    """
 
     gamme_changee = Signal()                 # la gamme a changé : à enregistrer et à redessiner
     sequence_choisie = Signal(int)           # identifiant de la séquence à montrer sur l'esquisse
@@ -165,17 +177,21 @@ class ZoneUsinage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumWidth(360)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.gamme = Gamme()
         self.tourelle = None                 # garniture de la machine : dit ce que porte le poste choisi
         self._blocage = False
         self._trajectoire: Callable[[Sequence], object] = lambda s: None
 
-        v = QVBoxLayout(self)
+        interieur = QWidget()
+        v = QVBoxLayout(interieur)
         v.setContentsMargins(6, 6, 6, 6)
         v.setSpacing(5)
-        entete = QLabel("Gamme d'usinage de la pièce : les séquences s'exécutent dans cet ordre. La "
-                        "trajectoire de celle que vous choisissez se dessine sur l'esquisse ; glissez-y "
-                        "un poste de la tourelle pour l'y affecter.")
+        entete = QLabel("Gamme d'usinage de la pièce : les séquences s'exécutent dans cet ordre. Choisir "
+                        "une ligne montre la pièce après cette opération, et la trajectoire qui l'a faite ; "
+                        "glissez-y un poste de la tourelle pour l'y affecter.")
         entete.setWordWrap(True)
         v.addWidget(entete)
 
@@ -188,6 +204,14 @@ class ZoneUsinage(QWidget):
             b.clicked.connect(lambda _=False, t=type_: self.ajouter(t))
             grille.addWidget(b, i // BOUTONS_PAR_RANGEE, i % BOUTONS_PAR_RANGEE)
             self.boutons_ajout[type_] = b
+        self.btn_gamme_type = QPushButton("Proposer la gamme type")
+        self.btn_gamme_type.setToolTip(
+            "Pose l'enchaînement habituel d'une pièce sur barre, dans l'ordre : dressage, centrage, "
+            "perçage, ébauche, alésage, finition, gorge, filetage, tronçonnage.\n"
+            "Les opérations qui demandent une cote que le dessin ne donne pas sont posées décochées.")
+        self.btn_gamme_type.clicked.connect(self.proposer_gamme_type)
+        grille.addWidget(self.btn_gamme_type, (len(TypeSequence) - 1) // BOUTONS_PAR_RANGEE + 1, 0,
+                         1, BOUTONS_PAR_RANGEE)
         v.addLayout(grille)
 
         self.liste = ListeSequences()
@@ -196,30 +220,13 @@ class ZoneUsinage(QWidget):
         self.liste.setRootIsDecorated(False)
         self.liste.setUniformRowHeights(True)
         self.liste.setAlternatingRowColors(True)
-        self.liste.setMinimumHeight(120)
+        self.liste.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.liste.accepte_depot = self.accepte_poste
         self.liste.depot.connect(self.affecter_poste)
         self.liste.reordonne.connect(self.reordonner)
         self.liste.currentItemChanged.connect(self._ligne_choisie)
         self.liste.itemChanged.connect(self._case_changee)
         v.addWidget(self.liste, 1)
-
-        # le curseur d'étape : voir la pièce telle qu'elle est après la k-ième opération
-        etape = QHBoxLayout()
-        etape.setSpacing(6)
-        self.curseur = QSlider(Qt.Orientation.Horizontal)
-        self.curseur.setRange(0, 0)
-        self.curseur.setPageStep(1)
-        self.curseur.setTickPosition(QSlider.TickPosition.TicksBelow)
-        self.curseur.setTickInterval(1)
-        self.curseur.setToolTip("Montre la matière qui reste après cette étape, et ce qu'elle a enlevé.")
-        self.curseur.valueChanged.connect(self._curseur_bouge)
-        self.lbl_etape = QLabel("Brut")
-        self.lbl_etape.setMinimumWidth(130)
-        etape.addWidget(QLabel("Étape"))
-        etape.addWidget(self.curseur, 1)
-        etape.addWidget(self.lbl_etape)
-        v.addLayout(etape)
 
         ordre = QHBoxLayout()
         ordre.setSpacing(3)
@@ -267,6 +274,7 @@ class ZoneUsinage(QWidget):
         self.z_fin = self._etendue("jusqu'au fond usinable")
         # (clé du champ, intitulé) ; la clé est celle de CHAMPS_SEQUENCE, qui dit quand le montrer
         self.champs: Dict[str, QWidget] = {}
+        self.intitules: Dict[str, str] = {}
         for cle, intitule, widget in (
                 ("", "Nom", self.nom),
                 ("", "Poste de tourelle", self.poste),
@@ -294,11 +302,13 @@ class ZoneUsinage(QWidget):
                 self.formulaire.addRow(widget)
             if cle:
                 self.champs[cle] = widget
+                self.intitules[cle] = intitule
         v.addWidget(self.groupe)
 
         self.lbl_etat = QLabel("")
         self.lbl_etat.setWordWrap(True)
         v.addWidget(self.lbl_etat)
+        self.setWidget(interieur)
 
         for widget in (self.vitesse_coupe, self.vitesse_maxi, self.avance, self.largeur_outil,
                        self.largeur, self.diametre_fond, self.diametre_outil, self.pas,
@@ -390,62 +400,60 @@ class ZoneUsinage(QWidget):
         self.gamme_changee.emit()
         return True
 
-    def reordonner(self, sequence_id: int, rang: int) -> bool:
-        """Pose la séquence à ce rang : c'est ce que fait un glisser d'une ligne sur une autre."""
-        if not self.gamme.deplacer_a(sequence_id, rang):
+    def reordonner(self, sequence_id: int, rang_liste: int) -> bool:
+        """Pose la séquence à ce rang : c'est ce que fait un glisser d'une ligne sur une autre.
+
+        Le rang est celui de la liste, où la ligne 0 est le brut ; dans la gamme, c'est un de moins.
+        """
+        if not self.gamme.deplacer_a(sequence_id, max(rang_liste - 1, 0)):
             return False
         self.rafraichir()
         self._choisir(sequence_id)
         self.gamme_changee.emit()
         return True
 
-    # -- étape montrée sur le dessin ---------------------------------------------------------
+    # -- la liste est le curseur d'étape -----------------------------------------------------
 
     def etape(self) -> int:
-        """Le rang de l'étape montrée : 0 pour le brut, k pour l'état après la k-ième opération."""
-        return self.curseur.value()
+        """Le rang de l'étape montrée : 0 pour le brut, k pour l'état après la k-ième opération.
 
-    def definir_etape(self, rang: int, prevenir: bool = True) -> None:
-        """Met le curseur sur cette étape, et la ligne correspondante en sélection."""
-        rang = min(max(rang, 0), len(self.gamme))
-        if rang == self.curseur.value():
-            self._dire_l_etape()
-            return
+        C'est le rang de la ligne choisie : la liste et le curseur ne font qu'un.
+        """
+        it = self.liste.currentItem()
+        return self.liste.indexOfTopLevelItem(it) if it is not None else 0
+
+    def definir_etape(self, rang: int) -> None:
+        """Choisit la ligne de cette étape ; 0 montre le brut, avant tout usinage."""
+        rang = min(max(rang, 0), self.liste.topLevelItemCount() - 1)
+        if rang >= 0 and rang != self.etape():
+            self.liste.setCurrentItem(self.liste.topLevelItem(rang))
+
+    def _marquer_etape(self) -> None:
+        """Les lignes qui suivent l'étape montrée se grisent : la liste se lit comme un curseur."""
         avant, self._blocage = self._blocage, True
-        self.curseur.setValue(rang)
+        courante = self.etape()
+        pal = self.palette()
+        vif = pal.color(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText)
+        muet = QColor(vif.red(), vif.green(), vif.blue(), 110)
+        for i in range(self.liste.topLevelItemCount()):
+            it = self.liste.topLevelItem(i)
+            couleur = vif if i <= courante else muet
+            for col in range(len(COLONNES)):
+                it.setForeground(col, couleur)
         self._blocage = avant
-        self._dire_l_etape()
-        if prevenir:
-            self.etape_changee.emit(rang)
-
-    def _dire_l_etape(self) -> None:
-        rang = self.curseur.value()
-        if rang <= 0 or rang > len(self.gamme):
-            self.lbl_etape.setText("Brut")
-            return
-        self.lbl_etape.setText(f"{rang}/{len(self.gamme)} — {self.gamme.sequences[rang - 1].libelle()}")
-
-    def _curseur_bouge(self, rang: int) -> None:
-        """Le curseur mène : la ligne choisie suit, et le dessin montre la pièce après cette étape."""
-        self._dire_l_etape()
-        if self._blocage:
-            return
-        avant, self._blocage = self._blocage, True
-        if 1 <= rang <= len(self.gamme):
-            self._choisir(self.gamme.sequences[rang - 1].id)
-        else:
-            self.liste.setCurrentItem(None)
-        self._blocage = avant
-        self._remplir_formulaire()
-        self.sequence_choisie.emit(self.gamme.sequences[rang - 1].id if 1 <= rang <= len(self.gamme) else 0)
-        self.etape_changee.emit(rang)
 
     # -- affichage ------------------------------------------------------------------------
 
     def rafraichir(self) -> None:
         courante = self.sequence_courante()
+        etape_avant = self.etape()
         self._blocage = True
         self.liste.clear()
+        # première ligne : le brut, avant tout usinage. C'est l'étape 0 du curseur.
+        brut = QTreeWidgetItem(self.liste, ["0", "Brut", "—", "—", "—"])
+        brut.setData(0, ROLE_ID, 0)
+        brut.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+        brut.setToolTip(0, "La pièce avant usinage : le brut tel qu'il est serré dans les mors.")
         for rang, s in enumerate(self.gamme, start=1):
             traj = self._trajectoire(s)
             passes = str(traj.nb_passes()) if traj else "—"
@@ -459,17 +467,25 @@ class ZoneUsinage(QWidget):
             it.setToolTip(0, s.description() + (f"\n\n{message}" if message else ""))
             if courante is not None and s.id == courante.id:
                 self.liste.setCurrentItem(it)
-        if self.liste.currentItem() is None and self.liste.topLevelItemCount():
-            self.liste.setCurrentItem(self.liste.topLevelItem(0))
+        if self.liste.currentItem() is None:
+            # la séquence montrée a disparu : on reste au même rang, sinon on montre le brut
+            self.liste.setCurrentItem(self.liste.topLevelItem(
+                min(max(etape_avant, 0), self.liste.topLevelItemCount() - 1)))
         for col in range(len(COLONNES)):
             self.liste.resizeColumnToContents(col)
-        # le curseur d'étape suit la liste : une étape par opération, zéro pour le brut
-        self.curseur.setRange(0, len(self.gamme))
-        courant = self.liste.currentItem()
-        self.curseur.setValue(self.liste.indexOfTopLevelItem(courant) + 1 if courant is not None else 0)
+        self._ajuster_hauteur()
         self._blocage = False
-        self._dire_l_etape()
+        self._marquer_etape()
         self._remplir_formulaire()
+
+    def _ajuster_hauteur(self) -> None:
+        """La liste montre toutes ses étapes d'un coup : on ne défile pas dans la gamme."""
+        nb = self.liste.topLevelItemCount()
+        ligne = self.liste.sizeHintForRow(0) if nb else 20
+        hauteur = (self.liste.header().sizeHint().height() + max(nb, 4) * ligne
+                   + 2 * self.liste.frameWidth() + 2)
+        self.liste.setMinimumHeight(hauteur)
+        self.liste.setMaximumHeight(hauteur)
 
     def _remplir_formulaire(self) -> None:
         s = self.sequence_courante()
@@ -477,7 +493,9 @@ class ZoneUsinage(QWidget):
         self.groupe.setEnabled(s is not None)
         if s is None:
             self.groupe.setTitle("Séquence")
-            self.lbl_etat.setText("Aucune séquence : ajoutez une opération avec les boutons du haut.")
+            self.lbl_etat.setText("Le brut, avant usinage. Choisissez une ligne pour voir la pièce après "
+                                  "cette opération." if len(self.gamme) else
+                                  "Aucune séquence : ajoutez une opération, ou proposez la gamme type.")
             self._blocage = avant
             return
         self.groupe.setTitle(f"{LIBELLES_SEQUENCE[s.type]} — {s.libelle()}")
@@ -506,19 +524,17 @@ class ZoneUsinage(QWidget):
         self._dire_l_etat(s)
 
     def _adapter_au_type(self, s: Sequence) -> None:
-        """Ne montre que les réglages qui comptent pour ce type, et nomme les bornes en Z pour ce qu'elles sont."""
+        """Ne montre que les réglages qui comptent pour ce type, et les nomme pour ce qu'ils y sont."""
         attendus = s.champs()
         for cle, widget in self.champs.items():
             if cle not in ("vitesse_maxi", "avance"):
                 self.formulaire.setRowVisible(widget, cle in attendus)
-        # la broche est fixe en filetage et en perçage, et un filetage avance de son pas
+            etiquette = self.formulaire.labelForField(widget)
+            if etiquette is not None:
+                etiquette.setText(s.libelle_champ(cle, self.intitules[cle]))
+        # la broche est fixe en filetage, en perçage et en centrage ; un filetage avance de son pas
         self.formulaire.setRowVisible(self.vitesse_maxi, not s.vitesse_fixe())
         self.formulaire.setRowVisible(self.avance, s.type != TypeSequence.FILETAGE)
-        debut, fin = LIBELLES_Z.get(s.type, ("Z de début", "Z de fin"))
-        for widget, texte in ((self.z_debut, debut), (self.z_fin, fin)):
-            etiquette = self.formulaire.labelForField(widget)
-            if etiquette is not None and texte:
-                etiquette.setText(texte)
 
     def _dire_l_etat(self, s: Sequence) -> None:
         traj = self._trajectoire(s)
@@ -540,6 +556,36 @@ class ZoneUsinage(QWidget):
         self._choisir(s.id)
         self.gamme_changee.emit()
         return s
+
+    def proposer_gamme_type(self, confirmer: bool = True) -> bool:
+        """Pose l'enchaînement habituel, dans l'ordre, et affecte les postes que la tourelle porte déjà."""
+        if len(self.gamme) and confirmer:
+            rep = QMessageBox.question(self, "Gamme type",
+                                       "Remplacer la gamme actuelle par l'enchaînement type ?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                                       QMessageBox.StandardButton.Cancel)
+            if rep != QMessageBox.StandardButton.Yes:
+                return False
+        self.gamme.sequences.clear()
+        self.gamme.remplir_type()
+        for s in self.gamme:
+            s.poste = self._poste_pour(s)
+        self.rafraichir()
+        self.definir_etape(0)
+        self.gamme_changee.emit()
+        return True
+
+    def _poste_pour(self, sequence: Sequence) -> int:
+        """Le premier poste garni d'un outil de la bonne famille, 0 si la tourelle n'en porte pas."""
+        famille = FAMILLES_OUTIL.get(sequence.type, "")
+        if not famille or self.tourelle is None:
+            return 0
+        from ..outils import CATALOGUE as OUTILS
+        designations = {pp.designation for pp in OUTILS if pp.famille == famille}
+        for poste in self.tourelle.garnis():
+            if poste.porte_plaquette in designations:
+                return poste.numero
+        return 0
 
     def supprimer(self) -> bool:
         s = self.sequence_courante()
@@ -572,14 +618,10 @@ class ZoneUsinage(QWidget):
         if self._blocage:
             return
         self._remplir_formulaire()
-        # choisir une ligne, c'est choisir l'étape : le curseur et le dessin suivent
-        rang = self.liste.indexOfTopLevelItem(item) + 1 if item is not None else 0
-        avant, self._blocage = self._blocage, True
-        self.curseur.setValue(rang)
-        self._blocage = avant
-        self._dire_l_etape()
+        # choisir une ligne, c'est choisir l'étape : le dessin montre la pièce à ce moment-là
+        self._marquer_etape()
         self.sequence_choisie.emit(int(item.data(0, ROLE_ID)) if item is not None else 0)
-        self.etape_changee.emit(rang)
+        self.etape_changee.emit(self.liste.indexOfTopLevelItem(item) if item is not None else 0)
 
     def _case_changee(self, item: QTreeWidgetItem, colonne: int) -> None:
         if self._blocage or colonne != 0:

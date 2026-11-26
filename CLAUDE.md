@@ -259,12 +259,16 @@ vérification par relecture du G-code généré, réception des programmes depui
   porte une **gamme** (`Gamme`), suite ordonnée de `Sequence`, enregistrée dans le `.ctg` (`Piece.gamme`).
   Une séquence dit son type, son poste de tourelle, ses conditions de coupe (`G96` vitesse de coupe, `G92`
   limitation de broche, `G95` avance par tour), ses passes et son étendue en Z ; `active` la met de côté sans
-  la perdre. **Sept types** : `DRESSAGE`, `EBAUCHE` paraxiale, `FINITION` de profil, puis (ajoutés le
-  25 novembre 2026) `GORGE`, `FILETAGE`, `PERCAGE` et `TRONCONNAGE`.
+  la perdre. **Neuf types**, dans l'ordre d'usinage habituel : `DRESSAGE`, `CENTRAGE`, `PERCAGE`,
+  `EBAUCHE` paraxiale, `ALESAGE`, `FINITION` de profil, `GORGE`, `FILETAGE`, `TRONCONNAGE`.
+  Le centrage est un perçage court (même trajectoire, sans débourrage) ; l'**alésage** reprend le trou
+  percé au diamètre voulu, décrit par ses cotes (Ø de départ, Ø à aléser, fond) et non lu dans un profil
+  intérieur, qui n'existe pas encore — même parti pris que pour la gorge.
   Chaque type n'a pas les mêmes réglages : `CHAMPS_SEQUENCE` dit lesquels comptent et le formulaire ne montre
-  que ceux-là, `LIBELLES_Z` nomme les bornes en Z pour ce qu'elles sont (« Z du bord droit » d'une gorge,
-  « Fond du trou » d'un perçage), `DEFAUTS_SEQUENCE` donne à chaque type ses conditions habituelles à
-  l'ajout. Le **filetage** et le **perçage** tournent à broche fixe (`G97`, `Sequence.vitesse_fixe`) : pas de
+  que ceux-là, `LIBELLES_CHAMPS` les nomme pour ce qu'ils y sont (« Fond du trou » plutôt que « Z de fin »),
+  `DEFAUTS_SEQUENCE` donne à chaque type ses conditions habituelles à
+  l'ajout. Le **filetage**, le **perçage** et le **centrage** tournent à broche fixe (`G97`,
+  `Sequence.vitesse_fixe`) : pas de
   limitation de broche à régler, et l'avance d'un filetage est son pas. La profondeur d'un filet vaut
   `PROFONDEUR_FILET` × pas (0,6134, profil ISO métrique extérieur) tant qu'elle n'est pas saisie.
   Gorge et tronçonnage plongent par `_plongee` (passes de `profondeur_passe` avec débourrage) ; une gorge
@@ -293,19 +297,38 @@ vérification par relecture du G-code généré, réception des programmes depui
   une autre**. La trajectoire de la séquence choisie se dessine sur
   l'esquisse (genre « trajectoire », non sélectionnable) : trait plein en coupe, pointillé en rapide, cercle
   au départ.
-- **Matière enlevée, étape par étape** (`usinage/matiere.py`, demandé le 26 novembre 2026) : un **curseur**
-  sous la liste choisit l'étape montrée (0 = le brut, k = après la k-ième opération). Il ne fait qu'un avec
-  la ligne choisie : bouger l'un bouge l'autre, pour qu'il n'y ait jamais deux notions d'« étape courante ».
+- **Gamme type** (`sequences.GAMME_TYPE`, `Gamme.remplir_type`, demandée le 26 novembre 2026) : le bouton
+  « Proposer la gamme type » pose les neuf étapes de l'enchaînement habituel d'une pièce sur barre, dans
+  l'ordre, du plus rigide au moins rigide (deux lignes d'alésage, ébauche et finition : dix lignes pour
+  neuf étapes). Les opérations qui demandent une cote que le dessin ne donne pas (centrage, perçage,
+  alésage, gorge, filetage) sont posées **décochées** : l'ordre est là, il reste à dire si la pièce en a
+  besoin. Le poste est pris de la tourelle courante, par famille d'outil (`FAMILLES_OUTIL`, rapproché du
+  champ `famille` du catalogue `outils`) ; rien n'est inventé si la tourelle ne porte pas l'outil voulu.
+  Remplacer une gamme existante demande confirmation.
+- **Matière enlevée, étape par étape** (`usinage/matiere.py`, demandé le 26 novembre 2026) : **la liste
+  est le curseur d'étape**. Sa première ligne est le brut (étape 0, `ROLE_ID` 0, ni cochable ni
+  déplaçable), chaque ligne suivante est une opération ; choisir une ligne montre la pièce après elle, et
+  les lignes qui suivent se grisent (`_marquer_etape`). Il n'y a donc **qu'une seule notion d'étape
+  courante**, la ligne choisie : un curseur séparé a existé une demi-journée, l'utilisateur l'a fait
+  fondre dans la liste le 26 novembre 2026.
   `EtatMatiere` décrit la matière restante en **tranches** de `PAS_TRANCHE` (0,25 mm) le long de l'axe, chacune
   avec son rayon intérieur et son rayon extérieur ; `etats()` rend la suite des états, `enlevee_depuis` les
   copeaux d'une étape. La vue les dessine en rectangles (genre « matiere », non sélectionnable) : la matière
   restante en teinte sourde, ce que l'étape vient d'emporter en orange, comme sa trajectoire.
   **Chaque type enlève à sa façon** : le dressage fait avancer la face, l'ébauche et la finition rabotent
   sous leur chemin tranche par tranche, la gorge et le tronçonnage creusent sur la largeur de l'outil, le
-  perçage ouvre un alésage, le filetage ne change pas la silhouette (le filet est une rainure hélicoïdale,
+  perçage et le centrage ouvrent un alésage au diamètre du foret, l'alésage l'ouvre passe par passe, le
+  filetage ne change pas la silhouette (le filet est une rainure hélicoïdale,
   l'enveloppe reste au diamètre nominal). Un mouvement radial d'ébauche ou de finition ne fait que longer une
   face : il n'enlève rien de plus. **Ce modèle sert à voir, pas à vérifier** : il ignore la forme de l'outil
   et ne détecte aucune collision.
+- **Cotes d'usinage sur le dessin** (demandé le 26 novembre 2026) : la séquence montrée pose ses valeurs
+  réglables sur l'esquisse, comme le brut pose les siennes. Pour l'instant la seule est la **profondeur
+  d'un perçage ou d'un centrage** (genre « cote_sequence », clé « profondeur », texte « P 47 »), comptée
+  depuis la face d'attaque — `Sequence.z_face`, le `z_debut` donné ou le bout du brut. Même maniement que
+  les cotes du brut : double-clic pour saisir, clic droit + molette ou glisser pour régler
+  (`Sequence.cotes_dessinees`, `valeur_cote`, `definir_valeur_cote`, `texte_cote` ;
+  `FenetrePrincipale.editer_valeur_sequence` et `ajuster_valeur_sequence`). Non sélectionnable.
 
 ## Points ouverts
 

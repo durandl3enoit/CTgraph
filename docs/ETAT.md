@@ -97,23 +97,28 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
   plein en coupe, pointillé en rapide) et se recalcule à chaque changement de cote ou de montage : rien
   n'est recopié du dessin. Une passe ne descend jamais dans les mors et la finition laisse la face arrière
   au tronçonnage.
-- **Voir la pièce se dégager du brut** : un **curseur** sous la liste des opérations choisit l'étape montrée
-  (0 = le brut, k = après la k-ième). La matière restante est teintée sur le dessin et **ce que l'étape vient
-  d'enlever ressort en orange** (`usinage/matiere.py` : le brut en tranches de 0,25 mm, chaque type
-  d'opération enlevant à sa façon). L'ordre d'usinage se change aussi en tirant une ligne sur une autre.
+- **Voir la pièce se dégager du brut** : **la liste des opérations est le curseur d'étape**, sa première
+  ligne étant le brut. Choisir une ligne montre la pièce après cette opération ; les suivantes se grisent.
+  La matière restante est teintée sur le dessin et **ce que l'étape vient d'enlever ressort en orange**
+  (`usinage/matiere.py` : le brut en tranches de 0,25 mm, chaque type d'opération enlevant à sa façon).
+  L'ordre d'usinage se change aussi en tirant une ligne sur une autre.
   Le modèle de matière sert à voir, pas à vérifier : il ignore la forme de l'outil, donc les collisions.
-  152 tests.
+- **Neuf opérations et la gamme type** : centrage et alésage s'ajoutent aux sept premières, et le bouton
+  **Proposer la gamme type** pose l'enchaînement habituel d'une pièce sur barre dans l'ordre (dressage,
+  centrage, perçage, ébauche, alésage ×2, finition, gorge, filetage, tronçonnage), postes repris de la
+  tourelle par famille d'outil, les opérations à renseigner posées décochées. La **profondeur de perçage**
+  est une cote portée sur le dessin, réglable comme celles du brut. 156 tests.
 
 ## En cours
 
 - Les dimensions du mandrin et de la machine sont des ordres de grandeur : à relever et à saisir dans le dialogue
   (en particulier les étages des mors 474 : longueur et épaulement de chacun, épaisseur radiale au fond, largeur).
 - Non prévu encore : brut en barre passant dans le mandrin (pas d'appui, longueur de brut sans objet).
-- Usinage, manques connus : pas de profil intérieur (alésage, gorge intérieure, filetage intérieur) ; pas de
-  temps estimé ; les conditions de coupe sont saisies à la main, sans table de matières ; l'ébauche descend
-  tout droit, sans suivre le profil en fin de passe ; une gorge se décrit par ses cotes, elle n'est pas lue
-  dans le profil dessiné ; le filetage ne connaît que le pas constant. Rien ne vérifie qu'un outil monté sur
-  le poste choisi peut vraiment usiner la trajectoire demandée.
+- Usinage, manques connus : pas de profil intérieur dessiné — gorge et alésage se décrivent par leurs cotes,
+  ils ne sont pas lus dans l'esquisse ; pas de gorge ni de filetage intérieurs ; pas de deuxième prise ;
+  pas de temps estimé ; les conditions de coupe sont saisies à la main, sans table de matières ; l'ébauche
+  descend tout droit, sans suivre le profil en fin de passe ; le filetage ne connaît que le pas constant.
+  Rien ne vérifie qu'un outil monté sur le poste choisi peut vraiment usiner la trajectoire demandée.
 
 ## Prochaines étapes
 
@@ -129,8 +134,8 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
    cycles en option par séquence. Squelette, changement d'outil, G96/G92/G95, G41/G42 relevés dans
    `docs/reference-go2cam-ct200.md` ; **chaque fonction se vérifie dans le manuel NUM 750 T, jamais de
    mémoire**. Relecture par l'utilisateur obligatoire avant tout envoi à la machine.
-5. **Usinage, suite** : profil intérieur (alésage), conditions de coupe par matière, temps estimé, gorge
-   lue dans le profil dessiné.
+5. **Usinage, suite** : profil intérieur dessiné (gorges et alésages lus de l'esquisse), deuxième prise,
+   conditions de coupe par matière, temps estimé.
 6. Retrouver le post-processeur Go2CAM et le logiciel RS232 (remis à plus tard par l'utilisateur).
 7. Relever sur le tour : grille d'options, version du logiciel CN, taille mémoire, réglages série.
 
