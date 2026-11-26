@@ -160,9 +160,16 @@ La **gamme** de la pièce : la suite ordonnée des séquences à exécuter. Sept
 * **perçage dans l'axe** : de la face vers le fond du trou, par débourrages successifs ;
 * **tronçonnage** : une plongée jusqu'au diamètre demandé, ou jusqu'à l'axe pour détacher la pièce.
 
-Les boutons du haut ajoutent une séquence, chacun avec les conditions de coupe habituelles de son type ; les
-flèches changent l'ordre d'usinage ; la case de chaque ligne l'active ou la met de côté sans la perdre. La
-liste donne pour chaque séquence son poste de tourelle, le nombre de passes et la longueur à couper.
+Les boutons du haut ajoutent une séquence, chacun avec les conditions de coupe habituelles de son type ; la
+case de chaque ligne l'active ou la met de côté sans la perdre. La liste donne pour chaque séquence son poste
+de tourelle, le nombre de passes et la longueur à couper. L'ordre d'usinage se change avec les flèches, ou en
+**tirant une ligne sur une autre** : un trait montre où elle va se poser.
+
+Le **curseur** sous la liste choisit l'étape que montre le dessin : à zéro, le brut tel qu'il est serré ; à
+l'étape *k*, la pièce telle qu'elle est après la *k*-ième opération. La matière qui reste est teintée, et
+**ce que l'étape vient d'enlever ressort en orange**, à côté de la trajectoire qui l'a enlevée. Le curseur et
+la ligne choisie vont ensemble : bouger l'un bouge l'autre. Le modèle de matière sert à voir, pas à
+vérifier : il ne connaît pas la forme de l'outil et ne détecte aucune collision.
 
 Le formulaire règle la séquence choisie et **ne montre que les réglages qui comptent pour son type** : une
 finition n'a ni passes ni surépaisseur, une gorge demande la largeur de l'outil et le diamètre de fond, un
@@ -195,8 +202,9 @@ filetage intérieur, à queue cylindrique. Les postes alternent les deux implant
 règle à part. Le dessin le montre : un trait transversal en périphérie, un trait vers l'axe pour un outil
 axial ; les postes garnis sont en vert.
 
-Sous le dessin, la liste des douze postes donne pour chacun ce qui y est monté, **le porte-plaquette et sa
-plaquette**, et son correcteur. Le formulaire du poste choisi permet de le garnir : le choix des
+Sous le dessin, la liste des douze postes, tous visibles d'un coup, donne pour chacun ce qui y est monté,
+**le porte-plaquette et sa plaquette**, et son correcteur. C'est le volet entier qui défile si la fenêtre est
+courte, pour que le disque garde une taille lisible. Le formulaire du poste choisi permet de le garnir : le choix des
 porte-plaquettes se borne à ce que l'implantation accepte, queue carrée en transversal, cylindrique en axial.
 
 **Glisser-déposer** : tirez une ligne du *Stock d'outils* ou des *Plaquettes* et lâchez-la sur un poste, soit
@@ -301,6 +309,7 @@ ctgraph/
   usinage/profil.py        le profil tourné tiré des contours fermés : rayon, tranches usinables
   usinage/sequences.py     la gamme et ses séquences : type, poste, conditions de coupe, passes
   usinage/trajectoires.py  les chemins d'outil, recalculés depuis le profil et le montage
+  usinage/matiere.py       la matière restante après chaque étape, et ce que chacune a enlevé
   ui/vue_esquisse.py       QGraphicsView : tracé, aimantation, sélection, élagage, dessin des cotes et des symboles
   ui/zone_atelier.py       les volets repliables ancrés à droite
   ui/volet_lateral.py      volet repliable latéralement : bandeau vertical cliquable

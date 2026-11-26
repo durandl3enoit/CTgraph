@@ -6,21 +6,23 @@ dessine aussitôt sur l'esquisse. Rien n'est figé : la trajectoire se recalcule
 
 Chaque type d'opération n'a pas les mêmes réglages : le formulaire ne montre que ceux qui comptent
 (`CHAMPS_SEQUENCE`). On affecte un poste de tourelle en tapant son numéro, ou en y glissant la
-combinaison montée sur un poste, tirée du volet Tourelle.
+combinaison montée sur un poste, tirée du volet Tourelle. Les lignes se tirent entre elles pour changer
+l'ordre d'usinage, et le curseur sous la liste montre la pièce telle qu'elle est après l'étape choisie.
 """
 from __future__ import annotations
 
 from typing import Callable, Dict, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QPainter, QPalette, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox, QFormLayout, QGridLayout,
-                               QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox,
+                               QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSlider, QSpinBox,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..tourelle import nom_poste
 from ..usinage import Gamme, Sequence, TypeSequence
 from ..usinage.sequences import LIBELLES_SEQUENCE, LIBELLES_Z, USAGES_SEQUENCE
-from .transfert import MIME_POSTE, accueillir
+from .transfert import MIME_POSTE, MIME_SEQUENCE, accueillir, charger, lire
 
 COLONNES = ["#", "Opération", "Poste", "Passes", "Coupe"]
 ROLE_ID = Qt.ItemDataRole.UserRole
@@ -28,22 +30,82 @@ BOUTONS_PAR_RANGEE = 4
 
 
 class ListeSequences(QTreeWidget):
-    """La liste de la gamme. On peut y déposer un poste de tourelle : la séquence visée le prend."""
+    """La liste de la gamme, source et cible de glissers.
+
+    On y dépose un poste de tourelle, et la séquence visée le prend. On y tire une ligne sur une autre,
+    et l'ordre d'usinage change : le trait qui suit le curseur dit où la séquence va se poser.
+    """
 
     depot = Signal(int, int)                 # identifiant de séquence, numéro de poste
+    reordonne = Signal(int, int)             # identifiant de séquence, rang visé
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.accepte_depot = lambda sequence_id, poste: False
+        self._rang_cible = -1                # trait d'insertion pendant un glisser de réordonnancement
+
+    # -- glisser une ligne pour changer l'ordre ---------------------------------------------
+
+    def mimeTypes(self):
+        return [MIME_SEQUENCE, MIME_POSTE, "text/plain"]
+
+    def mimeData(self, items):
+        for it in items:
+            ident = int(it.data(0, ROLE_ID) or 0)
+            if ident:
+                return charger(MIME_SEQUENCE, f"{ident} {it.text(1)}")
+        return charger(MIME_SEQUENCE, "")
+
+    def rang_sous(self, point) -> int:
+        """Le rang où une ligne lâchée ici viendrait se poser : avant ou après celle qu'on survole."""
+        it = self.itemAt(point)
+        if it is None:
+            return self.topLevelItemCount()
+        rect = self.visualItemRect(it)
+        return self.indexOfTopLevelItem(it) + (1 if point.y() > rect.center().y() else 0)
+
+    def _y_du_rang(self, rang: int) -> int:
+        if not self.topLevelItemCount():
+            return 0
+        if rang >= self.topLevelItemCount():
+            return self.visualItemRect(self.topLevelItem(self.topLevelItemCount() - 1)).bottom()
+        return self.visualItemRect(self.topLevelItem(max(rang, 0))).top()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if self._rang_cible < 0:
+            return
+        p = QPainter(self.viewport())
+        y = self._y_du_rang(self._rang_cible)
+        p.setPen(QPen(self.palette().color(QPalette.ColorRole.Highlight), 2))
+        p.drawLine(0, y, self.viewport().width(), y)
+        p.end()
+
+    # -- accueil d'un glisser ----------------------------------------------------------------
 
     def sequence_sous(self, point) -> int:
         it = self.itemAt(point)
         return int(it.data(0, ROLE_ID) or 0) if it is not None else 0
 
+    def _accepte(self, sequence_id: int, type_mime: str, charge: str) -> bool:
+        return type_mime == MIME_POSTE and self.accepte_depot(sequence_id, _numero_poste(charge))
+
+    def _marquer(self, rang: int) -> None:
+        if rang != self._rang_cible:
+            self._rang_cible = rang
+            self.viewport().update()
+
     def _survoler(self, event) -> None:
+        type_mime, charge = lire(event.mimeData())
+        if type_mime == MIME_SEQUENCE:
+            self._marquer(self.rang_sous(event.position().toPoint()))
+            event.acceptProposedAction()
+            return
         # la liste se reconstruit en affectant le poste : on ne touche pas à la sélection pendant le survol
         sequence_id, _, _ = accueillir(event, self.sequence_sous, self._accepte)
         if sequence_id:
@@ -51,16 +113,28 @@ class ListeSequences(QTreeWidget):
         else:
             event.ignore()
 
-    def _accepte(self, sequence_id: int, type_mime: str, charge: str) -> bool:
-        return type_mime == MIME_POSTE and self.accepte_depot(sequence_id, _numero_poste(charge))
-
     def dragEnterEvent(self, event) -> None:
         self._survoler(event)
 
     def dragMoveEvent(self, event) -> None:
         self._survoler(event)
 
+    def dragLeaveEvent(self, event) -> None:
+        self._marquer(-1)
+
     def dropEvent(self, event) -> None:
+        type_mime, charge = lire(event.mimeData())
+        if type_mime == MIME_SEQUENCE:
+            rang = self.rang_sous(event.position().toPoint())
+            self._marquer(-1)
+            ident = _numero_tete(charge)
+            if not ident:
+                event.ignore()
+                return
+            event.acceptProposedAction()
+            # la liste se reconstruit en se réordonnant : on le fait après la sortie de l'événement
+            QTimer.singleShot(0, lambda: self.reordonne.emit(ident, rang))
+            return
         sequence_id, _, charge = accueillir(event, self.sequence_sous, self._accepte)
         if not sequence_id:
             event.ignore()
@@ -70,10 +144,15 @@ class ListeSequences(QTreeWidget):
         QTimer.singleShot(0, lambda: self.depot.emit(sequence_id, poste))
 
 
-def _numero_poste(charge: str) -> int:
-    """Le numéro porté par un glisser de poste : « T7 » ou « T7 PCLNR 2020 K12 + CNMG 120408 »."""
+def _numero_tete(charge: str) -> int:
+    """Le nombre en tête d'une charge de glisser, zéro s'il n'y en a pas."""
     tete = (charge or "").strip().split(" ")[0].lstrip("Tt")
     return int(tete) if tete.isdigit() else 0
+
+
+def _numero_poste(charge: str) -> int:
+    """Le numéro porté par un glisser de poste : « T7 » ou « T7 PCLNR 2020 K12 + CNMG 120408 »."""
+    return _numero_tete(charge)
 
 
 class ZoneUsinage(QWidget):
@@ -81,6 +160,7 @@ class ZoneUsinage(QWidget):
 
     gamme_changee = Signal()                 # la gamme a changé : à enregistrer et à redessiner
     sequence_choisie = Signal(int)           # identifiant de la séquence à montrer sur l'esquisse
+    etape_changee = Signal(int)              # rang de l'étape à montrer : 0 = le brut, k = après la k-ième
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -119,9 +199,27 @@ class ZoneUsinage(QWidget):
         self.liste.setMinimumHeight(120)
         self.liste.accepte_depot = self.accepte_poste
         self.liste.depot.connect(self.affecter_poste)
+        self.liste.reordonne.connect(self.reordonner)
         self.liste.currentItemChanged.connect(self._ligne_choisie)
         self.liste.itemChanged.connect(self._case_changee)
         v.addWidget(self.liste, 1)
+
+        # le curseur d'étape : voir la pièce telle qu'elle est après la k-ième opération
+        etape = QHBoxLayout()
+        etape.setSpacing(6)
+        self.curseur = QSlider(Qt.Orientation.Horizontal)
+        self.curseur.setRange(0, 0)
+        self.curseur.setPageStep(1)
+        self.curseur.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.curseur.setTickInterval(1)
+        self.curseur.setToolTip("Montre la matière qui reste après cette étape, et ce qu'elle a enlevé.")
+        self.curseur.valueChanged.connect(self._curseur_bouge)
+        self.lbl_etape = QLabel("Brut")
+        self.lbl_etape.setMinimumWidth(130)
+        etape.addWidget(QLabel("Étape"))
+        etape.addWidget(self.curseur, 1)
+        etape.addWidget(self.lbl_etape)
+        v.addLayout(etape)
 
         ordre = QHBoxLayout()
         ordre.setSpacing(3)
@@ -292,6 +390,56 @@ class ZoneUsinage(QWidget):
         self.gamme_changee.emit()
         return True
 
+    def reordonner(self, sequence_id: int, rang: int) -> bool:
+        """Pose la séquence à ce rang : c'est ce que fait un glisser d'une ligne sur une autre."""
+        if not self.gamme.deplacer_a(sequence_id, rang):
+            return False
+        self.rafraichir()
+        self._choisir(sequence_id)
+        self.gamme_changee.emit()
+        return True
+
+    # -- étape montrée sur le dessin ---------------------------------------------------------
+
+    def etape(self) -> int:
+        """Le rang de l'étape montrée : 0 pour le brut, k pour l'état après la k-ième opération."""
+        return self.curseur.value()
+
+    def definir_etape(self, rang: int, prevenir: bool = True) -> None:
+        """Met le curseur sur cette étape, et la ligne correspondante en sélection."""
+        rang = min(max(rang, 0), len(self.gamme))
+        if rang == self.curseur.value():
+            self._dire_l_etape()
+            return
+        avant, self._blocage = self._blocage, True
+        self.curseur.setValue(rang)
+        self._blocage = avant
+        self._dire_l_etape()
+        if prevenir:
+            self.etape_changee.emit(rang)
+
+    def _dire_l_etape(self) -> None:
+        rang = self.curseur.value()
+        if rang <= 0 or rang > len(self.gamme):
+            self.lbl_etape.setText("Brut")
+            return
+        self.lbl_etape.setText(f"{rang}/{len(self.gamme)} — {self.gamme.sequences[rang - 1].libelle()}")
+
+    def _curseur_bouge(self, rang: int) -> None:
+        """Le curseur mène : la ligne choisie suit, et le dessin montre la pièce après cette étape."""
+        self._dire_l_etape()
+        if self._blocage:
+            return
+        avant, self._blocage = self._blocage, True
+        if 1 <= rang <= len(self.gamme):
+            self._choisir(self.gamme.sequences[rang - 1].id)
+        else:
+            self.liste.setCurrentItem(None)
+        self._blocage = avant
+        self._remplir_formulaire()
+        self.sequence_choisie.emit(self.gamme.sequences[rang - 1].id if 1 <= rang <= len(self.gamme) else 0)
+        self.etape_changee.emit(rang)
+
     # -- affichage ------------------------------------------------------------------------
 
     def rafraichir(self) -> None:
@@ -315,7 +463,12 @@ class ZoneUsinage(QWidget):
             self.liste.setCurrentItem(self.liste.topLevelItem(0))
         for col in range(len(COLONNES)):
             self.liste.resizeColumnToContents(col)
+        # le curseur d'étape suit la liste : une étape par opération, zéro pour le brut
+        self.curseur.setRange(0, len(self.gamme))
+        courant = self.liste.currentItem()
+        self.curseur.setValue(self.liste.indexOfTopLevelItem(courant) + 1 if courant is not None else 0)
         self._blocage = False
+        self._dire_l_etape()
         self._remplir_formulaire()
 
     def _remplir_formulaire(self) -> None:
@@ -419,7 +572,14 @@ class ZoneUsinage(QWidget):
         if self._blocage:
             return
         self._remplir_formulaire()
+        # choisir une ligne, c'est choisir l'étape : le curseur et le dessin suivent
+        rang = self.liste.indexOfTopLevelItem(item) + 1 if item is not None else 0
+        avant, self._blocage = self._blocage, True
+        self.curseur.setValue(rang)
+        self._blocage = avant
+        self._dire_l_etape()
         self.sequence_choisie.emit(int(item.data(0, ROLE_ID)) if item is not None else 0)
+        self.etape_changee.emit(rang)
 
     def _case_changee(self, item: QTreeWidgetItem, colonne: int) -> None:
         if self._blocage or colonne != 0:

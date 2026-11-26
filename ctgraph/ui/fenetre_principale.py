@@ -26,7 +26,7 @@ from ..icons import icone_action, icone_outil, icone_relation
 from ..log import get as get_log
 from ..montage import Montage, Piece
 from ..settings import Settings
-from ..usinage import Gamme, Sequence, Trajectoire, profil_exterieur, trajectoire
+from ..usinage import Gamme, Sequence, Trajectoire, etats, profil_exterieur, trajectoire
 from .dialogue_montage import DialogueMontage
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
 from ..tourelle import Tourelle
@@ -56,6 +56,7 @@ class FenetrePrincipale(QMainWindow):
         self.montage = self._montage_par_defaut()
         self.gamme = Gamme()
         self._profil_usinage = None          # profil tourné, recalculé après chaque résolution
+        self._etats_matiere = None           # matière restante après chaque étape de la gamme
         self._synchroniser_references()
         self.solveur = AdaptateurSolveur(self.esquisse)
         self.resultat = Resultat(True, "ok", 0)
@@ -245,6 +246,7 @@ class FenetrePrincipale(QMainWindow):
         self.zone_usinage.definir_gamme(self.gamme, self.trajectoire_de)
         self.zone_usinage.gamme_changee.connect(self._gamme_changee)
         self.zone_usinage.sequence_choisie.connect(self._sequence_choisie)
+        self.zone_usinage.etape_changee.connect(self._etape_choisie)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.zone_atelier)
         self.resizeDocks([self.zone_atelier], [self.zone_atelier.largeur_souhaitee()], Qt.Orientation.Horizontal)
         self.zone_atelier.setVisible(self.reglages.get_bool("atelier.visible", True))
@@ -701,21 +703,39 @@ class FenetrePrincipale(QMainWindow):
     def _rafraichir_usinage(self, redessiner: bool = True) -> None:
         """Après une résolution ou un changement de montage : profil, passes et trajectoire montrée."""
         self._profil_usinage = None
+        self._etats_matiere = None
         self.zone_usinage.rafraichir()
         self._pousser_trajectoire(redessiner)
 
     def _pousser_trajectoire(self, redessiner: bool = True) -> None:
-        """Dessine sur l'esquisse la trajectoire de la séquence choisie, rien si aucune n'est choisie."""
+        """Dessine sur l'esquisse la trajectoire de la séquence choisie et la matière à cette étape."""
         sequence = self.zone_usinage.sequence_courante()
         self.vue.trajectoire = self.trajectoire_de(sequence) if sequence is not None else None
+        self._pousser_matiere()
         if redessiner:
             self.vue.reconstruire()
 
+    def _pousser_matiere(self) -> None:
+        """La matière qui reste après l'étape choisie, et en vif ce que cette étape vient d'enlever."""
+        if self._etats_matiere is None:
+            self._etats_matiere = etats(self.gamme, self.montage, self.trajectoire_de)
+        suite = self._etats_matiere
+        if len(suite) < 2:                   # pas de gamme : le dessin reste celui de l'esquisse seule
+            self.vue.matiere = self.vue.matiere_enlevee = []
+            return
+        k = min(max(self.zone_usinage.etape(), 0), len(suite) - 1)
+        self.vue.matiere = suite[k].bandes()
+        self.vue.matiere_enlevee = suite[k].enlevee_depuis(suite[k - 1]) if k else []
+
     def _gamme_changee(self) -> None:
         self._marquer_modifie(True)
+        self._etats_matiere = None           # l'ordre ou les réglages ont changé : la matière aussi
         self._pousser_trajectoire()
 
     def _sequence_choisie(self, _ident: int) -> None:
+        self._pousser_trajectoire()
+
+    def _etape_choisie(self, _rang: int) -> None:
         self._pousser_trajectoire()
 
     # -- cotes du mors : édition en place, le reste grisé jusqu'à validation ----------------------
@@ -1213,7 +1233,8 @@ class FenetrePrincipale(QMainWindow):
         self.vue.montage = self.montage
         self.vue.definir_esquisse(self.esquisse)
         self.vue.trajectoire = None
-        self._profil_usinage = None
+        self.vue.matiere = self.vue.matiere_enlevee = []
+        self._profil_usinage = self._etats_matiere = None
         self.zone_usinage.definir_gamme(self.gamme, self.trajectoire_de)
         self._pousser_montage_3d()
 

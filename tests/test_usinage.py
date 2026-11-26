@@ -214,6 +214,71 @@ def test_percage_dans_l_axe_avec_debourrage():
     assert trajectoire(Sequence(id=7, type=TypeSequence.PERCAGE), p, m).message
 
 
+def test_matiere_etape_par_etape():
+    from ctgraph.usinage.matiere import EtatMatiere, etats
+    p = profil_exterieur([ARBRE])
+    m = montage_essai()
+    g = Gamme()
+    dressage = g.ajouter(TypeSequence.DRESSAGE, profondeur_passe=1.0, surepaisseur_face=0.0)
+    ebauche = g.ajouter(TypeSequence.EBAUCHE, profondeur_passe=2.0, surepaisseur=0.5, degagement=1.0)
+    percage = g.ajouter(TypeSequence.PERCAGE, diametre_outil=12.0, z_fin=-45.0)
+    filetage = g.ajouter(TypeSequence.FILETAGE, pas=2.0, z_debut=-35.0, z_fin=-70.0)
+    suite = etats(g, m, lambda s: trajectoire(s, p, m))
+    assert len(suite) == len(g) + 1
+
+    # le brut : plein, au diamètre, de l'arrière jusqu'à la surépaisseur de face
+    brut = suite[0]
+    assert set(brut.exterieur) == {m.rayon_brut()} and set(brut.interieur) == {0.0}
+    assert brut.rayon_a(1.0) == m.rayon_brut() and brut.rayon_a(-50.0) == m.rayon_brut()
+
+    # le dressage fait avancer la face : il ne reste plus rien devant Z = 0
+    apres_dressage = suite[1]
+    assert apres_dressage.rayon_a(1.0) == 0.0 and apres_dressage.rayon_a(-1.0) == m.rayon_brut()
+
+    # l'ébauche rabote : au Ø 50 elle s'arrête à la passe qui y a droit, au Ø 30 elle descend au fini + 0,5
+    apres_ebauche = suite[2]
+    assert apres_ebauche.rayon_a(-10.0) == pytest.approx(26.0)
+    assert apres_ebauche.rayon_a(-50.0) == pytest.approx(15.5)
+    assert apres_ebauche.rayon_a(-90.0) == m.rayon_brut()        # au-delà de la pièce, rien n'est touché
+
+    # le perçage ouvre un alésage de la face au fond du trou, pas au-delà
+    apres_percage = suite[3]
+    assert apres_percage.alesage_a(-20.0) == pytest.approx(6.0)
+    assert apres_percage.alesage_a(-60.0) == 0.0
+
+    # le filetage ne change pas la silhouette : le filet est une rainure, l'enveloppe reste
+    assert suite[4].exterieur == apres_percage.exterieur
+
+    # ce que chaque étape a enlevé, pour le mettre en évidence
+    copeaux = apres_ebauche.enlevee_depuis(apres_dressage)
+    assert copeaux and max(r_ext for _, _, _, r_ext in copeaux) == pytest.approx(m.rayon_brut())
+    assert min(r_int for _, _, r_int, _ in copeaux) == pytest.approx(15.5)
+    assert not suite[4].enlevee_depuis(suite[3])                  # le filetage n'enlève rien de visible
+    # une bande ne garde que la matière vraiment partie : rien de vide
+    assert all(z1 > z0 and r1 > r0 for z0, z1, r0, r1 in copeaux)
+
+    # une séquence désactivée n'enlève rien, mais garde son rang dans la suite
+    ebauche.active = False
+    sans = etats(g, m, lambda s: trajectoire(s, p, m))
+    assert len(sans) == len(suite) and sans[2].exterieur == sans[1].exterieur
+    ebauche.active = True
+    assert [dressage.id, ebauche.id, percage.id, filetage.id] == [s.id for s in g]
+    assert etats(g, None, lambda s: None) == []
+
+
+def test_ordre_de_la_gamme_par_rang():
+    g = Gamme()
+    a, b, c, d = (g.ajouter(TypeSequence.EBAUCHE) for _ in range(4))
+    # le rang est celui du dépôt, compté avant le retrait de la séquence déplacée
+    assert g.deplacer_a(a.id, 3) and [s.id for s in g] == [b.id, c.id, a.id, d.id]
+    assert g.deplacer_a(d.id, 0) and [s.id for s in g] == [d.id, b.id, c.id, a.id]
+    # lâchée là où elle est déjà : rien ne bouge
+    assert not g.deplacer_a(b.id, 1) and not g.deplacer_a(b.id, 2)
+    assert not g.deplacer_a(999, 0)
+    # un rang hors bornes se ramène aux bouts
+    assert g.deplacer_a(d.id, 99) and [s.id for s in g][-1] == d.id
+
+
 def test_gamme_ordonnee_et_enregistree():
     g = Gamme()
     a = g.ajouter(TypeSequence.DRESSAGE, poste=1)

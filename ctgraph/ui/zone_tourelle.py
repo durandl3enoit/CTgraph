@@ -10,9 +10,9 @@ from typing import List, Optional
 
 from PySide6.QtCore import QMimeData, QPoint, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QDrag, QFont, QPainter, QPalette, QPen
-from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
-                               QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSpinBox, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QGroupBox,
+                               QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..outils import CATALOGUE as OUTILS
 from ..plaquettes import CATALOGUE as PLAQUETTES
@@ -266,8 +266,12 @@ class ListePostes(QTreeWidget):
         QTimer.singleShot(0, lambda: self.depot.emit(poste, type_mime, designation))
 
 
-class ZoneTourelle(QWidget):
-    """Le volet : le disque, la liste des postes et le formulaire du poste choisi."""
+class ZoneTourelle(QScrollArea):
+    """Le volet : le disque, la liste des postes et le formulaire du poste choisi.
+
+    Le contenu défile : la liste montre ses douze postes d'un bloc, et le disque garde une taille
+    lisible même dans une fenêtre courte, au lieu d'être écrasé pour que tout tienne.
+    """
 
     poste_choisi = Signal(int)
     tourelle_changee = Signal(object)        # la tourelle entière, à mémoriser
@@ -276,9 +280,13 @@ class ZoneTourelle(QWidget):
         super().__init__(parent)
         self.tourelle = tourelle if tourelle is not None else Tourelle()
         self.setMinimumWidth(350)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._blocage = False
 
-        v = QVBoxLayout(self)
+        interieur = QWidget()
+        v = QVBoxLayout(interieur)
         v.setContentsMargins(6, 6, 6, 6)
         v.setSpacing(5)
         entete = QLabel(f"{NORME} : {self.tourelle.nb_postes} postes, queue Ø {self.tourelle.diametre_queue:g} mm. "
@@ -293,6 +301,7 @@ class ZoneTourelle(QWidget):
         self.vue.accepte_depot = self.accepte_depot
         self.vue.depot.connect(self.deposer)
         v.addWidget(self.vue, 1)
+        self.vue.setMinimumSize(240, 240)
 
         self.liste = ListePostes()
         self.liste.tourelle = self.tourelle
@@ -303,7 +312,7 @@ class ZoneTourelle(QWidget):
         self.liste.setRootIsDecorated(False)
         self.liste.setUniformRowHeights(True)
         self.liste.setAlternatingRowColors(True)
-        self.liste.setMinimumHeight(150)
+        self.liste.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.liste.currentItemChanged.connect(self._ligne_choisie)
         v.addWidget(self.liste)
 
@@ -354,6 +363,7 @@ class ZoneTourelle(QWidget):
         self.lbl_etat = QLabel("")
         self.lbl_etat.setWordWrap(True)
         v.addWidget(self.lbl_etat)
+        self.setWidget(interieur)
         self.rafraichir()
 
     @staticmethod
@@ -391,6 +401,7 @@ class ZoneTourelle(QWidget):
                 self.liste.setCurrentItem(it)
         for col in range(len(COLONNES)):
             self.liste.resizeColumnToContents(col)
+        self._ajuster_hauteur()
         self._remplir_formulaire()
         self._blocage = False
         self.vue.update()
@@ -398,6 +409,15 @@ class ZoneTourelle(QWidget):
         self.lbl_etat.setText(f"{garnis} poste(s) garni(s) sur {t.nb_postes}. Poste en travail : "
                               f"{nom_poste(t.poste_en_travail)}. Diamètre du disque et rayon "
                               "d'implantation à relever.")
+
+    def _ajuster_hauteur(self) -> None:
+        """La liste montre tous les postes d'un coup : on ne défile pas pour voir le dernier."""
+        nb = self.liste.topLevelItemCount()
+        ligne = self.liste.sizeHintForRow(0) if nb else 20
+        hauteur = (self.liste.header().sizeHint().height() + max(nb, 1) * ligne
+                   + 2 * self.liste.frameWidth() + 2)
+        self.liste.setMinimumHeight(hauteur)
+        self.liste.setMaximumHeight(hauteur)
 
     def _remplir_formulaire(self) -> None:
         avant, self._blocage = self._blocage, True

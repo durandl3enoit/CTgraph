@@ -1366,6 +1366,76 @@ def test_volet_usinage_gamme_et_trajectoires(fenetre, tmp_path):
     assert not any(it.data(ROLE_GENRE) == "trajectoire" for it in vue._items)
 
 
+def test_volet_usinage_curseur_matiere_et_ordre(fenetre):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QDropEvent
+    from ctgraph.montage import Montage
+    from ctgraph.ui.transfert import MIME_SEQUENCE, charger, lire
+    from ctgraph.usinage import TypeSequence
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())
+    rectangle(win, 40.0, 20.0)
+    zone = win.zone_usinage
+    dressage = zone.ajouter(TypeSequence.DRESSAGE)
+    ebauche = zone.ajouter(TypeSequence.EBAUCHE)
+
+    # une étape de curseur par opération ; la ligne choisie et le curseur ne se quittent pas
+    assert zone.curseur.maximum() == 2 and zone.etape() == 2
+    assert "2/2" in zone.lbl_etape.text()
+    zone.liste.setCurrentItem(zone.liste.topLevelItem(0))
+    assert zone.etape() == 1 and zone.sequence_courante() is dressage
+
+    # étape 0 : le brut, rien d'enlevé, aucune trajectoire
+    zone.curseur.setValue(0)
+    assert zone.sequence_courante() is None and vue.trajectoire is None
+    assert "Brut" in zone.lbl_etape.text()
+    assert vue.matiere and not vue.matiere_enlevee
+    assert max(r for _, _, _, r in vue.matiere) == pytest.approx(win.montage.rayon_brut())
+
+    # étape 1 : le dressage a emporté la surépaisseur de face, devant Z = 0
+    zone.curseur.setValue(1)
+    assert zone.sequence_courante() is dressage and vue.trajectoire is not None
+    assert vue.matiere_enlevee and max(z for _, z, _, _ in vue.matiere_enlevee) > 0.0
+
+    # étape 2 : l'ébauche a emporté la matière au diamètre, du brut jusqu'au profil
+    zone.curseur.setValue(2)
+    enleve = vue.matiere_enlevee
+    assert enleve and max(r for _, _, _, r in enleve) == pytest.approx(win.montage.rayon_brut())
+    assert min(r for _, _, r, _ in enleve) < win.montage.rayon_brut()
+
+    # la liste est une source de glisser : une ligne emporte sa séquence
+    index = zone.liste.indexFromItem(zone.liste.topLevelItem(1))
+    assert zone.liste.dragEnabled()
+    type_mime, charge = lire(zone.liste.model().mimeData([index]))
+    assert type_mime == MIME_SEQUENCE and charge.startswith(str(ebauche.id))
+
+    def lacher_au_dessus_de(rang: int, sequence) -> bool:
+        rect = zone.liste.visualItemRect(zone.liste.topLevelItem(rang))
+        point = QPointF(rect.center().x(), rect.top() + 1)
+        mime = charger(MIME_SEQUENCE, f"{sequence.id} {sequence.libelle()}")   # à garder vivant
+        ev = QDropEvent(point, Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton,
+                        Qt.KeyboardModifier.NoModifier)
+        assert zone.liste.rang_sous(point.toPoint()) == rang
+        zone.liste.dropEvent(ev)
+        QTest.qWait(10)        # la liste se reconstruit après la sortie de l'événement
+        return ev.isAccepted()
+
+    # lâchée au-dessus de la première ligne, l'ébauche passe devant le dressage
+    assert lacher_au_dessus_de(0, ebauche)
+    assert [s.id for s in win.gamme] == [ebauche.id, dressage.id]
+    assert zone.liste.topLevelItem(0).text(1) == ebauche.libelle()
+    assert zone.sequence_courante() is ebauche and zone.etape() == 1
+
+    # lâchée là où elle est déjà : rien ne bouge
+    assert lacher_au_dessus_de(0, ebauche)
+    assert [s.id for s in win.gamme] == [ebauche.id, dressage.id]
+
+    # gamme vide : le dessin redevient celui de l'esquisse seule
+    while zone.supprimer():
+        pass
+    assert not vue.matiere and not vue.matiere_enlevee and zone.curseur.maximum() == 0
+
+
 def test_volet_usinage_un_formulaire_par_type(fenetre):
     from ctgraph.usinage import TypeSequence
     from ctgraph.usinage.sequences import CHAMPS_SEQUENCE, LIBELLES_Z
@@ -1415,6 +1485,10 @@ def test_zone_tourelle(fenetre):
     # la liste montre les douze postes, le poste en travail en gras et sélectionné
     assert zone.liste.topLevelItemCount() == 12
     assert zone.liste.currentItem().text(0) == "T4" and zone.liste.currentItem().font(0).bold()
+    # et elle est assez haute pour les montrer tous : pas de défilement dans la liste
+    assert zone.liste.minimumHeight() >= 12 * zone.liste.sizeHintForRow(0)
+    assert zone.liste.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert zone.widgetResizable()          # c'est le volet entier qui défile, pas la liste
     win.actions_volets["tourelle"].setChecked(False)
 
 

@@ -1,6 +1,6 @@
 # CTgraph — état d'avancement
 
-Mis à jour le 25 novembre 2026 (cinquième séance, poste de la semaine).
+Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
 
 ## Fait
 
@@ -96,7 +96,13 @@ Mis à jour le 25 novembre 2026 (cinquième séance, poste de la semaine).
   la tourelle sur la séquence**. **La trajectoire de la séquence choisie se dessine sur l'esquisse** (trait
   plein en coupe, pointillé en rapide) et se recalcule à chaque changement de cote ou de montage : rien
   n'est recopié du dessin. Une passe ne descend jamais dans les mors et la finition laisse la face arrière
-  au tronçonnage. 149 tests.
+  au tronçonnage.
+- **Voir la pièce se dégager du brut** : un **curseur** sous la liste des opérations choisit l'étape montrée
+  (0 = le brut, k = après la k-ième). La matière restante est teintée sur le dessin et **ce que l'étape vient
+  d'enlever ressort en orange** (`usinage/matiere.py` : le brut en tranches de 0,25 mm, chaque type
+  d'opération enlevant à sa façon). L'ordre d'usinage se change aussi en tirant une ligne sur une autre.
+  Le modèle de matière sert à voir, pas à vérifier : il ignore la forme de l'outil, donc les collisions.
+  152 tests.
 
 ## En cours
 

@@ -200,6 +200,9 @@ vérification par relecture du G-code généré, réception des programmes depui
   **Un poste s'écrit « T1 », « T12 »** (`tourelle.nom_poste`, `Poste.nom`), comme sur la commande numérique :
   partout, sur le disque, dans le tableau, dans le formulaire, dans la gamme et dans le glisser-déposer.
   Un seul endroit décide de cette écriture (décidé le 25 novembre 2026).
+  Le **tableau montre tous les postes d'un bloc** (`_ajuster_hauteur` fixe sa hauteur au nombre de lignes,
+  défilement coupé) ; c'est le volet entier qui défile, `ZoneTourelle` étant un `QScrollArea`, pour que le
+  disque garde une taille lisible dans une fenêtre courte au lieu d'être écrasé (demandé le 26 novembre 2026).
   **Implantation** (`IMPLANTATIONS`, relevé le 24 novembre 2026) : un porte-outil VDI se monte sur la
   circonférence de la tourelle ou sur sa face. Sur le CT200, la moitié des outils sont montés
   *transversalement en périphérie* (tournage extérieur, queue carrée), l'autre moitié est *axiale* (barres,
@@ -222,6 +225,10 @@ vérification par relecture du G-code généré, réception des programmes depui
   relue par `zone_usinage._numero_poste`) ; la liste de la gamme l'accueille et donne ce poste à la séquence
   visée. `ZoneTourelle.definir_tourelle` émet `tourelle_changee` : ce qui se réfère à la tourelle, la gamme
   comprise, suit le changement d'objet.
+  **Troisième chemin, interne à la gamme** (demandé le 26 novembre 2026) : une ligne de la liste des
+  séquences se tire sur une autre pour changer l'ordre d'usinage (`MIME_SEQUENCE`, `Gamme.deplacer_a` au
+  rang compté avant le retrait). Le trait d'insertion est dessiné par `ListeSequences.paintEvent` : la
+  gestion du dépôt étant la nôtre, Qt ne peut pas poser son propre indicateur.
 - **Plaquettes** (`ctgraph/plaquettes.py`, `ui/zone_plaquettes.py`) : catalogue **ISO 1832** des tailles qui
   garnissent les porte-plaquettes, quatre familles (négatives, positives, filetage, gorge). `Plaquette.base`
   (« CNMG 1204 ») relie la plaquette au champ `plaquette` du catalogue des outils ; `pour_base` accepte la
@@ -282,9 +289,23 @@ vérification par relecture du G-code généré, réception des programmes depui
   Volet « Usinage », le plus à gauche de l'atelier : liste ordonnée (ligne, opération, poste, passes, longueur
   de coupe), un bouton d'ajout par type, flèches d'ordre, case d'activation, formulaire de la séquence choisie
   avec rappel de ce que porte son poste de tourelle. On affecte un poste en tapant son numéro ou en **glissant
-  une ligne de la tourelle sur la séquence**. La trajectoire de la séquence choisie se dessine sur
+  une ligne de la tourelle sur la séquence** ; on change l'ordre par les flèches ou en **tirant une ligne sur
+  une autre**. La trajectoire de la séquence choisie se dessine sur
   l'esquisse (genre « trajectoire », non sélectionnable) : trait plein en coupe, pointillé en rapide, cercle
   au départ.
+- **Matière enlevée, étape par étape** (`usinage/matiere.py`, demandé le 26 novembre 2026) : un **curseur**
+  sous la liste choisit l'étape montrée (0 = le brut, k = après la k-ième opération). Il ne fait qu'un avec
+  la ligne choisie : bouger l'un bouge l'autre, pour qu'il n'y ait jamais deux notions d'« étape courante ».
+  `EtatMatiere` décrit la matière restante en **tranches** de `PAS_TRANCHE` (0,25 mm) le long de l'axe, chacune
+  avec son rayon intérieur et son rayon extérieur ; `etats()` rend la suite des états, `enlevee_depuis` les
+  copeaux d'une étape. La vue les dessine en rectangles (genre « matiere », non sélectionnable) : la matière
+  restante en teinte sourde, ce que l'étape vient d'emporter en orange, comme sa trajectoire.
+  **Chaque type enlève à sa façon** : le dressage fait avancer la face, l'ébauche et la finition rabotent
+  sous leur chemin tranche par tranche, la gorge et le tronçonnage creusent sur la largeur de l'outil, le
+  perçage ouvre un alésage, le filetage ne change pas la silhouette (le filet est une rainure hélicoïdale,
+  l'enveloppe reste au diamètre nominal). Un mouvement radial d'ébauche ou de finition ne fait que longer une
+  face : il n'enlève rien de plus. **Ce modèle sert à voir, pas à vérifier** : il ignore la forme de l'outil
+  et ne détecte aucune collision.
 
 ## Points ouverts
 

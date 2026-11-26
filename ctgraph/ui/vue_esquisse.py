@@ -254,6 +254,9 @@ class VueEsquisse(QGraphicsView):
         self.montage_visible = True
         # trajectoire de la séquence d'usinage choisie, dessinée par-dessus le profil
         self.trajectoire = None
+        # matière restante à l'étape choisie, et ce que cette étape vient d'enlever (bandes z0,z1,r0,r1)
+        self.matiere: List[Tuple[float, float, float, float]] = []
+        self.matiere_enlevee: List[Tuple[float, float, float, float]] = []
         # édition des cotes du mors : elles s'affichent et se règlent, tout le reste est grisé et inerte
         self.mode_mors = False
         self._items_mors: List[QGraphicsItem] = []
@@ -449,6 +452,7 @@ class VueEsquisse(QGraphicsView):
 
         if self.montage is not None and self.montage_visible:
             self._dessiner_montage(c)
+        self._dessiner_matiere(c)
 
         # contours fermés : un remplissage discret valide que le profil se referme, et la vue 3D les révolutionne
         contours = self.contours_fermes()
@@ -535,6 +539,26 @@ class VueEsquisse(QGraphicsView):
                     it.setOpacity(0.28)
         self._placer_bandeau_mors()
         self._dessiner_apercu()
+
+    def _dessiner_matiere(self, c: Dict[str, QColor]) -> None:
+        """La matière restante à l'étape choisie, et en vif ce que cette étape vient d'enlever."""
+        if not self.matiere and not self.matiere_enlevee:
+            return
+        reste = QColor(c["texte"].red(), c["texte"].green(), c["texte"].blue(), 40)
+        copeau = QColor(225, 90, 60, 90)
+        for bandes, couleur, z in ((self.matiere, reste, 0.6), (self.matiere_enlevee, copeau, 0.7)):
+            if not bandes:
+                continue
+            chemin = QPainterPath()
+            for z_gauche, z_droite, r_int, r_ext in bandes:
+                chemin.addRect(QRectF(z_gauche, r_int, z_droite - z_gauche, r_ext - r_int))
+            it = QGraphicsPathItem(chemin.simplified())
+            it.setPen(QPen(Qt.PenStyle.NoPen))
+            it.setBrush(QBrush(couleur))
+            it.setZValue(z)
+            it.setData(ROLE_GENRE, "matiere")
+            self._scene.addItem(it)
+            self._items.append(it)
 
     def _dessiner_trajectoire(self, c: Dict[str, QColor]) -> None:
         """Le chemin de la séquence choisie : trait plein en coupe, pointillé en rapide, flèches de sens."""
@@ -1433,7 +1457,7 @@ class VueEsquisse(QGraphicsView):
         if not candidats:
             return None
         ordre = {"point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4, "reference_mors": 7, "mors": 8,
-                 "reference": 9, "trajectoire": 10}
+                 "reference": 9, "trajectoire": 10, "matiere": 11}
         candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
         return candidats[0]
 
@@ -1628,7 +1652,7 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
-        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference", "trajectoire"):
+        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference", "trajectoire", "matiere"):
             return                              # montage et usinage : pas de sélection
         if genre == "point":
             self._glisse_point = ident          # sélection ou glissement : tranché au relâchement

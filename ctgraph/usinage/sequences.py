@@ -224,6 +224,19 @@ class Gamme:
         self.sequences.insert(j, self.sequences.pop(i))
         return True
 
+    def deplacer_a(self, ident: int, rang: int) -> bool:
+        """Pose la séquence au rang donné, compté avant le retrait. Vrai si elle a bougé."""
+        rangs = [s.id for s in self.sequences]
+        if ident not in rangs:
+            return False
+        i = rangs.index(ident)
+        rang = min(max(int(rang), 0), len(self.sequences))
+        if rang in (i, i + 1):
+            return False                     # lâchée là où elle était déjà
+        s = self.sequences.pop(i)
+        self.sequences.insert(rang - 1 if rang > i else rang, s)
+        return True
+
     def to_dict(self) -> dict:
         return {"prochain_id": self._prochain_id,
                 "sequences": [{**asdict(s), "type": s.type.value} for s in self.sequences]}

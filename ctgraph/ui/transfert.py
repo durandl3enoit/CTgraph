@@ -20,7 +20,8 @@ from ..tourelle import nom_poste
 MIME_PORTE_PLAQUETTE = "application/x-ctgraph-porte-plaquette"
 MIME_PLAQUETTE = "application/x-ctgraph-plaquette"
 MIME_POSTE = "application/x-ctgraph-poste"          # un poste de tourelle et ce qui y est monté
-MIMES = (MIME_PORTE_PLAQUETTE, MIME_PLAQUETTE, MIME_POSTE)
+MIME_SEQUENCE = "application/x-ctgraph-sequence"    # une séquence de la gamme, tirée pour changer l'ordre
+MIMES = (MIME_PORTE_PLAQUETTE, MIME_PLAQUETTE, MIME_POSTE, MIME_SEQUENCE)
 
 
 def charger(type_mime: str, designation: str) -> QMimeData:
