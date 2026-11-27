@@ -1,4 +1,4 @@
-"""Vue d'esquisse : tracé à la souris, aimantation, sélection, glissement des points, cotes, élagage.
+﻿"""Vue d'esquisse : tracé à la souris, aimantation, sélection, glissement des points, cotes, élagage.
 
 Coordonnées de scène = coordonnées du modèle : abscisse z, ordonnée x (rayon). La vue est
 retournée verticalement (échelle négative en y) pour que le rayon croisse vers le haut.
@@ -258,6 +258,7 @@ class VueEsquisse(QGraphicsView):
         self.sequence = None
         self.z_surface = 0.0              # la surface que la séquence attaque : origine de ses profondeurs
         self.rayon_trou = 0.0             # le trou que la séquence trouve : départ de la zone à aléser
+        self.zone_usinee = None           # (z droite, z gauche, rayon bas, rayon haut) de l'opération
         # matière restante à l'étape choisie, et ce que cette étape vient d'enlever : des polygones (z, x)
         self.matiere: List[List[Tuple[float, float]]] = []
         self.matiere_enlevee: List[List[Tuple[float, float]]] = []
@@ -297,6 +298,7 @@ class VueEsquisse(QGraphicsView):
         self._glisse_point: Optional[int] = None
         self._glisse_cote: Optional[int] = None
         self._glisse_alesage: Optional[str] = None     # poignée de la zone à aléser en cours de glissement
+        self._glisse_zone = False                      # poignée centrale : on déplace l'opération entière
         self._alesage_ancre: Optional[Tuple[float, float]] = None
         self._glisse_dernier: Optional[QPointF] = None
         self._glisse_actif = False
@@ -541,6 +543,7 @@ class VueEsquisse(QGraphicsView):
 
         self._dessiner_trajectoire(c)
         self._dessiner_poignees_alesage(c)
+        self._dessiner_poignee_centrale(c)
         self._dessiner_cotes_usinage(c)
 
         if self.mode_mors:
@@ -583,7 +586,8 @@ class VueEsquisse(QGraphicsView):
         for f in self.filets:
             if f.pas <= 1e-6 or f.z_debut - f.z_fin <= 1e-9:
                 continue
-            fond = max(f.rayon - f.hauteur, 0.0)
+            # un filet intérieur creuse vers l'extérieur : ses dents pointent vers l'axe
+            fond = f.rayon + f.hauteur if f.interieur else max(f.rayon - f.hauteur, 0.0)
             chemin = QPainterPath()
             chemin.moveTo(f.z_debut, fond)
             chemin.lineTo(f.z_fin, fond)
@@ -664,6 +668,33 @@ class VueEsquisse(QGraphicsView):
         if s.z_fin is None or s.diametre_fond <= 0.0 or z_face - s.z_fin <= 1e-9:
             return None
         return z_face, s.z_fin, self.rayon_trou, s.diametre_fond / 2.0
+
+    def _dessiner_poignee_centrale(self, c: Dict[str, QColor]) -> None:
+        """La prise centrale de la zone usinée : elle déplace l'opération d'un endroit de la pièce à un autre.
+
+        Lâchée dans le trou, l'opération devient intérieure ; lâchée sur le profil, extérieure. C'est le
+        geste qui fait passer un filetage ou une gorge de l'extérieur à l'alésage.
+        """
+        zone = self.zone_usinee
+        if not zone:
+            return
+        z_droite, z_gauche, r_bas, r_haut = zone
+        if abs(z_droite - z_gauche) <= 1e-9 and abs(r_haut - r_bas) <= 1e-9:
+            return
+        couleur = QColor(225, 90, 60)
+        it = QGraphicsEllipseItem(-7, -7, 14, 14)
+        it.setPos((z_droite + z_gauche) / 2.0, (r_bas + r_haut) / 2.0)
+        it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+        it.setPen(QPen(c["fond"], 2))
+        it.setBrush(QBrush(couleur))
+        it.setCursor(Qt.CursorShape.SizeAllCursor)
+        it.setToolTip("Déplacez l'opération : dans le trou elle devient intérieure, sur le profil "
+                      "extérieure.")
+        it.setZValue(2.0)
+        it.setData(ROLE_GENRE, "poignee_usinage")
+        it.setData(ROLE_ID, "centre")
+        self._scene.addItem(it)
+        self._items.append(it)
 
     def _dessiner_poignees_alesage(self, c: Dict[str, QColor]) -> None:
         """Les prises de la zone à aléser : ses trois arêtes, ses deux coins, et son corps.
@@ -1615,9 +1646,9 @@ class VueEsquisse(QGraphicsView):
             return None
         # les poignées d'usinage passent avant tout : posées sur une ligne du dessin, elles doivent
         # rester attrapables, sinon on ne peut plus les déplacer une fois alignées
-        ordre = {"poignee_alesage": -1, "point": 0, "arc": 1, "ligne": 2, "cote": 3, "relation": 4,
-                 "cote_sequence": 5, "reference_mors": 7, "mors": 8, "reference": 9, "trajectoire": 10,
-                 "matiere": 11}
+        ordre = {"poignee_usinage": -2, "poignee_alesage": -1, "point": 0, "arc": 1, "ligne": 2,
+                 "cote": 3, "relation": 4, "cote_sequence": 5, "reference_mors": 7, "mors": 8,
+                 "reference": 9, "trajectoire": 10, "matiere": 11}
         candidats.sort(key=lambda gi: ordre.get(gi[0], 9))
         return candidats[0]
 
@@ -1814,13 +1845,17 @@ class VueEsquisse(QGraphicsView):
             self._timer_geste.start(DELAI_GESTE_MS)
             return
         genre, ident = el
+        if genre == "poignee_usinage":
+            self._glisse_zone = True
+            self._alesage_ancre = self.position_scene(pos)
+            return
         if genre == "poignee_alesage":
             # la zone à aléser s'attrape par une arête, un coin ou son corps, et se pousse à la souris
             self._glisse_alesage = str(ident)
             self._alesage_ancre = self.position_scene(pos)
             return
-        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference", "trajectoire", "matiere",
-                     "cote_sequence"):
+        if genre in ("brut", "mors", "cote_mors", "reference_mors", "reference", "trajectoire",
+                     "matiere", "cote_sequence", "poignee_usinage"):
             return                              # montage et usinage : pas de sélection
         if genre == "point":
             self._glisse_point = ident          # sélection ou glissement : tranché au relâchement
@@ -2167,6 +2202,11 @@ class VueEsquisse(QGraphicsView):
             return
         if gauche and self._timer_geste.isActive() and self._a_bouge(pos):
             self._timer_geste.stop()           # on a bougé trop tôt : ce n'est pas un clic semi-long
+        if self._glisse_zone and gauche:
+            acc = self.accrocher(pos)
+            ancre, self._alesage_ancre = self._alesage_ancre, (acc.z, acc.x)
+            self.controleur.deplacer_zone(self.sequence, acc.z, acc.x, ancre)
+            return
         if self._glisse_alesage is not None and gauche:
             # l'aimantation de l'esquisse s'applique : la zone s'aligne sur les points et faces du profil
             acc = self.accrocher(pos)
@@ -2234,8 +2274,9 @@ class VueEsquisse(QGraphicsView):
             self._terminer_geste()
             self._press_pos = None
             return
-        if self._glisse_alesage is not None:
+        if self._glisse_alesage is not None or self._glisse_zone:
             self._glisse_alesage = self._alesage_ancre = None
+            self._glisse_zone = False
             self._press_pos = None
             return
         etiquette_prise = self._glisse_cote is not None

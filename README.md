@@ -172,9 +172,9 @@ Dix opérations :
 * **finition extérieure** : un passage qui suit le profil fini ;
 * **gorge** : des plongées côte à côte, à la largeur de l'outil, jusqu'au diamètre de fond ; une gorge plus
   large que l'outil se fait en autant de plongées qu'il faut, qui se recouvrent ;
-* **filetage** : des passes le long du filet, de plus en plus fines pour garder la section de copeau. La
-  profondeur du filet est celle du profil ISO métrique tant qu'on n'en donne pas une autre, et l'avance d'un
-  filetage est son pas ;
+* **filetage**, extérieur ou **intérieur** : des passes le long du filet, de plus en plus fines pour garder
+  la section de copeau. La profondeur du filet est celle du profil ISO métrique tant qu'on n'en donne pas
+  une autre, et l'avance d'un filetage est son pas ;
 * **tronçonnage** : une plongée jusqu'au diamètre demandé, ou jusqu'à l'axe pour détacher la pièce.
 
 Les boutons du haut ajoutent une séquence, chacun avec les conditions de coupe habituelles de son type ;
@@ -215,11 +215,19 @@ le bout du brut.
 Les opérations proposées par la gamme type sont décochées quand elles demandent une cote que le dessin ne
 donne pas, mais elles partent de réglages qui donnent un résultat visible : on coche, on voit, on ajuste.
 
-L'**alésage s'édite directement sur le dessin**. Quand il est l'opération montrée, sa zone rouge porte ses
-prises : attrapez une **arête** — la face d'entrée, le fond, la paroi — pour pousser une seule limite, un
-**coin** pour en pousser deux, ou le **corps** pour faire glisser la zone entière le long de l'axe.
-L'aimantation de l'esquisse joue : la zone s'aligne sur les points, les faces et les plans de référence de
-la pièce finie.
+Le dessin de la pièce est un **support** : il sert de référence géométrique aux opérations, qui s'y
+aimantent sans s'y figer. Chaque opération se voit en surimpression du dessin et se reprend à la souris.
+
+Sa **poignée centrale** — le rond orange au milieu de la zone rouge — déplace l'opération d'un endroit de
+la pièce à un autre. Le rayon où vous la lâchez décide du côté usiné : dans le trou, l'opération devient
+**intérieure** ; sur le profil, **extérieure**. C'est ainsi qu'un filetage ou une gorge passe de
+l'extérieur à l'alésage. (Le dressage, l'ébauche et la finition balaient tout le profil : ils n'ont pas
+de zone à déplacer.)
+
+L'**alésage** a en plus ses prises de bord : attrapez une **arête** — la face d'entrée, le fond, la paroi
+— pour pousser une seule limite, un **coin** pour en pousser deux, ou le **corps** pour faire glisser la
+zone le long de l'axe. L'aimantation de l'esquisse joue : la zone s'aligne sur les points, les faces et
+les plans de référence de la pièce finie.
 
 Chaque opération porte sa cote maîtresse dans son nom — « Perçage Ø 10 », « Alésage Ø 20 »,
 « Gorge Ø 20 × 4 », « Filetage pas 1,5 » — pour que deux lignes voisines se distinguent d'un coup d'œil.

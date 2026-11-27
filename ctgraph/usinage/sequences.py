@@ -108,8 +108,8 @@ CHAMPS_SEQUENCE: Dict[TypeSequence, Tuple[str, ...]] = {
     TypeSequence.FINITION_INTERIEURE: ("diametre_fond", "garde", "degagement", "z_debut", "z_fin"),
     TypeSequence.GORGE: ("largeur_outil", "largeur", "diametre_fond", "profondeur_passe", "surepaisseur",
                          "garde", "degagement", "z_debut"),
-    TypeSequence.FILETAGE: ("pas", "hauteur_filet", "profondeur_passe", "garde", "degagement",
-                            "z_debut", "z_fin"),
+    TypeSequence.FILETAGE: ("interieur", "pas", "hauteur_filet", "profondeur_passe", "garde",
+                            "degagement", "z_debut", "z_fin"),
     TypeSequence.TRONCONNAGE: ("largeur_outil", "diametre_fond", "profondeur_passe", "garde",
                                "degagement", "z_debut"),
 }
@@ -222,6 +222,7 @@ class Sequence:
     diametre_outil: float = 10.0     # Ø du foret
     foret: str = ""                  # désignation au catalogue `ctgraph.forets` ; vide = foret ordinaire
     paroi: int = 0                   # alésage : élément d'esquisse que la paroi suit ; 0 = un cylindre
+    interieur: bool = False          # l'opération travaille dans l'alésage plutôt que sur l'extérieur
     pas: float = 1.5                 # pas du filet
     hauteur_filet: float = 0.0       # profondeur du filet au rayon ; 0 = PROFONDEUR_FILET × pas
 
@@ -246,7 +247,7 @@ class Sequence:
         if self.type == TypeSequence.GORGE and self.diametre_fond > 0:
             return f"{court} Ø {nombre(self.diametre_fond)} × {nombre(max(self.largeur, self.largeur_outil))}"
         if self.type == TypeSequence.FILETAGE:
-            return f"{court} pas {nombre(self.pas)}"
+            return f"{court}{' int.' if self.interieur else ''} pas {nombre(self.pas)}"
         if self.type == TypeSequence.TRONCONNAGE:
             return f"{court} ép. {nombre(self.largeur_outil)}"
         return LIBELLES_SEQUENCE[self.type]

@@ -754,6 +754,7 @@ class FenetrePrincipale(QMainWindow):
         self._pousser_matiere()          # remplit la suite des états, où se lit la surface travaillée
         self.vue.z_surface = self.surface_travaillee(sequence)
         self.vue.rayon_trou = self.trou_trouve(sequence)
+        self.vue.zone_usinee = self.zone_usinee(sequence)
         if redessiner:
             self.vue.reconstruire()
 
@@ -794,6 +795,73 @@ class FenetrePrincipale(QMainWindow):
         s.definir_valeur_cote(cle, max(0.0, s.valeur_cote(cle, surface) + sens * pas), surface)
         self._apres_reglage_sequence()
         return s.texte_cote(cle, self.surface_travaillee(s))
+
+    def zone_usinee(self, sequence: Optional[Sequence]) -> Optional[Tuple[float, float, float, float]]:
+        """La zone qu'une opération attaque : (z droite, z gauche, rayon bas, rayon haut).
+
+        C'est l'objet graphique que l'utilisateur attrape. Il existe pour les opérations qui travaillent
+        un endroit précis de la pièce ; le dressage, l'ébauche et la finition, qui balaient tout le
+        profil, n'en ont pas.
+        """
+        if sequence is None:
+            return None
+        s, surface = sequence, self.surface_travaillee(sequence)
+        trou = self.trou_trouve(sequence)
+        if s.type in ALESAGES:
+            if s.z_fin is None or s.diametre_fond <= 0.0:
+                return None
+            return surface, s.z_fin, trou, s.diametre_fond / 2.0
+        if s.type in (TypeSequence.PERCAGE, TypeSequence.CENTRAGE):
+            return (surface, s.z_fin, 0.0, s.diametre_outil / 2.0) if s.z_fin is not None else None
+        if s.type in (TypeSequence.GORGE, TypeSequence.TRONCONNAGE):
+            z = s.z_debut if s.z_debut is not None else surface
+            largeur = max(s.largeur, s.largeur_outil) if s.type == TypeSequence.GORGE \
+                else max(s.largeur_outil, 0.1)
+            if s.interieur:
+                return z, z - largeur, trou, s.diametre_fond / 2.0
+            return z, z - largeur, s.diametre_fond / 2.0, self._dessus_matiere(sequence, z, z - largeur)
+        if s.type == TypeSequence.FILETAGE and s.z_fin is not None:
+            z = s.z_debut if s.z_debut is not None else surface
+            hauteur = s.profondeur_filet()
+            if s.interieur:
+                return z, s.z_fin, trou, trou + hauteur
+            crete = self._dessus_matiere(sequence, z, s.z_fin)
+            return z, s.z_fin, max(crete - hauteur, 0.0), crete
+        return None
+
+    def _dessus_matiere(self, sequence: Sequence, z_a: float, z_b: float) -> float:
+        """Le rayon de la matière que la séquence trouve sur une tranche."""
+        rang = next((i for i, s in enumerate(self.gamme) if s.id == sequence.id), -1)
+        suite = self._suite_matiere()
+        if not (0 <= rang < len(suite) - 1):
+            return self.montage.rayon_brut()
+        rayons = [suite[rang].exterieur[i] for i in suite[rang].tranches(z_a, z_b)]
+        return max(rayons) if rayons else self.montage.rayon_brut()
+
+    def deplacer_zone(self, sequence: Optional[Sequence], z: float, x: float,
+                      ancre: Optional[Tuple[float, float]]) -> bool:
+        """Déplace la zone d'une opération d'un endroit de la pièce à un autre, poignée centrale en main.
+
+        Le glissement suit le curseur en Z, et **le rayon dit de quel côté on travaille** : lâchée dans
+        le trou, l'opération devient intérieure ; lâchée sur le profil, extérieure. C'est ainsi qu'on
+        fait passer un filetage ou une gorge de l'extérieur à l'alésage.
+        """
+        s = sequence
+        zone = self.zone_usinee(s)
+        if s is None or zone is None or ancre is None:
+            return False
+        z_droite, z_gauche, _, _ = zone
+        decalage = z - ancre[0]
+        if s.type in (TypeSequence.GORGE, TypeSequence.TRONCONNAGE):
+            s.z_debut = z_droite + decalage
+        elif s.z_fin is not None:
+            s.z_debut, s.z_fin = z_droite + decalage, z_gauche + decalage
+        if s.type in (TypeSequence.FILETAGE, TypeSequence.GORGE, TypeSequence.TRONCONNAGE):
+            # au-dessous du milieu de la matière, on est dans le trou : l'opération devient intérieure
+            milieu = self._dessus_matiere(s, z_droite, z_gauche) / 2.0
+            s.interieur = x < milieu
+        self._apres_reglage_sequence()
+        return True
 
     def deplacer_alesage(self, poignee: str, z: float, x: float,
                          ancre: Optional[Tuple[float, float]] = None, element: int = 0) -> bool:

@@ -31,6 +31,12 @@ vérification par relecture du G-code généré, réception des programmes depui
   que l'esquisse interne, sans rien changer au reste du logiciel.
 - **Les séquences d'usinage référencent le profil résolu**, elles n'en gardent pas de copie.
   Modifier une cote recalcule les trajectoires et le G-code.
+- **Le dessin de la pièce est un support, pas une contrainte** (direction donnée le 27 novembre 2026).
+  Il sert de **référence géométrique** aux opérations : leurs zones et leurs trajectoires s'y aimantent,
+  mais ne s'y fixent pas. Toute opération se voit en surimpression du dessin et se reprend **à la
+  souris**, par assez de poignées pour que l'utilisateur garde la main : une poignée centrale qui
+  déplace la zone entière — d'un contour extérieur vers un alésage, par exemple — et des poignées de
+  bord pour chaque limite. Ce que l'interface ne sait pas encore attraper doit le devenir.
 - **Le profil extérieur d'une pièce percée** (`usinage/profil.py`, corrigé le 26 novembre 2026) : un
   contour fermé qui **ne touche jamais l'axe** est un anneau — la pièce est percée de part en part. Son
   profil extérieur n'est pas l'anneau entier : `_bord_exterieur` le coupe au sommet le plus haut de
@@ -391,6 +397,22 @@ vérification par relecture du G-code généré, réception des programmes depui
   paroi, comme la finition extérieure suit le profil. `NOMS_COURTS` donne le nom des boutons et des
   libellés automatiques : « Finition ext. », « Finition int. », parce que « Finition » seul ne
   distinguerait plus rien.
+- **Poignée centrale de la zone usinée** (demandée le 27 novembre 2026) : `FenetrePrincipale.zone_usinee`
+  rend la zone qu'une opération attaque — (z droite, z gauche, rayon bas, rayon haut) — et la vue y pose
+  une prise ronde (genre « poignee_usinage »). La tirer déplace l'opération le long de l'axe, et **le
+  rayon où on la lâche dit de quel côté on travaille** : dans le trou elle devient intérieure
+  (`Sequence.interieur`), sur le profil extérieure. C'est le geste qui fait passer un filetage ou une
+  gorge de l'extérieur à l'alésage. Le dressage, l'ébauche et la finition balaient tout le profil : ils
+  n'ont pas de zone à déplacer, et leur poignée reste à inventer.
+- **Un filetage enlève de la matière** (27 novembre 2026). En toute rigueur l'enveloppe de révolution
+  garde le diamètre des crêtes, le filet étant une rainure hélicoïdale ; mais le creux est bien enlevé,
+  et le montrer vaut mieux que de laisser croire que rien n'a été fait. On rabote donc jusqu'au fond de
+  filet. **Filetage intérieur** : `Sequence.interieur` part du trou et ouvre vers l'extérieur ; ses
+  dents se dessinent pointées vers l'axe.
+- **Précision du contour de matière** : `PAS_TRANCHE` vaut 0,05 mm. Les polygones passent par le milieu
+  des tranches, ce qui fait d'un cône une pente franche mais penche une face verticale de la largeur
+  d'une tranche — d'où la finesse. `_sans_points_inutiles` retire ensuite les sommets alignés : les
+  polygones restent courts et les droites franchement droites.
 - **Édition graphique de l'alésage** (demandée le 26 novembre 2026) : quand la séquence montrée est un
   alésage, sa zone rouge porte ses prises (genre « poignee_alesage », `VueEsquisse.alesage_montre`,
   `_dessiner_poignees_alesage`) : les trois arêtes — face d'entrée, fond, paroi —, les deux coins du haut,

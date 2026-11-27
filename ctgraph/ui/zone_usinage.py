@@ -342,6 +342,10 @@ class ZoneUsinage(QWidget):
         self.vitesse_maxi = self._nombre(" tr/min", 100.0, 10000.0, 0)
         self.avance = self._nombre(" mm/tr", 0.01, 2.0, 3)
         self.arrosage = QCheckBox("Arrosage")
+        self.interieur = QCheckBox("dans l'alésage")
+        self.interieur.setToolTip("L'opération travaille à l'intérieur : on peut aussi déplacer sa zone "
+                                  "à la poignée centrale, du contour extérieur vers le trou.")
+        self.interieur.toggled.connect(self._reglage_change)
         self.largeur_outil = self._nombre(" mm", 0.5, 20.0, 2)
         self.largeur = self._nombre(" mm", 0.0, 200.0, 2)
         self.largeur.setSpecialValueText("largeur de l'outil")
@@ -372,6 +376,7 @@ class ZoneUsinage(QWidget):
                 ("vitesse_maxi", "Broche maximale", self.vitesse_maxi),
                 ("avance", "Avance", self.avance),
                 ("", "", self.arrosage),
+                ("interieur", "Côté usiné", self.interieur),
                 ("largeur_outil", "Largeur de l'outil", self.largeur_outil),
                 ("largeur", "Largeur de la gorge", self.largeur),
                 ("diametre_fond", "Ø au fond", self.diametre_fond),
@@ -609,6 +614,7 @@ class ZoneUsinage(QWidget):
         self.vitesse_maxi.setValue(s.vitesse_maxi)
         self.avance.setValue(s.avance)
         self.arrosage.setChecked(s.arrosage)
+        self.interieur.setChecked(s.interieur)
         self.largeur_outil.setValue(s.largeur_outil)
         self.largeur.setValue(s.largeur)
         self.diametre_fond.setValue(s.diametre_fond)
@@ -781,6 +787,7 @@ class ZoneUsinage(QWidget):
         s.vitesse_coupe, s.vitesse_maxi, s.avance = (self.vitesse_coupe.value(), self.vitesse_maxi.value(),
                                                      self.avance.value())
         s.arrosage = self.arrosage.isChecked()
+        s.interieur = self.interieur.isChecked()
         s.largeur_outil, s.largeur = self.largeur_outil.value(), self.largeur.value()
         s.diametre_fond, s.diametre_outil = self.diametre_fond.value(), self.diametre_outil.value()
         # régler le Ø à la main détache le foret choisi : c'est alors un foret ordinaire de ce Ø

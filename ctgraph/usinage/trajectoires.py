@@ -199,9 +199,11 @@ def _finition(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> T
         return Trajectoire(sequence.id, [], "Le profil n'a rien à finir sur cette étendue.")
     depart, arrivee = chemin[0], chemin[-1]
     z_libre = max(_face_matiere(etat, montage), depart[0]) + sequence.garde
-    mouvements = [Mouvement(z_libre, max(depart[1], _dehors(etat, montage, depart[0], depart[0]))
-                            + sequence.degagement),
-                  Mouvement(z_libre, depart[1]),
+    # on arrive par-dessus la matière, puis on **entre radialement** au point de départ : descendre en Z
+    # au rayon du profil labourerait ce qu'un dressage aurait laissé devant
+    dessus = max(depart[1], _dehors(etat, montage, depart[0], z_libre)) + sequence.degagement
+    mouvements = [Mouvement(z_libre, dessus),
+                  Mouvement(depart[0], dessus),
                   Mouvement(depart[0], depart[1], travail=True)]
     mouvements += [Mouvement(z, x, travail=True) for z, x in chemin[1:]]
     mouvements.append(Mouvement(arrivee[0], arrivee[1] + sequence.degagement, travail=True))
@@ -293,16 +295,25 @@ def _filetage(sequence: Sequence, profil: ProfilTourne, montage, etat=None) -> T
         z_fin = max(z_fin, montage.z_face_mors())
     if z_debut - z_fin <= 1e-9:
         return Trajectoire(sequence.id, [], "Le filet n'a pas de longueur : vérifiez les deux Z.")
-    rayon = _rayon_travail(profil, montage, (z_debut + z_fin) / 2.0)
     hauteur = sequence.profondeur_filet()
-    if rayon <= hauteur + 1e-9:
-        return Trajectoire(sequence.id, [], "Le filet est plus profond que la matière : vérifiez le pas.")
+    if sequence.interieur:
+        # filet intérieur : la crête est au fond du trou, l'outil ouvre vers l'extérieur
+        rayon = _dedans(etat, montage, z_debut, z_fin)
+        if rayon <= 1e-9:
+            return Trajectoire(sequence.id, [], "Pas de trou à fileter : percez d'abord.")
+        sens = 1.0
+    else:
+        rayon = _rayon_travail(profil, montage, (z_debut + z_fin) / 2.0)
+        if rayon <= hauteur + 1e-9:
+            return Trajectoire(sequence.id, [],
+                               "Le filet est plus profond que la matière : vérifiez le pas.")
+        sens = -1.0
     nb = max(1, int(hauteur / max(sequence.profondeur_passe, 0.02) + 0.999))
-    degage = rayon + sequence.degagement
+    degage = rayon - sens * sequence.degagement
     mouvements: List[Mouvement] = []
     for i in range(1, nb + 1):
-        # section de copeau constante : la i-ième passe descend à la racine de i/n de la hauteur du filet
-        fond = rayon - hauteur * math.sqrt(i / nb)
+        # section de copeau constante : la i-ième passe va à la racine de i/n de la hauteur du filet
+        fond = rayon + sens * hauteur * math.sqrt(i / nb)
         mouvements.append(Mouvement(z_debut + sequence.garde, degage))
         mouvements.append(Mouvement(z_debut + sequence.garde, fond))
         mouvements.append(Mouvement(z_fin, fond, travail=True))

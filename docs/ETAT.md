@@ -126,6 +126,12 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
 - **Pièce percée** : un contour fermé qui ne touche jamais l'axe est un anneau ; seul son bord extérieur
   sert de profil. Avant la correction, la finition extérieure descendait dans l'alésage et rabotait toute
   la pièce. Le fichier `exemples/bug - opération 6 et 7.ctg` garde le cas.
+- **Le dessin est un support** (direction du 27 novembre 2026) : les opérations s'y aimantent sans s'y
+  figer, se voient en surimpression et se reprennent à la souris. Chaque zone usinée a sa **poignée
+  centrale** : la tirer déplace l'opération, et le rayon où on la lâche décide du côté — dans le trou
+  elle devient intérieure, sur le profil extérieure. Filetage intérieur possible, et un filetage enlève
+  désormais de la matière. Contour de matière au pas de 0,05 mm, sommets alignés retirés : plus de
+  diagonales là où il n'y a pas lieu.
 - **Un outil enlève ce qui reste après l'opération d'avant** : chaque trajectoire reçoit l'état de la
   matière à son rang. Les approches rapides ne traversent plus le métal, les passes se limitent à ce
   qu'il y a à couper, et une ébauche laisse une surépaisseur avant et après un épaulement. Intérieur et

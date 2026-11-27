@@ -1499,18 +1499,19 @@ def test_gamme_type_et_cote_de_percage(fenetre):
     assert creux == pytest.approx(6.5)                       # le trou est bien au Ø du foret choisi
     cote = next(it for it in vue._items
                 if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence")
-    # la profondeur se compte depuis la surface percée — la face dressée, pas le bout du brut
-    assert win.surface_travaillee(percage) == pytest.approx(0.0, abs=0.3)
-    assert win.montage.z_brut_avant() > 1.0
-    assert cote.texte == "P 30" and cote.data(ROLE_ID) == "profondeur"
+    # la profondeur se compte depuis la surface percée — la face laissée par le dressage, pas le brut
+    surface = win.surface_travaillee(percage)
+    assert surface == pytest.approx(0.0, abs=0.3) and win.montage.z_brut_avant() > 1.0
+    assert cote.texte == f"P {surface - percage.z_fin:g}" and cote.data(ROLE_ID) == "profondeur"
     assert vue.matiere_enlevee and min(x for poly in vue.matiere_enlevee for _, x in poly) == 0.0
 
     # la cote se règle comme celles du brut : à la molette, et au double-clic
-    assert win.ajuster_valeur_sequence("profondeur", 1, False) == "P 31"
-    assert percage.z_fin == pytest.approx(-31.0)
+    fond_avant = percage.z_fin
+    assert win.ajuster_valeur_sequence("profondeur", 1, False)
+    assert percage.z_fin == pytest.approx(fond_avant - 1.0)
     win._demander_valeur = lambda libelle, unite, defaut, mini: (50.0, True)
     win.editer_valeur_sequence("profondeur")
-    assert percage.z_fin == pytest.approx(-50.0) and win._modifie
+    assert percage.z_fin == pytest.approx(surface - 50.0) and win._modifie
     # la cote redessinée porte la nouvelle valeur
     assert next(it.texte for it in vue._items
                 if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence") == "P 50"
@@ -1565,6 +1566,51 @@ def test_alesage_attrape_a_la_souris(fenetre):
     assert vue.alesage_montre() is None
     assert not any(it.data(ROLE_GENRE) == "poignee_alesage" for it in vue._items)
     assert not win.deplacer_alesage("paroi", 0.0, 5.0)
+
+    while zone.supprimer():
+        pass
+
+
+def test_poignee_centrale_deplace_l_operation(fenetre):
+    from ctgraph.montage import Montage
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE, ROLE_ID
+    from ctgraph.usinage import TypeSequence
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())
+    rectangle(win, 40.0, 20.0)
+    zone = win.zone_usinage
+    percage = zone.ajouter(TypeSequence.PERCAGE)
+    filetage = zone.ajouter(TypeSequence.FILETAGE)
+    filetage.z_debut, filetage.z_fin = -2.0, -15.0      # dans la longueur du trou percé
+    win._apres_reglage_sequence()
+
+    # la zone usinée est un objet graphique, avec une poignée centrale
+    z_droite, z_gauche, r_bas, r_haut = win.zone_usinee(filetage)
+    assert (z_droite, z_gauche) == (pytest.approx(-2.0), pytest.approx(-15.0))
+    # sans ébauche avant lui, le filet se taille sur la matière telle qu'elle est : le brut
+    assert r_haut > r_bas and r_haut == pytest.approx(win.montage.rayon_brut(), abs=0.5)
+    assert any(it.data(ROLE_GENRE) == "poignee_usinage" and it.data(ROLE_ID) == "centre"
+               for it in vue._items)
+
+    # la tirer déplace l'opération le long de l'axe, sans changer sa longueur
+    assert win.deplacer_zone(filetage, -14.0, r_haut, ancre=(-12.0, r_haut))
+    assert (filetage.z_debut, filetage.z_fin) == (pytest.approx(-4.0), pytest.approx(-17.0))
+    assert not filetage.interieur
+
+    # lâchée dans le trou, l'opération devient intérieure ; le filet se taille alors dans l'alésage
+    assert win.deplacer_zone(filetage, -14.0, 1.0, ancre=(-14.0, 1.0))
+    assert filetage.interieur and "int." in filetage.libelle()
+    traj = win.trajectoire_de(filetage)
+    assert traj and not traj.message
+    assert max(q.x for q in traj.mouvements if q.travail) > win.trou_trouve(filetage)
+    # et ressortie sur le profil, elle redevient extérieure
+    assert win.deplacer_zone(filetage, -14.0, 19.0, ancre=(-14.0, 19.0))
+    assert not filetage.interieur
+
+    # un perçage a sa zone aussi, de la face au fond du trou
+    assert win.zone_usinee(percage)[1] == pytest.approx(percage.z_fin)
+    # le dressage, l'ébauche et la finition balaient tout le profil : pas de zone à déplacer
+    assert win.zone_usinee(zone.ajouter(TypeSequence.EBAUCHE)) is None
 
     while zone.supprimer():
         pass

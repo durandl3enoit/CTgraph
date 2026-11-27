@@ -145,9 +145,10 @@ def test_finition_suit_le_profil():
     # la finition s'arrête à la face des mors, jamais dedans
     s.z_fin = -500.0
     assert min(q.z for q in trajectoire(s, p, m).mouvements) >= m.z_face_mors() - 1e-6
-    # longueur de coupe : l'approche, le profil sans la face arrière (25 + 30 + 10 + 50), le dégagement
+    # longueur de coupe : l'entrée radiale, le profil sans la face arrière (25 + 30 + 10 + 50), le
+    # dégagement. Sans état de matière on suppose le brut entier : l'entrée part donc de son diamètre.
     s.z_fin = None
-    assert trajectoire(s, p, m).longueur_coupe() == pytest.approx(4.0 + 115 + s.degagement, abs=0.01)
+    assert trajectoire(s, p, m).longueur_coupe() == pytest.approx(29.0 + 115 + s.degagement, abs=0.01)
     # une étendue réduite ne finit que la tranche demandée
     s.z_debut, s.z_fin = -10.0, -40.0
     court = trajectoire(s, p, m)
@@ -371,9 +372,11 @@ def test_matiere_etape_par_etape():
     assert apres_percage.alesage_a(-45.0 + pointe / 2.0) == pytest.approx(3.0, abs=0.4)
     assert apres_percage.alesage_a(-45.0 + pointe + 1.0) == pytest.approx(6.0)
 
-    # le filetage ne change pas la silhouette : le filet est une rainure, l'enveloppe reste
-    assert suite[4].exterieur == apres_percage.exterieur
-    # mais il pose un filet, qui se dessine, et que l'étape signale comme neuf
+    # le filetage enlève de la matière : il descend jusqu'au fond du filet, sur sa longueur
+    hauteur = filetage.profondeur_filet()
+    assert suite[4].rayon_a(-50.0) == pytest.approx(15.0 - hauteur)
+    assert suite[4].rayon_a(-20.0) == apres_percage.rayon_a(-20.0)      # hors du filet, rien ne bouge
+    # et il pose un filet, qui se dessine, et que l'étape signale comme neuf
     assert len(suite[4].filets) == 1 and not apres_percage.filets
     filet = suite[4].filets[0]
     assert filet.pas == 2.0 and filet.rayon == pytest.approx(15.0)
@@ -385,7 +388,9 @@ def test_matiere_etape_par_etape():
     rayons = [x for poly in copeaux for _, x in poly]
     assert copeaux and max(rayons) == pytest.approx(m.rayon_brut())
     assert min(rayons) == pytest.approx(15.5)
-    assert not suite[4].enlevee_depuis(suite[3])                  # le filetage n'enlève rien de visible
+    # le filetage aussi laisse des copeaux : le creux du filet, sur toute sa longueur
+    filet_enleve = suite[4].enlevee_depuis(suite[3])
+    assert filet_enleve and min(x for poly in filet_enleve for _, x in poly) == pytest.approx(15.0 - hauteur)
     # un contour suit le milieu des tranches : un cône y devient une pente, pas un escalier
     assert all(len(poly) >= 4 for poly in copeaux)
     trou = suite[3].enlevee_depuis(suite[2])

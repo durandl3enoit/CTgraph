@@ -25,18 +25,41 @@ from typing import Callable, List, Optional, Tuple
 from .sequences import Gamme, Sequence, TypeSequence
 from .trajectoires import Trajectoire
 
-PAS_TRANCHE = 0.25          # mm : finesse du modèle de matière
+# mm : finesse du modèle de matière. C'est la précision du contour dessiné : une face verticale tombe
+# quelque part dans sa tranche, et se voit donc penchée de cette largeur-là. 0,05 mm la rend invisible.
+PAS_TRANCHE = 0.05
 TOLERANCE = 1e-6
 
 # un contour dessinable : le polygone fermé d'une zone de matière, en points (z, rayon)
 Contour = List[Tuple[float, float]]
 
 
+def _sans_points_inutiles(chaine: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """Enlève les sommets alignés avec leurs voisins : un cylindre redevient deux points, pas mille.
+
+    C'est ce qui garde les polygones petits malgré des tranches fines, et ce qui rend les droites
+    franchement droites au lieu d'une suite de micro-segments.
+    """
+    garde: List[Tuple[float, float]] = []
+    for p in chaine:
+        while len(garde) >= 2:
+            (z1, x1), (z2, x2) = garde[-2], garde[-1]
+            # aire du triangle : nulle si le point du milieu n'apporte rien
+            if abs((z2 - z1) * (p[1] - x1) - (x2 - x1) * (p[0] - z1)) > 1e-9:
+                break
+            garde.pop()
+        garde.append(p)
+    return garde
+
+
 def _contours(z0: float, pas: float, paires: List[Tuple[float, float]]) -> List[Contour]:
     """Les zones non vides, en polygones qui passent par le milieu des tranches.
 
     Relier les milieux plutôt que les bords fait d'un cône une pente franche et non un escalier : c'est
-    ce qui rend lisible la pointe d'un foret ou le cône d'un foret à centrer, larges de quelques tranches.
+    ce qui rend lisible la pointe d'un foret ou le cône d'un foret à centrer. Une face verticale, elle,
+    se retrouve penchée de la largeur d'une tranche : c'est la précision du modèle, et c'est pourquoi
+    `PAS_TRANCHE` est fin. Les sommets alignés sont ensuite retirés, pour que les polygones restent
+    courts et les droites droites.
     """
     contours: List[Contour] = []
     n = len(paires)
@@ -52,10 +75,11 @@ def _contours(z0: float, pas: float, paires: List[Tuple[float, float]]) -> List[
         bas = [paires[k][0] for k in range(i, j)]
         haut = [paires[k][1] for k in range(i, j)]
         gauche, droite = z0 + i * pas, z0 + j * pas
-        poly: Contour = [(gauche, bas[0])] + list(zip(milieux, bas)) + [(droite, bas[-1]),
-                                                                        (droite, haut[-1])]
-        poly += list(zip(reversed(milieux), reversed(haut))) + [(gauche, haut[0])]
-        contours.append(poly)
+        dessous = _sans_points_inutiles([(gauche, bas[0])] + list(zip(milieux, bas))
+                                        + [(droite, bas[-1])])
+        dessus = _sans_points_inutiles([(droite, haut[-1])] + list(zip(reversed(milieux), reversed(haut)))
+                                       + [(gauche, haut[0])])
+        contours.append(dessous + dessus)
         i = j
     return contours
 
@@ -72,6 +96,7 @@ class Filet:
     rayon: float                     # rayon de crête, le diamètre nominal du filet
     hauteur: float                   # profondeur du filet, au rayon
     pas: float
+    interieur: bool = False          # filet taillé dans un alésage : les dents pointent vers l'axe
 
 
 @dataclass
@@ -258,7 +283,12 @@ def _alesage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
 
 
 def _filetage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
-    """Filetage : l'enveloppe ne bouge pas, mais le filet est posé et se dessinera.
+    """Filetage : **il enlève de la matière**, et pose un filet qui se dessinera.
+
+    Le filet est une rainure hélicoïdale : en toute rigueur l'enveloppe de révolution garde le diamètre
+    des crêtes. Mais le creux est bien enlevé, et le montrer vaut mieux que de laisser croire que rien
+    n'a été fait. On rabote donc jusqu'au fond de filet — un outil qui repasserait là trouverait, à la
+    marge, un peu moins de matière que la réalité.
 
     L'étendue se lit sur les **segments** de coupe, pas sur leurs points : une passe de filetage est un
     seul mouvement, dont le point d'arrivée est le bout du filet et le départ son entrée, garde comprise.
@@ -268,9 +298,17 @@ def _filetage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
         return
     depart, arrivee = segments[0]
     hauteur = sequence.profondeur_filet()
-    fond = min(m.x for _, m in segments)
-    etat.filets.append(Filet(max(depart.z, arrivee.z) - sequence.garde, min(depart.z, arrivee.z),
-                             fond + hauteur, hauteur, sequence.pas))
+    z_haut = max(depart.z, arrivee.z) - sequence.garde
+    z_bas = min(depart.z, arrivee.z)
+    if sequence.interieur:
+        crete = max(m.x for _, m in segments) - hauteur
+        for i in etat.tranches(z_haut, z_bas):
+            etat.aleser(i, crete + hauteur)
+    else:
+        crete = min(m.x for _, m in segments) + hauteur
+        for i in etat.tranches(z_haut, z_bas):
+            etat.raboter(i, crete - hauteur)
+    etat.filets.append(Filet(z_haut, z_bas, crete, hauteur, sequence.pas, sequence.interieur))
 
 
 _ENLEVEMENTS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _chariotage,
