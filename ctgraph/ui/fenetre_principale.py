@@ -953,7 +953,8 @@ class FenetrePrincipale(QMainWindow):
             elif t in (TypeSequence.GORGE, TypeSequence.TRONCONNAGE):
                 s.diametre_fond = max(2.0 * x, 0.0)
             elif t in (TypeSequence.PERCAGE, TypeSequence.CENTRAGE):
-                s.diametre_outil, s.foret = max(2.0 * x, 0.5), ""      # un foret libre à ce Ø
+                # les forets vont par demi-millimètres : la souris s'y cale, seule la saisie est libre
+                s.diametre_outil, s.foret = max(round(2.0 * x * 2.0) / 2.0, 0.5), ""
             elif t == TypeSequence.EBAUCHE and profil:
                 s.surepaisseur = max(x - profil.rayon_mini(z_droite, z_gauche), 0.0)
             elif t == TypeSequence.FILETAGE:

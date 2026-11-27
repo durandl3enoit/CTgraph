@@ -178,9 +178,15 @@ vérification par relecture du G-code généré, réception des programmes depui
   rendu au départ du curseur (`_survoler`). Un élément sélectionné garde sa couleur de sélection.
   Le fichier `.ctg` est désormais une **pièce** (`Piece` : esquisse + montage, format `ctgraph-piece`) ; l'ancien
   format esquisse seule se lit encore. Le dernier montage réglé est le défaut des nouvelles pièces (préférences).
-  Courses et broche de la machine : valeurs provisoires, à relever. Trois **cotes du brut** sont toujours affichées
+  Courses et broche de la machine : valeurs provisoires, à relever. Cinq **cotes du brut** sont toujours affichées
   dans l'esquisse (étiquettes de genre « brut », non sélectionnables, éditables au double-clic et à la molette) :
-  Ø brut, L brut, marge en bout ; changer la longueur ajuste le dépassement (prise et marge fixes).
+  Ø brut, L brut, **dépassement brut** (face des mors → face finie, juste sous L brut, demandé le 27 novembre
+  2026), marge en bout, prise ; changer la longueur ajuste le dépassement (prise et marge fixes), changer le
+  dépassement fait suivre la longueur.
+- **Pas de réglage** (27 novembre 2026) : les diamètres de forets vont par entiers et demi-millimètres — la
+  souris sur la paroi et la molette dans le champ (`BoiteDemi`, dont `stepBy` rejoint d'abord le demi
+  voisin) s'y calent ; seule la saisie au clavier reste libre. La profondeur de passe va par 0,1 mm à la
+  molette.
 
 - **Stock d'outils** (`ctgraph/outils.py`, `ui/zone_outils.py`, demandé le 24 novembre 2026) : catalogue des
   porte-plaquettes montables sur les porte-outils **VDI 30** (DIN 69880) du CT200, borne `QUEUE_MAXI` = 20 mm

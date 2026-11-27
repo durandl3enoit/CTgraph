@@ -1004,9 +1004,17 @@ def test_cotes_du_brut_affichees_et_editables(fenetre):
     win.definir_montage(Montage())                  # pas le dernier montage mémorisé par un autre test
     win.act_voir_montage.setChecked(True)
     etiquettes = {it.data(ROLE_ID): it for it in vue._items if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "brut"}
-    assert set(etiquettes) == {"diametre", "longueur", "marge", "prise"}
+    assert set(etiquettes) == {"diametre", "longueur", "depassement", "marge", "prise"}
     assert etiquettes["diametre"].texte == "Ø brut 60" and etiquettes["marge"].texte == "marge 2"
     assert etiquettes["prise"].texte == "prise 20"
+    # le dépassement, de la face des mors à la face finie, se règle comme les autres : la longueur
+    # du brut suit, prise et marge ne bougent pas
+    assert etiquettes["depassement"].texte == f"dépassement brut {win.montage.prise.depassement:g}"
+    avant = (win.montage.longueur_brut(), win.montage.profondeur_prise(), win.montage.prise.surepaisseur_face)
+    assert win.ajuster_brut("depassement", 1, False) == f"dépassement brut {avant[0] - avant[1] - avant[2] + 1:g}"
+    assert win.montage.longueur_brut() == pytest.approx(avant[0] + 1.0)
+    assert (win.montage.profondeur_prise(), win.montage.prise.surepaisseur_face) == avant[1:]
+    win.ajuster_brut("depassement", -1, False)
     # régler la prise : le brut n'appuie plus sur rien, il est tenu à cette longueur de la face des mors
     assert win.ajuster_brut("prise", 1, False) == "prise 21"
     assert win.montage.prise.appui == -1 and win.montage.profondeur_prise() == 21.0
@@ -1045,11 +1053,11 @@ def test_dialogue_montage_et_dessin(fenetre):
     n_sans = len(vue._items)                   # montage masqué par la fixture : esquisse vide, rien à dessiner
     assert not win.vue.montage_visible and n_sans == 0
     win.act_voir_montage.setChecked(True)
-    # brut, mors, corps du mandrin, quatre cotes du brut (trait + étiquette), trois inscriptions gravées,
+    # brut, mors, corps du mandrin, cinq cotes du brut (trait + étiquette), trois inscriptions gravées,
     # cinq plans de référence (trait + nom)
     n_refs = len(win.montage.references())
     assert n_refs == 5
-    assert len(vue._items) == 3 + 8 + 3 + 2 * n_refs
+    assert len(vue._items) == 3 + 10 + 3 + 2 * n_refs
     dlg = DialogueMontage(win.montage, win)
     dlg.brut_diametre.setValue(70.0)
     dlg.depassement.setValue(120.0)
@@ -1065,7 +1073,7 @@ def test_dialogue_montage_et_dessin(fenetre):
     win.definir_montage(m)
     assert win.montage.z_face_mors() == -120.0 and win._modifie
     # le brut, les mors, le corps du mandrin et la contre-pointe sont dessinés, plus les cotes, inscriptions et plans
-    assert len(vue._items) == 4 + 8 + 3 + 2 * n_refs
+    assert len(vue._items) == 4 + 10 + 3 + 2 * n_refs
     win.act_voir_montage.setChecked(False)
     assert not vue.montage_visible and len(vue._items) == 0
     # les étages se saisissent dans le dialogue : deux étages de 25 et 45, un seul épaulement

@@ -326,8 +326,9 @@ class Montage:
 
     # -- valeurs éditables dans l'esquisse : les trois du brut, et les cotes du mors --------------------
 
-    CLES_BRUT = ("diametre", "longueur", "marge", "prise")
+    CLES_BRUT = ("diametre", "longueur", "depassement", "marge", "prise")
     LIBELLES_BRUT = {"diametre": "Diamètre du brut", "longueur": "Longueur du brut",
+                     "depassement": "Dépassement du brut (face des mors → face finie)",
                      "marge": "Marge en bout (face brute → face finie)",
                      "prise": "Prise dans les mors (face des mors → arrière du brut), sans appui"}
 
@@ -362,6 +363,8 @@ class Montage:
             return self.brut.diametre
         if cle == "longueur":
             return self.longueur_brut()
+        if cle == "depassement":
+            return self.prise.depassement
         if cle == "marge":
             return self.prise.surepaisseur_face
         if cle == "prise":
@@ -381,6 +384,10 @@ class Montage:
                 self.brut.diametre = float(valeur)
             elif cle == "longueur":
                 self.prise.depassement = float(valeur) - self.profondeur_prise() - self.prise.surepaisseur_face
+            elif cle == "depassement":
+                # la face finie avance ou recule devant les mors ; prise et marge ne bougent pas, la
+                # longueur du brut suit
+                self.prise.depassement = float(valeur)
             elif cle == "marge":
                 self.prise.surepaisseur_face = float(valeur)
             elif cle == "prise":
@@ -398,7 +405,8 @@ class Montage:
         v = self.valeur(cle)
         texte = f"{v:.2f}".rstrip("0").rstrip(".")
         if cle in self.CLES_BRUT:
-            return {"diametre": "Ø brut ", "longueur": "L brut ", "marge": "marge ", "prise": "prise "}[cle] + texte
+            return {"diametre": "Ø brut ", "longueur": "L brut ", "depassement": "dépassement brut ",
+                    "marge": "marge ", "prise": "prise "}[cle] + texte
         if cle == "mors.epaisseur":
             return "E " + texte
         i, champ = self._etage_de_cle(cle)

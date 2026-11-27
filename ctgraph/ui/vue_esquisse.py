@@ -880,6 +880,13 @@ class VueEsquisse(QGraphicsView):
                                  [((z1, rb), (z1, xl + self.px_en_mm(4))), ((z2, rb), (z2, xl + self.px_en_mm(4)))],
                                  ((z1 + z2) / 2.0, xl), ambre, c,
                                  fleches=((z1, xl, (-1.0, 0.0)), (z2, xl, (1.0, 0.0))))
+        # un peu en dessous : le dépassement, de la face des mors à la face finie
+        zm0, xd = m.z_face_mors(), xl - d * 0.55
+        if 0.0 - zm0 > 1e-9:
+            self._dessiner_cote_brut("depassement", [(zm0, xd), (0.0, xd)],
+                                     [((zm0, rb), (zm0, xd + self.px_en_mm(4))), ((0.0, rb), (0.0, xd + self.px_en_mm(4)))],
+                                     (zm0 / 2.0, xd), ambre, c,
+                                     fleches=((zm0, xd, (-1.0, 0.0)), (0.0, xd, (1.0, 0.0))))
         xm = -d * 0.7
         self._dessiner_cote_brut("marge", [(0.0, xm), (z2, xm)],
                                  [((0.0, 0.0), (0.0, xm - self.px_en_mm(4))), ((z2, 0.0), (z2, xm - self.px_en_mm(4)))],

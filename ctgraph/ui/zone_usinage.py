@@ -15,6 +15,7 @@ d'enlever. Les lignes qui suivent sont grisées : elles ne sont pas encore pass�
 """
 from __future__ import annotations
 
+import math
 from typing import Callable, Dict, Optional
 
 from PySide6.QtCore import QPoint, QPointF, Qt, QTimer, Signal
@@ -247,6 +248,23 @@ def _numero_poste(charge: str) -> int:
     return _numero_tete(charge)
 
 
+class BoiteDemi(QDoubleSpinBox):
+    """Une boîte de nombre dont les flèches et la molette vont de demi en demi-millimètre.
+
+    Les forets vont par entiers et demis : d'une valeur libre tapée à la main (un 6,8 de taraudage), un
+    cran de molette ramène d'abord sur le demi voisin, puis avance par demis. Seule la saisie reste libre.
+    """
+
+    def stepBy(self, pas: int) -> None:
+        courant = self.value()
+        cale = round(courant * 2.0) / 2.0
+        if abs(cale - courant) > 1e-9:
+            # on était entre deux crans : on rejoint celui qui est dans le sens du geste
+            cale = (math.floor(courant * 2.0) if pas < 0 else math.ceil(courant * 2.0)) / 2.0
+            pas = pas + 1 if pas < 0 else pas - 1
+        self.setValue(cale + 0.5 * pas)
+
+
 class ZoneUsinage(QWidget):
     """La gamme : liste ordonnée, boutons d'ordre, et le réglage de la séquence choisie.
 
@@ -351,7 +369,11 @@ class ZoneUsinage(QWidget):
         self.largeur.setSpecialValueText("largeur de l'outil")
         self.diametre_fond = self._nombre(" mm", 0.0, 500.0, 2)
         self.diametre_fond.setSpecialValueText("jusqu'à l'axe")
-        self.diametre_outil = self._nombre(" mm", 0.5, 100.0, 2)
+        self.diametre_outil = BoiteDemi()
+        self.diametre_outil.setRange(0.5, 100.0)
+        self.diametre_outil.setDecimals(2)
+        self.diametre_outil.setSuffix(" mm")
+        self.diametre_outil.setSingleStep(0.5)
         self.foret = QComboBox()
         self.foret.setToolTip("Le foret monté : sa pointe donne la forme du trou, pas seulement son Ø.")
         self.foret.currentIndexChanged.connect(self._foret_change)
@@ -359,6 +381,7 @@ class ZoneUsinage(QWidget):
         self.hauteur_filet = self._nombre(" mm", 0.0, 20.0, 3)
         self.hauteur_filet.setSpecialValueText("profil ISO métrique")
         self.profondeur = self._nombre(" mm", 0.05, 20.0, 2)
+        self.profondeur.setSingleStep(0.1)              # un dixième par cran de molette
         self.surepaisseur = self._nombre(" mm", 0.0, 10.0, 2)
         self.surepaisseur_face = self._nombre(" mm", 0.0, 10.0, 2)
         self.garde = self._nombre(" mm", 0.0, 50.0, 1)

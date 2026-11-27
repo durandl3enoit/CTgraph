@@ -121,8 +121,9 @@ Le repère est celui de la pièce :
 Z = 0 sur la face avant finie, Z négatif vers le mandrin. Le montage est enregistré avec la pièce et le dernier
 réglé sert de défaut aux nouvelles pièces. Il se dessine en retrait dans l'esquisse, brut en pointillés et mors
 hachurés, et dans la vue 3D, brut translucide ; la touche `M` le masque. Trois cotes du brut restent toujours
-affichées en ambre : « Ø brut », « L brut », « marge » (en bout, entre la face brute et la face finie) et
-« prise » (face des mors → arrière du brut).
+affichées en ambre : « Ø brut », « L brut », « dépassement brut » (face des mors → face finie, juste sous la
+longueur), « marge » (en bout, entre la face brute et la face finie) et « prise » (face des mors → arrière
+du brut).
 Double-clic ou clic droit + molette pour les changer ; une longueur de brut se répartit sur le dépassement, la
 prise dans les mors et la marge ne bougent pas.
 
