@@ -1532,9 +1532,11 @@ def test_alesage_attrape_a_la_souris(fenetre):
     alesage = zone.ajouter(TypeSequence.ALESAGE)
     assert alesage.libelle() == "Alésage Ø 20"        # la cote maîtresse est dans le nom
 
-    # la zone à aléser porte ses prises : trois arêtes, deux coins, le point d'entrée, et son corps
+    # la zone à aléser porte ses prises : trois arêtes, deux coins, le point d'entrée, et au milieu
+    # la poignée centrale qui déplace tout
     poignees = {it.data(ROLE_ID) for it in vue._items if it.data(ROLE_GENRE) == "poignee_alesage"}
-    assert poignees == {"face", "fond", "paroi", "coin_face", "coin_fond", "entree", "corps"}
+    assert poignees == {"face", "fond", "paroi", "coin_face", "coin_fond", "entree"}
+    assert any(it.data(ROLE_GENRE) == "poignee_usinage" for it in vue._items)
     # une poignée posée sur une ligne du dessin reste attrapable : elle passe avant la géométrie
     from ctgraph.ui.vue_esquisse import TOLERANCE_PX  # noqa: F401
     assert vue.element_sous(vue.mapFromScene(0.0, 10.0), None) is not None
@@ -1549,9 +1551,11 @@ def test_alesage_attrape_a_la_souris(fenetre):
     # un coin pousse les deux à la fois
     assert win.deplacer_alesage("coin_fond", -40.0, 7.0)
     assert alesage.z_fin == pytest.approx(-40.0) and alesage.diametre_fond == pytest.approx(14.0)
-    # jamais plus petit que le trou de départ, ni retourné
-    assert win.deplacer_alesage("paroi", 0.0, 1.0)
-    assert alesage.diametre_fond > alesage.diametre_outil
+    # un petit alésage est permis : seul le trou par lequel la barre entre borne le diamètre
+    assert win.deplacer_alesage("paroi", 0.0, 3.0)
+    assert alesage.diametre_fond == pytest.approx(6.0)
+    assert win.deplacer_alesage("paroi", 0.0, 0.0)
+    assert alesage.diametre_fond == pytest.approx(2.0 * win.trou_trouve(alesage) + 0.02)
     face_avant = alesage.z_debut if alesage.z_debut is not None else win.surface_travaillee(alesage)
     assert win.deplacer_alesage("fond", face_avant + 50.0, 0.0)
     assert alesage.z_fin < face_avant
@@ -1561,11 +1565,13 @@ def test_alesage_attrape_a_la_souris(fenetre):
     assert win.deplacer_alesage("corps", -12.0, 0.0, ancre=(-10.0, 0.0))
     assert (alesage.z_debut, alesage.z_fin) == (pytest.approx(-7.0), pytest.approx(-37.0))
 
-    # une séquence qui n'est pas un alésage n'offre aucune prise
-    zone.ajouter(TypeSequence.EBAUCHE)
+    # une ébauche a ses prises à elle, mais pas celles propres à l'alésage : ni paroi suivie, ni entrée
+    ebauche = zone.ajouter(TypeSequence.EBAUCHE)
     assert vue.alesage_montre() is None
-    assert not any(it.data(ROLE_GENRE) == "poignee_alesage" for it in vue._items)
-    assert not win.deplacer_alesage("paroi", 0.0, 5.0)
+    assert "entree" not in {it.data(ROLE_ID) for it in vue._items
+                            if it.data(ROLE_GENRE) == "poignee_alesage"}
+    assert not win.deplacer_alesage("entree", 0.0, 5.0)
+    assert win.deplacer_alesage("paroi", 0.0, 21.0) and ebauche.surepaisseur > 0.0
 
     while zone.supprimer():
         pass
@@ -1609,8 +1615,20 @@ def test_poignee_centrale_deplace_l_operation(fenetre):
 
     # un perçage a sa zone aussi, de la face au fond du trou
     assert win.zone_usinee(percage)[1] == pytest.approx(percage.z_fin)
-    # le dressage, l'ébauche et la finition balaient tout le profil : pas de zone à déplacer
-    assert win.zone_usinee(zone.ajouter(TypeSequence.EBAUCHE)) is None
+    # toutes les opérations ont leur zone et leurs prises, même celles qui balaient le profil
+    ebauche = zone.ajouter(TypeSequence.EBAUCHE)
+    z_d, z_f, bas, haut = win.zone_usinee(ebauche)
+    assert z_d > z_f and haut == pytest.approx(win.montage.rayon_brut()) and bas < haut
+    assert set(win.poignees_actives(ebauche)) == {"face", "fond", "paroi", "coin_face", "coin_fond", "centre"}
+    # sa paroi règle la surépaisseur laissée au rayon, sa face et son fond l'étendue en Z
+    assert win.deplacer_poignee(ebauche, "paroi", z_d, bas + 1.0)
+    assert ebauche.surepaisseur == pytest.approx(ebauche.surepaisseur) and ebauche.surepaisseur > 1.0
+    assert win.deplacer_poignee(ebauche, "fond", -25.0, 0.0) and ebauche.z_fin == pytest.approx(-25.0)
+    dressage = zone.ajouter(TypeSequence.DRESSAGE)
+    assert win.poignees_actives(dressage) == ("fond",)
+    for s in (zone.ajouter(TypeSequence.FINITION), zone.ajouter(TypeSequence.GORGE),
+              zone.ajouter(TypeSequence.TRONCONNAGE), zone.ajouter(TypeSequence.CENTRAGE)):
+        assert win.zone_usinee(s) is not None and win.poignees_actives(s), s.type
 
     while zone.supprimer():
         pass

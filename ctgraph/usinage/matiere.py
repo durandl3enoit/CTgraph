@@ -166,14 +166,19 @@ class EtatMatiere:
             morceaux.append((debut, fin))
         return [(min(f, haut), max(d, bas)) for d, f in reversed(morceaux) if min(f, haut) > max(d, bas)]
 
-    def intervalles_sous_la_paroi(self, rayon: float, z_a: float, z_b: float) -> List[Tuple[float, float]]:
-        """Les tranches où le trou est **plus petit** que ce rayon : là qu'une passe d'alésage mord."""
+    def intervalles_sous_la_paroi(self, rayon: float, z_a: float, z_b: float,
+                                  au_moins: float = 0.0) -> List[Tuple[float, float]]:
+        """Les tranches où le trou est **plus petit** que ce rayon : là qu'une passe d'alésage mord.
+
+        `au_moins` écarte les tranches où le trou est plus étroit que celui par lequel la barre est
+        entrée : elle ne passe pas là, elle s'y arrête.
+        """
         haut, bas = max(z_a, z_b), min(z_a, z_b)
         morceaux: List[Tuple[float, float]] = []
         debut = fin = None
         for i in self.tranches(bas, haut):
             plein = self.exterieur[i] - self.interieur[i] > TOLERANCE
-            if plein and self.interieur[i] < rayon - TOLERANCE:
+            if plein and au_moins - TOLERANCE <= self.interieur[i] < rayon - TOLERANCE:
                 debut = self.z0 + i * self.pas if debut is None else debut
                 fin = self.z0 + (i + 1) * self.pas
             elif debut is not None:

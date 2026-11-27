@@ -88,12 +88,26 @@ def _dehors(etat, montage, z_a: float, z_b: float) -> float:
 
 
 def _dedans(etat, montage, z_a: float, z_b: float) -> float:
-    """Le plus petit trou déjà ouvert sur une tranche : c'est de là qu'une barre d'alésage part."""
+    """Le plus petit trou déjà ouvert sur une tranche : ce qu'un filet intérieur doit respecter."""
     if etat is not None:
         rayons = [etat.interieur[i] for i in etat.tranches(z_a, z_b)
                   if etat.exterieur[i] - etat.interieur[i] > 1e-9]
         if rayons:
             return min(rayons)
+    return montage.rayon_interieur_brut() if montage is not None else 0.0
+
+
+def _entree_trou(etat, montage, z_face: float, z_fin: float) -> float:
+    """Le trou **par lequel la barre entre** : son rayon à la première tranche de matière sous la face.
+
+    C'est de là qu'un alésage part, et non du plus petit rayon de la tranche : ce dernier serait le
+    sommet du cône d'un foret, et l'on verrait la barre faire des passes au fond d'un cône où elle ne
+    passe pas. La barre bore ce qu'elle peut atteindre, pas davantage.
+    """
+    if etat is not None:
+        for i in reversed(etat.tranches(z_fin, z_face)):
+            if etat.exterieur[i] - etat.interieur[i] > 1e-9:
+                return etat.interieur[i]
     return montage.rayon_interieur_brut() if montage is not None else 0.0
 
 
@@ -419,7 +433,8 @@ def _alesage(sequence: Sequence, profil: ProfilTourne, montage, etat=None, paroi
         return Trajectoire(sequence.id, [], "L'alésage n'a pas de profondeur : vérifiez les deux Z.")
     cible = [(z, max(x - sequence.surepaisseur, 0.0)) for z, x in
              _paroi_visee(sequence, paroi, z_face, z_fin)]
-    rayon_trou = _dedans(etat, montage, z_face, z_fin) if etat is not None else sequence.diametre_outil / 2.0
+    rayon_trou = (_entree_trou(etat, montage, z_face, z_fin) if etat is not None
+                  else sequence.diametre_outil / 2.0)
     rayon_vise = max(x for _, x in cible)
     if rayon_vise <= rayon_trou + 1e-9:
         return Trajectoire(sequence.id, [], "Le trou est déjà à ce diamètre : rien à aléser.")
@@ -430,9 +445,11 @@ def _alesage(sequence: Sequence, profil: ProfilTourne, montage, etat=None, paroi
     mouvements: List[Mouvement] = []
     for i in range(1, nb + 1):
         plafond = min(rayon_trou + i * profondeur, rayon_vise)
-        # la passe ne court que là où le trou est encore plus petit qu'elle : le reste est déjà ouvert
-        tranches = (etat.intervalles_sous_la_paroi(plafond, z_face, z_fin) if etat is not None
-                    else [(z_face, z_fin)])
+        # la passe ne court que là où le trou est encore plus petit qu'elle — le reste est déjà
+        # ouvert — et pas au-delà de ce que la barre peut atteindre : un trou plus étroit que celui
+        # par lequel elle est entrée, le cône d'un foret, l'arrêtent
+        tranches = (etat.intervalles_sous_la_paroi(plafond, z_face, z_fin, au_moins=rayon_trou)
+                    if etat is not None else [(z_face, z_fin)])
         for z_a, z_b in tranches:
             chemin = [(z, min(x, plafond)) for z, x in _rogner(cible, z_a, z_b)]
             if len(chemin) < 2:

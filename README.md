@@ -218,16 +218,19 @@ donne pas, mais elles partent de réglages qui donnent un résultat visible : on
 Le dessin de la pièce est un **support** : il sert de référence géométrique aux opérations, qui s'y
 aimantent sans s'y figer. Chaque opération se voit en surimpression du dessin et se reprend à la souris.
 
-Sa **poignée centrale** — le rond orange au milieu de la zone rouge — déplace l'opération d'un endroit de
-la pièce à un autre. Le rayon où vous la lâchez décide du côté usiné : dans le trou, l'opération devient
-**intérieure** ; sur le profil, **extérieure**. C'est ainsi qu'un filetage ou une gorge passe de
-l'extérieur à l'alésage. (Le dressage, l'ébauche et la finition balaient tout le profil : ils n'ont pas
-de zone à déplacer.)
+**Toutes les opérations ont leurs poignées.** Sa **poignée centrale** — le rond orange au milieu de la
+zone rouge — déplace l'opération d'un endroit de la pièce à un autre ; le rayon où vous la lâchez décide
+du côté usiné : dans le trou, l'opération devient **intérieure** ; sur le profil, **extérieure**. C'est
+ainsi qu'un filetage ou une gorge passe de l'extérieur à l'alésage. Les **prises de bord** — arêtes et
+coins — poussent une limite à la fois, et chacune règle ce qui a un sens pour l'opération : le bord
+gauche d'une gorge est sa largeur, celui d'un dressage la surépaisseur laissée sur la face ; la paroi
+d'une ébauche est la surépaisseur laissée au rayon, celle d'un perçage le diamètre du foret, celle d'un
+alésage le diamètre alésé. L'aimantation de l'esquisse joue : la zone s'aligne sur les points, les faces
+et les plans de référence de la pièce finie.
 
-L'**alésage** a en plus ses prises de bord : attrapez une **arête** — la face d'entrée, le fond, la paroi
-— pour pousser une seule limite, un **coin** pour en pousser deux, ou le **corps** pour faire glisser la
-zone le long de l'axe. L'aimantation de l'esquisse joue : la zone s'aligne sur les points, les faces et
-les plans de référence de la pièce finie.
+Une barre d'alésage bore ce qu'elle peut atteindre : elle part du trou par lequel elle entre, et s'arrête
+là où le trou devient plus étroit — au cône du foret, par exemple. Seul ce trou d'entrée borne le
+diamètre alésé : un alésage Ø 6 est permis.
 
 Chaque opération porte sa cote maîtresse dans son nom — « Perçage Ø 10 », « Alésage Ø 20 »,
 « Gorge Ø 20 × 4 », « Filetage pas 1,5 » — pour que deux lignes voisines se distinguent d'un coup d'œil.

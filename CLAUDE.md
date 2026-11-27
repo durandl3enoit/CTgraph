@@ -397,13 +397,24 @@ vérification par relecture du G-code généré, réception des programmes depui
   paroi, comme la finition extérieure suit le profil. `NOMS_COURTS` donne le nom des boutons et des
   libellés automatiques : « Finition ext. », « Finition int. », parce que « Finition » seul ne
   distinguerait plus rien.
-- **Poignée centrale de la zone usinée** (demandée le 27 novembre 2026) : `FenetrePrincipale.zone_usinee`
-  rend la zone qu'une opération attaque — (z droite, z gauche, rayon bas, rayon haut) — et la vue y pose
-  une prise ronde (genre « poignee_usinage »). La tirer déplace l'opération le long de l'axe, et **le
-  rayon où on la lâche dit de quel côté on travaille** : dans le trou elle devient intérieure
-  (`Sequence.interieur`), sur le profil extérieure. C'est le geste qui fait passer un filetage ou une
-  gorge de l'extérieur à l'alésage. Le dressage, l'ébauche et la finition balaient tout le profil : ils
-  n'ont pas de zone à déplacer, et leur poignée reste à inventer.
+- **Toutes les zones d'usinage ont leurs poignées** (demandé le 27 novembre 2026).
+  `FenetrePrincipale.zone_usinee` rend la zone qu'une opération attaque — (z droite, z gauche, rayon bas,
+  rayon haut) — **pour les dix opérations**, celles qui balaient le profil comprises : l'ébauche est
+  bornée par son étendue et par la surépaisseur qu'elle laisse, le dressage par la face qu'il laisse.
+  `poignees_actives` dit quelles prises la zone porte, `deplacer_poignee` ce que chacune règle — et c'est
+  **par opération** : le fond d'une gorge est sa largeur, celui d'un dressage la surépaisseur de face, la
+  paroi d'une ébauche la surépaisseur au rayon, celle d'un perçage le Ø du foret, celle d'un filetage sa
+  profondeur. Une prise qui ne réglerait rien n'est pas dessinée.
+  La **poignée centrale** (genre « poignee_usinage », `deplacer_zone`) déplace l'opération le long de
+  l'axe, et **le rayon où on la lâche dit de quel côté on travaille** : dans le trou elle devient
+  intérieure (`Sequence.interieur`), sur le profil extérieure. C'est le geste qui fait passer un filetage
+  ou une gorge de l'extérieur à l'alésage.
+- **Une barre d'alésage bore ce qu'elle peut atteindre** (27 novembre 2026) : elle part du trou **par
+  lequel elle entre** (`_entree_trou`, la première tranche de matière sous la face), et non du plus
+  petit rayon de la tranche, qui serait le sommet du cône du foret — on la voyait faire neuf passes au
+  fond d'un cône où elle ne passe pas. Ses passes s'arrêtent là où le trou devient plus étroit que
+  l'entrée (`intervalles_sous_la_paroi(…, au_moins=)`) : au cône du foret, à un trou plus petit. Le
+  diamètre alésé n'a pas d'autre plancher que ce trou d'entrée : un alésage Ø 6 est permis.
 - **Un filetage enlève de la matière** (27 novembre 2026). En toute rigueur l'enveloppe de révolution
   garde le diamètre des crêtes, le filet étant une rainure hélicoïdale ; mais le creux est bien enlevé,
   et le montrer vaut mieux que de laisser croire que rien n'a été fait. On rabote donc jusqu'au fond de

@@ -131,7 +131,9 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
   centrale** : la tirer déplace l'opération, et le rayon où on la lâche décide du côté — dans le trou
   elle devient intérieure, sur le profil extérieure. Filetage intérieur possible, et un filetage enlève
   désormais de la matière. Contour de matière au pas de 0,05 mm, sommets alignés retirés : plus de
-  diagonales là où il n'y a pas lieu.
+  diagonales là où il n'y a pas lieu. **Toutes les opérations ont leurs poignées**, de bord et centrale,
+  chacune réglant ce qui a un sens pour l'opération. Une barre d'alésage part du trou par lequel elle
+  entre et s'arrête au cône du foret ; un alésage Ø 6 est permis.
 - **Un outil enlève ce qui reste après l'opération d'avant** : chaque trajectoire reçoit l'état de la
   matière à son rang. Les approches rapides ne traversent plus le métal, les passes se limitent à ce
   qu'il y a à couper, et une ébauche laisse une surépaisseur avant et après un épaulement. Intérieur et

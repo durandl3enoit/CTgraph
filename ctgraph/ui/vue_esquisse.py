@@ -259,6 +259,7 @@ class VueEsquisse(QGraphicsView):
         self.z_surface = 0.0              # la surface que la séquence attaque : origine de ses profondeurs
         self.rayon_trou = 0.0             # le trou que la séquence trouve : départ de la zone à aléser
         self.zone_usinee = None           # (z droite, z gauche, rayon bas, rayon haut) de l'opération
+        self.poignees_zone: Tuple[str, ...] = ()   # les prises que cette zone porte
         # matière restante à l'étape choisie, et ce que cette étape vient d'enlever : des polygones (z, x)
         self.matiere: List[List[Tuple[float, float]]] = []
         self.matiere_enlevee: List[List[Tuple[float, float]]] = []
@@ -676,7 +677,7 @@ class VueEsquisse(QGraphicsView):
         geste qui fait passer un filetage ou une gorge de l'extérieur à l'alésage.
         """
         zone = self.zone_usinee
-        if not zone:
+        if not zone or "centre" not in self.poignees_zone:
             return
         z_droite, z_gauche, r_bas, r_haut = zone
         if abs(z_droite - z_gauche) <= 1e-9 and abs(r_haut - r_bas) <= 1e-9:
@@ -697,29 +698,25 @@ class VueEsquisse(QGraphicsView):
         self._items.append(it)
 
     def _dessiner_poignees_alesage(self, c: Dict[str, QColor]) -> None:
-        """Les prises de la zone à aléser : ses trois arêtes, ses deux coins, et son corps.
+        """Les prises de bord de la zone usinée, pour **toute** opération : arêtes, coins, point d'entrée.
 
-        On attrape une arête pour pousser une seule limite, un coin pour en pousser deux, le corps pour
-        déplacer la zone entière le long de l'axe. L'aimantation de l'esquisse s'applique : la zone
-        s'aligne sur les points et les faces de la pièce finie.
+        On attrape une arête pour pousser une seule limite, un coin pour en pousser deux. Ce que règle
+        chaque prise dépend de l'opération — le bord gauche d'une gorge est sa largeur, la paroi d'une
+        ébauche la surépaisseur qu'elle laisse — c'est la fenêtre qui le sait. L'aimantation de
+        l'esquisse s'applique : la zone s'aligne sur les points et les faces de la pièce finie.
         """
-        zone = self.alesage_montre()
-        if zone is None:
+        zone = self.zone_usinee
+        if not zone:
             return
+        actives = set(self.poignees_zone)
         z_face, z_fond, r0, r1 = zone
         couleur = QColor(225, 90, 60)
-        corps = QGraphicsRectItem(QRectF(min(z_face, z_fond), r0, abs(z_face - z_fond), r1 - r0))
-        corps.setPen(QPen(Qt.PenStyle.NoPen))
-        corps.setBrush(QBrush(QColor(couleur.red(), couleur.green(), couleur.blue(), 1)))
-        corps.setCursor(Qt.CursorShape.SizeHorCursor)
-        corps.setZValue(1.7)
-        corps.setData(ROLE_GENRE, "poignee_alesage")
-        corps.setData(ROLE_ID, "corps")
-        self._scene.addItem(corps)
-        self._items.append(corps)
-        for cle, (a, b), curseur in (("face", ((z_face, r0), (z_face, r1)), Qt.CursorShape.SizeHorCursor),
-                                     ("fond", ((z_fond, r0), (z_fond, r1)), Qt.CursorShape.SizeHorCursor),
-                                     ("paroi", ((z_fond, r1), (z_face, r1)), Qt.CursorShape.SizeVerCursor)):
+        aretes = (("face", ((z_face, r0), (z_face, r1)), Qt.CursorShape.SizeHorCursor),
+                  ("fond", ((z_fond, r0), (z_fond, r1)), Qt.CursorShape.SizeHorCursor),
+                  ("paroi", ((z_fond, r1), (z_face, r1)), Qt.CursorShape.SizeVerCursor))
+        for cle, (a, b), curseur in aretes:
+            if cle not in actives:
+                continue
             it = QGraphicsLineItem(a[0], a[1], b[0], b[1])
             stylo = QPen(couleur, 3)
             stylo.setCosmetic(True)
@@ -730,8 +727,10 @@ class VueEsquisse(QGraphicsView):
             it.setData(ROLE_ID, cle)
             self._scene.addItem(it)
             self._items.append(it)
-        for cle, (z, x) in (("coin_face", (z_face, r1)), ("coin_fond", (z_fond, r1)),
-                            ("entree", (z_face, r0))):
+        coins = (("coin_face", (z_face, r1)), ("coin_fond", (z_fond, r1)), ("entree", (z_face, r0)))
+        for cle, (z, x) in coins:
+            if cle not in actives:
+                continue
             it = QGraphicsRectItem(-4, -4, 8, 8)
             it.setPos(z, x)
             it.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)

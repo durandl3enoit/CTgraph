@@ -729,9 +729,12 @@ class FenetrePrincipale(QMainWindow):
             return 0.0
         avant, z_face = suite[rang], self.surface_travaillee(sequence)
         z_fin = sequence.z_fin if sequence.z_fin is not None else z_face
-        rayons = [avant.interieur[i] for i in avant.tranches(z_face, z_fin)
-                  if avant.exterieur[i] - avant.interieur[i] > 1e-9]
-        return min(rayons) if rayons else 0.0
+        # le trou par lequel l'outil entre : sa première tranche de matière sous la face, pas le plus
+        # petit rayon rencontré, qui serait le sommet du cône d'un foret
+        for i in reversed(avant.tranches(z_fin, z_face)):
+            if avant.exterieur[i] - avant.interieur[i] > 1e-9:
+                return avant.interieur[i]
+        return 0.0
 
     def _suite_matiere(self):
         """La matière après chaque étape, calculée une fois et gardée jusqu'au prochain changement."""
@@ -755,6 +758,7 @@ class FenetrePrincipale(QMainWindow):
         self.vue.z_surface = self.surface_travaillee(sequence)
         self.vue.rayon_trou = self.trou_trouve(sequence)
         self.vue.zone_usinee = self.zone_usinee(sequence)
+        self.vue.poignees_zone = self.poignees_actives(sequence)
         if redessiner:
             self.vue.reconstruire()
 
@@ -799,14 +803,15 @@ class FenetrePrincipale(QMainWindow):
     def zone_usinee(self, sequence: Optional[Sequence]) -> Optional[Tuple[float, float, float, float]]:
         """La zone qu'une opération attaque : (z droite, z gauche, rayon bas, rayon haut).
 
-        C'est l'objet graphique que l'utilisateur attrape. Il existe pour les opérations qui travaillent
-        un endroit précis de la pièce ; le dressage, l'ébauche et la finition, qui balaient tout le
-        profil, n'en ont pas.
+        C'est l'objet graphique que l'utilisateur attrape. **Toutes les opérations en ont une** : celles
+        qui balaient le profil — dressage, ébauche, finition — voient leur zone bornée par leur étendue
+        en Z et par ce qu'elles laissent (surépaisseur) ou enlèvent (face).
         """
         if sequence is None:
             return None
         s, surface = sequence, self.surface_travaillee(sequence)
         trou = self.trou_trouve(sequence)
+        profil = self.profil_usinage()
         if s.type in ALESAGES:
             if s.z_fin is None or s.diametre_fond <= 0.0:
                 return None
@@ -827,7 +832,46 @@ class FenetrePrincipale(QMainWindow):
                 return z, s.z_fin, trou, trou + hauteur
             crete = self._dessus_matiere(sequence, z, s.z_fin)
             return z, s.z_fin, max(crete - hauteur, 0.0), crete
+        if s.type == TypeSequence.DRESSAGE:
+            z_fini = (profil.z_bout if profil else 0.0) + s.surepaisseur_face
+            if surface - z_fini <= 1e-9:
+                return None
+            return surface, z_fini, trou, self._dessus_matiere(sequence, surface, z_fini)
+        if s.type in (TypeSequence.EBAUCHE, TypeSequence.FINITION):
+            if not profil:
+                return None
+            z_d = s.z_debut if s.z_debut is not None else profil.z_bout
+            z_f = s.z_fin if s.z_fin is not None else profil.z_fond
+            if self.montage is not None:
+                z_f = max(z_f, self.montage.z_face_mors())
+            if z_d - z_f <= 1e-9:
+                return None
+            bas = profil.rayon_mini(z_d, z_f) + (s.surepaisseur if s.type == TypeSequence.EBAUCHE else 0.0)
+            return z_d, z_f, bas, self._dessus_matiere(sequence, z_d, z_f)
         return None
+
+    def poignees_actives(self, sequence: Optional[Sequence]) -> Tuple[str, ...]:
+        """Les prises que la zone d'une opération porte : seulement celles qui changent quelque chose.
+
+        « face » et « fond » sont les bords droit et gauche, « paroi » le bord qui règle la profondeur de
+        coupe, les coins en tiennent deux, « entree » est le point d'entrée d'une barre, « centre »
+        déplace la zone entière.
+        """
+        if sequence is None or self.zone_usinee(sequence) is None:
+            return ()
+        t = sequence.type
+        if t in ALESAGES:
+            return ("face", "fond", "paroi", "coin_face", "coin_fond", "entree", "centre")
+        if t in (TypeSequence.GORGE, TypeSequence.EBAUCHE):
+            return ("face", "fond", "paroi", "coin_face", "coin_fond", "centre")
+        if t in (TypeSequence.PERCAGE, TypeSequence.CENTRAGE, TypeSequence.TRONCONNAGE,
+                 TypeSequence.FILETAGE):
+            return ("face", "fond", "paroi", "centre")
+        if t == TypeSequence.FINITION:
+            return ("face", "fond", "centre")
+        if t == TypeSequence.DRESSAGE:
+            return ("fond",)
+        return ()
 
     def _dessus_matiere(self, sequence: Sequence, z_a: float, z_b: float) -> float:
         """Le rayon de la matière que la séquence trouve sur une tranche."""
@@ -865,30 +909,55 @@ class FenetrePrincipale(QMainWindow):
 
     def deplacer_alesage(self, poignee: str, z: float, x: float,
                          ancre: Optional[Tuple[float, float]] = None, element: int = 0) -> bool:
-        """Pousse une limite de la zone à aléser, attrapée sur le dessin.
+        """Pousse une prise de la zone de la séquence montrée, attrapée sur le dessin."""
+        return self.deplacer_poignee(self.zone_usinage.sequence_courante(), poignee, z, x, ancre, element)
 
-        `poignee` dit ce qu'on tient : « face » le bord d'entrée, « fond » le bord du fond, « paroi » le
-        diamètre, les deux coins les deux à la fois, « corps » la zone entière, qui glisse le long de Z.
+    def deplacer_poignee(self, sequence: Optional[Sequence], poignee: str, z: float, x: float,
+                         ancre: Optional[Tuple[float, float]] = None, element: int = 0) -> bool:
+        """Pousse une prise de la zone d'une opération, quelle qu'elle soit.
+
+        `poignee` dit ce qu'on tient : « face » le bord droit, « fond » le bord gauche, « paroi » le bord
+        qui règle la profondeur de coupe, les coins deux à la fois, « entree » le point d'entrée, « corps »
+        ou « centre » la zone entière. Ce que chaque prise règle dépend de l'opération : le fond d'une
+        gorge est sa largeur, celui d'un dressage la surépaisseur laissée sur la face, la paroi d'une
+        ébauche la surépaisseur laissée au rayon, celle d'un perçage le diamètre du foret.
         Le point (z, x) est déjà aimanté par la vue : la zone s'aligne donc sur la pièce finie.
         """
-        s = self.zone_usinage.sequence_courante()
-        if s is None or s.type not in ALESAGES:
+        s = sequence
+        zone = self.zone_usinee(s)
+        if s is None or zone is None or poignee not in self.poignees_actives(s) + ("corps",):
             return False
-        face = s.z_debut if s.z_debut is not None else self.surface_travaillee(s)
-        fond = s.z_fin if s.z_fin is not None else face
-        mini = max(s.diametre_outil, 0.1) + 0.02          # un alésage ouvre toujours le trou de départ
-        if poignee == "corps" and ancre is not None:
-            decalage = z - ancre[0]
-            s.z_debut, s.z_fin = face + decalage, fond + decalage
-        elif poignee in ("face", "coin_face", "entree"):
-            s.z_debut = max(z, fond + 0.1)
-        elif poignee in ("fond", "coin_fond"):
-            s.z_fin = min(z, face - 0.1)
+        if poignee in ("corps", "centre"):
+            return self.deplacer_zone(s, z, x, ancre)
+        z_droite, z_gauche, r_bas, r_haut = zone
+        profil = self.profil_usinage()
+        t = s.type
+        if poignee in ("face", "coin_face", "entree") and t != TypeSequence.DRESSAGE:
+            s.z_debut = z if t in (TypeSequence.GORGE, TypeSequence.TRONCONNAGE) else max(z, z_gauche + 0.1)
+        if poignee in ("fond", "coin_fond"):
+            if t == TypeSequence.DRESSAGE:
+                s.surepaisseur_face = max(z - (profil.z_bout if profil else 0.0), 0.0)
+            elif t == TypeSequence.GORGE:
+                s.largeur = max(z_droite - z, s.largeur_outil)
+            elif t == TypeSequence.TRONCONNAGE:
+                s.largeur_outil = max(z_droite - z, 0.5)
+            else:
+                s.z_fin = min(z, z_droite - 0.1)
         if poignee in ("paroi", "coin_face", "coin_fond"):
-            s.diametre_fond = max(2.0 * x, mini)
-            # lâchée sur une ligne ou un arc du dessin, la paroi suit cette forme : la zone à aléser
-            # n'est alors plus un rectangle, elle épouse le cône ou le congé de la pièce finie
-            s.paroi = element if element and self.vue.polyligne_element(element) else 0
+            if t in ALESAGES:
+                # jamais plus petit que le trou par lequel la barre entre, mais rien d'autre ne borne
+                s.diametre_fond = max(2.0 * x, 2.0 * self.trou_trouve(s) + 0.02)
+                # lâchée sur une ligne ou un arc du dessin, la paroi suit cette forme : la zone à aléser
+                # n'est alors plus un rectangle, elle épouse le cône ou le congé de la pièce finie
+                s.paroi = element if element and self.vue.polyligne_element(element) else 0
+            elif t in (TypeSequence.GORGE, TypeSequence.TRONCONNAGE):
+                s.diametre_fond = max(2.0 * x, 0.0)
+            elif t in (TypeSequence.PERCAGE, TypeSequence.CENTRAGE):
+                s.diametre_outil, s.foret = max(2.0 * x, 0.5), ""      # un foret libre à ce Ø
+            elif t == TypeSequence.EBAUCHE and profil:
+                s.surepaisseur = max(x - profil.rayon_mini(z_droite, z_gauche), 0.0)
+            elif t == TypeSequence.FILETAGE:
+                s.hauteur_filet = max(abs(x - (r_bas if s.interieur else r_haut)), 0.05)
         self._apres_reglage_sequence()
         return True
 
