@@ -27,7 +27,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 
 from ..forets import forets
 from ..tourelle import nom_poste
-from ..usinage import Gamme, Sequence, TypeSequence
+from ..usinage import ALESAGES, Gamme, Sequence, TypeSequence
+from ..usinage.sequences import TEXTES_DIAMETRE_NUL
 from ..usinage.sequences import FAMILLES_OUTIL, LIBELLES_SEQUENCE, NOMS_COURTS, USAGES_SEQUENCE
 from .transfert import MIME_POSTE, MIME_SEQUENCE, accueillir, charger, lire
 
@@ -699,6 +700,11 @@ class ZoneUsinage(QWidget):
         # la broche est fixe en filetage, en perçage et en centrage ; un filetage avance de son pas
         self.formulaire.setRowVisible(self.vitesse_maxi, not s.vitesse_fixe())
         self.formulaire.setRowVisible(self.avance, s.type != TypeSequence.FILETAGE)
+        # un Ø au fond nul ne veut pas dire la même chose partout : l'axe pour une gorge, le dessin
+        # pour un alésage, qui suit alors la paroi dessinée jusqu'au fond du trou
+        self.diametre_fond.setSpecialValueText(TEXTES_DIAMETRE_NUL.get(s.type, "jusqu'à l'axe"))
+        self.z_fin.setSpecialValueText("fond de l'alésage dessiné" if s.type in ALESAGES
+                                       else "jusqu'au fond usinable")
 
     def _dire_l_etat(self, s: Sequence) -> None:
         traj = self._trajectoire(s)

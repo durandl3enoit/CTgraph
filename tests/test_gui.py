@@ -1538,6 +1538,12 @@ def test_alesage_attrape_a_la_souris(fenetre):
     rectangle(win, 40.0, 20.0)
     zone = win.zone_usinage
     alesage = zone.ajouter(TypeSequence.ALESAGE)
+    # sans diamètre, l'alésage se fait au plan ; la pièce dessinée est pleine : rien à montrer, et on le dit
+    assert alesage.libelle() == "Alésage au plan"
+    assert win.zone_usinee(alesage) is None and "n'a pas d'alésage" in zone.lbl_etat.text()
+    assert zone.diametre_fond.specialValueText() == "suivre le dessin"
+    alesage.diametre_fond, alesage.z_fin = 20.0, -20.0
+    win._apres_reglage_sequence()
     assert alesage.libelle() == "Alésage Ø 20"        # la cote maîtresse est dans le nom
 
     # la zone à aléser porte ses prises : trois arêtes, deux coins, le point d'entrée, et au milieu
@@ -1580,6 +1586,73 @@ def test_alesage_attrape_a_la_souris(fenetre):
                             if it.data(ROLE_GENRE) == "poignee_alesage"}
     assert not win.deplacer_alesage("entree", 0.0, 5.0)
     assert win.deplacer_alesage("paroi", 0.0, 21.0) and ebauche.surepaisseur > 0.0
+
+    while zone.supprimer():
+        pass
+
+
+def test_alesage_au_plan_suit_le_dessin(fenetre):
+    """Une bague à alésage épaulé : l'alésage au plan suit la paroi dessinée, marche comprise."""
+    from ctgraph.montage import Montage
+    from ctgraph.ui.vue_esquisse import ROLE_GENRE, Etiquette
+    from ctgraph.usinage import TypeSequence
+    win, vue = fenetre, fenetre.vue
+    win.definir_montage(Montage())
+    # extérieur Ø 60 sur 20 puis Ø 80 ; alésage Ø 40 sur 20 puis Ø 28, de part en part sur 60
+    win.choisir_outil("ligne")
+    for z, x in ((0.0, 20.0), (0.0, 30.0), (-20.0, 30.0), (-20.0, 40.0), (-60.0, 40.0), (-60.0, 14.0),
+                 (-20.0, 14.0), (-20.0, 20.0), (0.0, 20.0)):
+        clic(vue, z, x)
+    QTest.keyClick(vue, Qt.Key.Key_Escape)
+    win.choisir_outil("selection")
+    # les clics simulés tombent au pixel près : on lit la paroi telle qu'elle a été dessinée
+    pts = win.profil_interieur_usinage().points
+    assert len(pts) == 4
+    for (z, x), (za, xa) in zip(pts, ((0.0, 20.0), (-20.0, 20.0), (-20.0, 14.0), (-60.0, 14.0))):
+        assert (z, x) == (pytest.approx(za, abs=0.4), pytest.approx(xa, abs=0.4))
+    (z_face, r_grand), (z_marche, _), (_, r_petit), (z_fond, _) = pts
+    assert win.profil_usinage().points[0] == (z_face, r_grand)       # l'extérieur part du coin du trou
+
+    zone = win.zone_usinage
+    percage = zone.ajouter(TypeSequence.PERCAGE)
+    percage.diametre_outil, percage.foret, percage.z_fin = 20.0, "Foret Ø 20", -70.0
+    alesage = zone.ajouter(TypeSequence.ALESAGE)
+    win._apres_reglage_sequence()
+    # la zone va de la face au fond du trou dessiné, du trou percé au plus grand Ø de la paroi
+    surface = win.surface_travaillee(alesage)
+    z_d, z_g, r_bas, r_haut = win.zone_usinee(alesage)
+    assert (z_d, z_g, r_bas, r_haut) == (pytest.approx(surface), pytest.approx(z_fond), pytest.approx(10.0),
+                                          pytest.approx(r_grand))
+    assert vue.alesage_montre() == win.zone_usinee(alesage)
+    # la cote de profondeur se lit sur ce fond, sans Z de fin déclaré
+    cote = next(it for it in vue._items if isinstance(it, Etiquette) and it.data(ROLE_GENRE) == "cote_sequence")
+    assert alesage.z_fin is None and cote.texte == f"P {surface - z_fond:g}"
+    # la trajectoire épouse la marche : des passes au grand diamètre qui s'arrêtent devant l'épaulement,
+    # et le petit diamètre est alésé à son tour, pas au-delà du dessin
+    traj = win.trajectoire_de(alesage)
+    assert traj and not traj.message
+    coupes = [q for q in traj.mouvements if q.travail]
+    assert max(q.x for q in coupes) == pytest.approx(r_grand - alesage.surepaisseur)
+    assert min(q.z for q in coupes) == pytest.approx(z_fond, abs=0.06)     # au pas des tranches de matière
+    assert any(abs(q.x - r_petit + alesage.surepaisseur) < 1e-6 and q.z < z_marche - 1.0 for q in coupes)
+    assert not any(q.x > r_petit and q.z < z_marche + alesage.surepaisseur - 1e-6 for q in coupes)
+
+    # pousser la paroi ailleurs en fait un cylindre que l'on place à la main...
+    assert win.deplacer_alesage("paroi", -10.0, 17.0)
+    assert alesage.diametre_fond == pytest.approx(34.0) and alesage.libelle() == "Alésage Ø 34"
+    # ... la lâcher sur la paroi dessinée de l'alésage ramène au plan
+    e = win.esquisse
+    paroi = next(i for i in e.lignes
+                 if all(abs(e.points[k].x - r_petit) < 1e-6 for k in e.extremites(i))
+                 and {round(e.points[k].z, 3) for k in e.extremites(i)} == {round(z_marche, 3), round(z_fond, 3)})
+    assert win.deplacer_alesage("paroi", -40.0, r_petit, element=paroi)
+    assert alesage.diametre_fond == 0.0 and alesage.paroi == 0 and alesage.libelle() == "Alésage au plan"
+    # la finition intérieure au plan suit la même paroi en un passage
+    finition = zone.ajouter(TypeSequence.FINITION_INTERIEURE)
+    tf = win.trajectoire_de(finition)
+    assert tf and not tf.message and tf.nb_passes() == 1
+    rayons = [q.x for q in tf.mouvements if q.travail][:4]
+    assert rayons == [pytest.approx(r_grand), pytest.approx(r_grand), pytest.approx(r_petit), pytest.approx(r_petit)]
 
     while zone.supprimer():
         pass

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
 from .sequences import Gamme, Sequence, TypeSequence
-from .trajectoires import Trajectoire
+from .trajectoires import Trajectoire, ouvrir_alesage
 
 # mm : finesse du modèle de matière. C'est la précision du contour dessiné : une face verticale tombe
 # quelque part dans sa tranche, et se voit donc penchée de cette largeur-là. 0,05 mm la rend invisible.
@@ -167,18 +167,43 @@ class EtatMatiere:
         return [(min(f, haut), max(d, bas)) for d, f in reversed(morceaux) if min(f, haut) > max(d, bas)]
 
     def intervalles_sous_la_paroi(self, rayon: float, z_a: float, z_b: float,
-                                  au_moins: float = 0.0) -> List[Tuple[float, float]]:
+                                  paroi: Optional[Callable[[float], float]] = None,
+                                  prise_maxi: Optional[float] = None) -> List[Tuple[float, float]]:
         """Les tranches où le trou est **plus petit** que ce rayon : là qu'une passe d'alésage mord.
 
-        `au_moins` écarte les tranches où le trou est plus étroit que celui par lequel la barre est
-        entrée : elle ne passe pas là, elle s'y arrête.
+        `paroi`, s'il est donné, est le rayon visé à chaque abscisse : là où la paroi est déjà
+        atteinte — le petit diamètre d'un alésage épaulé, quand la passe est plafonnée au grand — la
+        passe n'a plus rien à faire. `prise_maxi` borne ce que la passe peut prendre au rayon : là où
+        le trou est bien plus étroit que la passe — le cône d'un foret, ou pas de trou du tout — la
+        barre ne passe pas, elle s'y arrête. Une bande trop profonde mais **étroite, prise entre deux
+        tranches abordables**, se prend tout de même : c'est la surépaisseur laissée sur la face d'un
+        épaulement, que l'outil dresse en passant ; isolée au fond, elle arrête la passe.
         """
         haut, bas = max(z_a, z_b), min(z_a, z_b)
+        indices = self.tranches(bas, haut)
+        abordables, profondes = set(), set()
+        for i in indices:
+            if self.exterieur[i] - self.interieur[i] <= TOLERANCE:
+                continue
+            limite = rayon if paroi is None else min(rayon, paroi(self.z_milieu(i)))
+            prise = limite - self.interieur[i]
+            if prise <= TOLERANCE:
+                continue
+            (abordables if prise_maxi is None or prise <= prise_maxi + TOLERANCE else profondes).add(i)
+        retenues = set(abordables)
+        bande: List[int] = []
+        for i in indices + [None]:
+            if i is not None and i in profondes:
+                bande.append(i)
+                continue
+            if bande and bande[0] - 1 in abordables and i in abordables \
+                    and len(bande) * self.pas <= (prise_maxi or 0.0) + TOLERANCE:
+                retenues.update(bande)
+            bande = []
         morceaux: List[Tuple[float, float]] = []
         debut = fin = None
-        for i in self.tranches(bas, haut):
-            plein = self.exterieur[i] - self.interieur[i] > TOLERANCE
-            if plein and au_moins - TOLERANCE <= self.interieur[i] < rayon - TOLERANCE:
+        for i in indices:
+            if i in retenues:
                 debut = self.z0 + i * self.pas if debut is None else debut
                 fin = self.z0 + (i + 1) * self.pas
             elif debut is not None:
@@ -279,12 +304,11 @@ def _percage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
 
 
 def _alesage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:
-    """Alésage : chaque passe ouvre le trou à son rayon, sur la longueur qu'elle parcourt."""
+    """Alésage : chaque trait de coupe ouvre le trou au rayon qu'il parcourt — interpolé sur une pente,
+    pour qu'un cône alésé soit un cône. Un mouvement radial ne fait que décoller de la paroi."""
     for a, b in zip(traj.mouvements, traj.mouvements[1:]):
-        if not b.travail or abs(b.z - a.z) <= TOLERANCE:
-            continue                      # un mouvement radial ne fait que décoller de la paroi
-        for i in etat.tranches(a.z, b.z):
-            etat.aleser(i, max(a.x, b.x))
+        if b.travail:
+            ouvrir_alesage(etat, [(a.z, a.x), (b.z, b.x)])
 
 
 def _filetage(etat: EtatMatiere, sequence: Sequence, traj: Trajectoire) -> None:

@@ -394,7 +394,7 @@ def _rogner(polyligne: List[Tuple[float, float]], z_haut: float,
 
 
 def _paroi_visee(sequence: Sequence, paroi, z_face: float, z_fin: float) -> List[Tuple[float, float]]:
-    """La paroi à obtenir, en points (z, rayon) du bord d'entrée vers le fond.
+    """La paroi à obtenir quand un diamètre est donné, en points (z, rayon) du bord d'entrée vers le fond.
 
     Sans paroi désignée, c'est un cylindre au diamètre demandé. Avec une ligne ou un arc de l'esquisse
     (`paroi`, une polyligne que l'appelant a résolue), l'alésage **suit cette forme** : un cône, un congé,
@@ -419,39 +419,142 @@ def _paroi_visee(sequence: Sequence, paroi, z_face: float, z_fin: float) -> List
     return suite
 
 
-def _alesage(sequence: Sequence, profil: ProfilTourne, montage, etat=None, paroi=None) -> Trajectoire:
+def suit_le_dessin(sequence: Sequence) -> bool:
+    """Vrai si l'alésage se fait **au plan** : sans diamètre donné, il suit la paroi dessinée de la pièce."""
+    return sequence.diametre_fond <= 0.0
+
+
+def fond_alesage(sequence: Sequence, profil_interieur: Optional[ProfilTourne], montage) -> Optional[float]:
+    """Le Z où l'alésage s'arrête : celui qu'on a donné, sinon le fond de l'alésage dessiné — que
+    l'alésage soit au plan ou à un diamètre donné, le dessin dit jusqu'où va le trou.
+
+    Borné par la face des mors, comme toute séquence. None s'il manque : pas de fond donné, et une
+    pièce dessinée pleine.
+    """
+    z_fin = sequence.z_fin
+    if z_fin is None and profil_interieur:
+        z_fin = profil_interieur.z_fond
+    if z_fin is not None and montage is not None:
+        z_fin = max(z_fin, montage.z_face_mors())
+    return z_fin
+
+
+def paroi_alesage(sequence: Sequence, profil_interieur: Optional[ProfilTourne], paroi,
+                  z_face: float, z_fin: float) -> List[Tuple[float, float]]:
+    """La paroi que l'alésage doit obtenir, en points (z, rayon) de la face vers le fond, sans surépaisseur.
+
+    Au plan, c'est le profil intérieur de la pièce dessinée, **épaulements compris** : un alésage épaulé
+    se suit comme un arbre épaulé. Avec un diamètre donné, c'est un cylindre, ou la ligne ou l'arc de
+    l'esquisse désigné. Dans les deux cas, la paroi est ramenée à **ce qu'une barre atteint en entrant
+    par la face** : un diamètre plus grand derrière un plus petit — un dégagement intérieur — est
+    plafonné au passage qui le précède ; c'est l'affaire d'un outil de gorge intérieure, pas de la barre.
+    """
+    if suit_le_dessin(sequence):
+        brute = profil_interieur.entre(z_face, z_fin) if profil_interieur else []
+    else:
+        brute = _paroi_visee(sequence, paroi, z_face, z_fin)
+    atteignable: List[Tuple[float, float]] = []
+    passage = float("inf")
+    for z, x in brute:
+        passage = min(passage, x)
+        atteignable.append((z, passage))
+    atteignable = _epurer(atteignable)
+    return atteignable if len(atteignable) >= 2 else []
+
+
+def _avec_surepaisseur(brute: List[Tuple[float, float]], surepaisseur: float,
+                       z_face: float) -> List[Tuple[float, float]]:
+    """La paroi visée moins la surépaisseur : au rayon partout, et **en Z devant chaque épaulement**.
+
+    La face d'un épaulement garde son épaisseur à finir, comme en ébauche extérieure : la passe qui
+    longe le grand diamètre s'arrête à distance de la marche, au lieu d'y dresser la face à vif.
+    """
+    pts = [(z, max(x - surepaisseur, 0.0)) for z, x in brute]
+    if surepaisseur <= 1e-9:
+        return pts
+    for i in range(len(pts) - 1):
+        (z1, x1), (z2, x2) = pts[i], pts[i + 1]
+        if abs(z2 - z1) <= 1e-9 and x2 < x1 - 1e-9:          # une marche : le trou se resserre
+            borne = pts[i - 1][0] if i > 0 else z_face
+            z = min(z1 + surepaisseur, borne)
+            pts[i], pts[i + 1] = (z, x1), (z, x2)
+    return pts
+
+
+def _rayon_cible(cible: List[Tuple[float, float]], z: float) -> float:
+    """Le rayon de la paroi visée à une abscisse ; sur une marche, le plus grand des deux."""
+    rayon = 0.0
+    trouve = False
+    for (z1, x1), (z2, x2) in zip(cible, cible[1:]):
+        haut, bas = max(z1, z2), min(z1, z2)
+        if z < bas - 1e-9 or z > haut + 1e-9:
+            continue
+        valeur = max(x1, x2) if abs(z2 - z1) <= 1e-12 else x1 + (z - z1) / (z2 - z1) * (x2 - x1)
+        rayon, trouve = (max(rayon, valeur) if trouve else valeur), True
+    if not trouve and cible:
+        return cible[0][1] if z > cible[0][0] else cible[-1][1]
+    return rayon
+
+
+def _alesage(sequence: Sequence, profil: ProfilTourne, montage, etat=None, paroi=None,
+             profil_interieur: Optional[ProfilTourne] = None, finition: bool = False) -> Trajectoire:
     """Alésage : la barre ouvre le trou **tel qu'il est** jusqu'à la paroi voulue, passe après passe.
 
     Le trou de départ n'est pas déclaré : c'est celui que les opérations d'avant ont laissé. La paroi
-    visée peut être un cylindre ou suivre une ligne ou un arc de l'esquisse.
+    visée est celle du dessin — épaulements compris — ou, si un diamètre est donné, un cylindre ou la
+    forme d'un élément de l'esquisse. Chaque passe est plafonnée à son rayon et ne court que là où le
+    trou est encore plus petit qu'elle : elle épouse donc les marches et ne brasse pas l'air dans ce
+    qu'une passe plus fine a déjà ouvert, comme les passes d'une ébauche extérieure. `finition` : un
+    seul passage à la paroi, sans surépaisseur.
     """
-    if sequence.z_fin is None or sequence.diametre_fond <= 0.0:
-        return Trajectoire(sequence.id, [], "Indiquez le diamètre à aléser et le fond de l'alésage.")
+    au_plan = suit_le_dessin(sequence)
+    if au_plan and not profil_interieur:
+        return Trajectoire(sequence.id, [], "Le dessin n'a pas d'alésage : dessinez le trou, ou "
+                                            "indiquez le diamètre à aléser.")
     z_face = sequence.z_debut if sequence.z_debut is not None else _face_matiere(etat, montage)
-    z_fin = sequence.z_fin
+    z_fin = fond_alesage(sequence, profil_interieur, montage)
+    if z_fin is None:
+        return Trajectoire(sequence.id, [], "Indiquez le fond de l'alésage.")
+    # un alésage borgne au plan : l'ébauche laisse aussi sa surépaisseur sur le fond
+    if au_plan and sequence.z_fin is None and profil and profil_interieur.z_fond > profil.z_fond + 1e-6:
+        z_fin += sequence.surepaisseur
     if z_face - z_fin <= 1e-9:
         return Trajectoire(sequence.id, [], "L'alésage n'a pas de profondeur : vérifiez les deux Z.")
-    cible = [(z, max(x - sequence.surepaisseur, 0.0)) for z, x in
-             _paroi_visee(sequence, paroi, z_face, z_fin)]
+    brute = paroi_alesage(sequence, profil_interieur, paroi, z_face, z_fin)
+    if len(brute) < 2:
+        return Trajectoire(sequence.id, [], "Le dessin n'a pas d'alésage sur cette étendue.")
+    cible = _avec_surepaisseur(brute, sequence.surepaisseur, z_face)
     rayon_trou = (_entree_trou(etat, montage, z_face, z_fin) if etat is not None
                   else sequence.diametre_outil / 2.0)
     rayon_vise = max(x for _, x in cible)
     if rayon_vise <= rayon_trou + 1e-9:
         return Trajectoire(sequence.id, [], "Le trou est déjà à ce diamètre : rien à aléser.")
-    profondeur = max(sequence.profondeur_passe, 0.05)
-    nb = max(1, int((rayon_vise - rayon_trou) / profondeur + 0.999))
+    if finition:
+        # un seul passage, qui prend ce que l'ébauche a laissé : au plus ce qu'il trouve à l'entrée
+        plafonds = [rayon_vise]
+        prise_maxi = max(rayon_vise - rayon_trou, sequence.profondeur_passe)
+    else:
+        profondeur = max(sequence.profondeur_passe, 0.05)
+        nb = max(1, int((rayon_vise - rayon_trou) / profondeur + 0.999))
+        plafonds = [min(rayon_trou + i * profondeur, rayon_vise) for i in range(1, nb + 1)]
+        prise_maxi = profondeur
     z_libre = max(_face_matiere(etat, montage), z_face) + sequence.garde
 
+    def sous_la_cible(z: float) -> float:
+        return _rayon_cible(cible, z)
+
+    # les passes se suivent sur une copie de la matière : chacune sait ce que les précédentes ont ouvert
+    travail = etat.copie() if etat is not None else None
     mouvements: List[Mouvement] = []
-    for i in range(1, nb + 1):
-        plafond = min(rayon_trou + i * profondeur, rayon_vise)
-        # la passe ne court que là où le trou est encore plus petit qu'elle — le reste est déjà
-        # ouvert — et pas au-delà de ce que la barre peut atteindre : un trou plus étroit que celui
-        # par lequel elle est entrée, le cône d'un foret, l'arrêtent
-        tranches = (etat.intervalles_sous_la_paroi(plafond, z_face, z_fin, au_moins=rayon_trou)
-                    if etat is not None else [(z_face, z_fin)])
+    for plafond in plafonds:
+        # la passe ne court que là où le trou est encore plus petit qu'elle **et** que la paroi visée —
+        # le reste est déjà ouvert — et pas là où elle aurait plus que sa profondeur à prendre : un trou
+        # bien plus étroit, le cône d'un foret, l'arrête
+        tranches = (travail.intervalles_sous_la_paroi(plafond, z_face, z_fin, paroi=sous_la_cible,
+                                                      prise_maxi=prise_maxi)
+                    if travail is not None else [(z_face, z_fin)])
         for z_a, z_b in tranches:
-            chemin = [(z, min(x, plafond)) for z, x in _rogner(cible, z_a, z_b)]
+            chemin = _epurer([(z, min(x, plafond)) for z, x in _rogner(cible, z_a, z_b)])
             if len(chemin) < 2:
                 continue
             retrait = max(chemin[-1][1] - sequence.degagement, 0.0)
@@ -459,16 +562,50 @@ def _alesage(sequence: Sequence, profil: ProfilTourne, montage, etat=None, paroi
             mouvements += [Mouvement(z, x, travail=True) for z, x in chemin]
             mouvements.append(Mouvement(chemin[-1][0], retrait, travail=True))  # on décolle de la paroi
             mouvements.append(Mouvement(z_libre, retrait))
+            if travail is not None:
+                ouvrir_alesage(travail, chemin)
     if not mouvements:
         return Trajectoire(sequence.id, [], "Le trou est déjà à ce diamètre : rien à aléser.")
     return Trajectoire(sequence.id, mouvements)
 
 
-def _finition_interieure(sequence: Sequence, profil: ProfilTourne, montage, etat=None,
-                         paroi=None) -> Trajectoire:
+def ouvrir_alesage(etat, chemin: List[Tuple[float, float]]) -> None:
+    """Ouvre la matière le long d'un chemin de coupe (z, rayon) : chaque tranche traversée est alésée au
+    rayon du chemin à son abscisse — interpolé sur une pente, pour qu'un cône alésé soit un cône.
+
+    `etat` est un `EtatMatiere` ; la fonction vit ici, et non dans `matiere`, parce que l'alésage s'en
+    sert pour suivre ses propres passes (`matiere` importe ce module, pas l'inverse).
+    """
+    for (z1, x1), (z2, x2) in zip(chemin, chemin[1:]):
+        if abs(z2 - z1) <= 1e-9:
+            continue                      # un mouvement radial ne fait que décoller de la paroi
+        for i in etat.tranches(z1, z2):
+            t = (etat.z_milieu(i) - z1) / (z2 - z1)
+            etat.aleser(i, x1 + t * (x2 - x1))
+
+
+def _epurer(chemin: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """La polyligne sans ses points répétés ni ses points alignés : plafonner une marche en fait naître,
+    et chacun ferait un bloc de plus dans le programme."""
+    propre: List[Tuple[float, float]] = []
+    for p in chemin:
+        if propre and abs(p[0] - propre[-1][0]) <= 1e-9 and abs(p[1] - propre[-1][1]) <= 1e-9:
+            continue
+        if len(propre) >= 2:
+            (z0, x0), (z1, x1) = propre[-2], propre[-1]
+            if abs((z1 - z0) * (p[1] - x0) - (x1 - x0) * (p[0] - z0)) <= 1e-9 \
+                    and (z1 - z0) * (p[0] - z1) + (x1 - x0) * (p[1] - x1) >= 0.0:
+                propre[-1] = p                # même direction : le point du milieu ne sert à rien
+                continue
+        propre.append(p)
+    return propre
+
+
+def _finition_interieure(sequence: Sequence, profil: ProfilTourne, montage, etat=None, paroi=None,
+                         profil_interieur: Optional[ProfilTourne] = None) -> Trajectoire:
     """Finition d'alésage : un seul passage le long de la paroi, comme la finition extérieure en suit le profil."""
-    une_passe = replace(sequence, profondeur_passe=1e6, surepaisseur=0.0)
-    traj = _alesage(une_passe, profil, montage, etat, paroi)
+    traj = _alesage(replace(sequence, surepaisseur=0.0), profil, montage, etat, paroi, profil_interieur,
+                    finition=True)
     return Trajectoire(sequence.id, traj.mouvements, traj.message)
 
 
@@ -488,17 +625,19 @@ _CALCULS = {TypeSequence.DRESSAGE: _dressage, TypeSequence.EBAUCHE: _ebauche,
             TypeSequence.TRONCONNAGE: _tronconnage}
 
 
-def trajectoire(sequence: Sequence, profil: ProfilTourne, montage=None, etat=None, paroi=None) -> Trajectoire:
+def trajectoire(sequence: Sequence, profil: ProfilTourne, montage=None, etat=None, paroi=None,
+                profil_interieur: Optional[ProfilTourne] = None) -> Trajectoire:
     """La trajectoire d'une séquence, recalculée depuis le profil résolu, le montage et la matière.
 
     `montage` est un `ctgraph.montage.Montage` : il donne le brut et la face des mors. `etat` est
     l'`EtatMatiere` que la séquence trouve en arrivant — ce que les opérations d'avant ont laissé ; sans
-    lui, on raisonne sur le brut. `paroi` est la polyligne (z, rayon) que l'alésage doit suivre, résolue
-    par l'appelant depuis l'élément d'esquisse désigné.
+    lui, on raisonne sur le brut. `paroi` est la polyligne (z, rayon) qu'un alésage à diamètre donné doit
+    suivre, résolue par l'appelant depuis l'élément d'esquisse désigné ; `profil_interieur` est la paroi
+    de l'alésage dessiné (`profil.profil_interieur`), que suit un alésage au plan.
     """
     calcul = _CALCULS.get(TypeSequence(sequence.type))
     if calcul is None:
         return Trajectoire(sequence.id, [], f"Type de séquence inconnu : {sequence.type}")
     if calcul in (_alesage, _finition_interieure):
-        return calcul(sequence, profil, montage, etat, paroi)
+        return calcul(sequence, profil, montage, etat, paroi, profil_interieur)
     return calcul(sequence, profil, montage, etat)

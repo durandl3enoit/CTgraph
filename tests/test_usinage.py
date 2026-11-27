@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from ctgraph.montage import Brut, Montage, PriseDePiece
-from ctgraph.usinage import Gamme, Sequence, TypeSequence, profil_exterieur, trajectoire
+from ctgraph.usinage import Gamme, Sequence, TypeSequence, profil_exterieur, profil_interieur, trajectoire
 from ctgraph.usinage.profil import ProfilTourne
 
 # arbre épaulé : Ø 50 de z = 0 à z = -30, puis Ø 30 jusqu'à z = -80, contour fermé par l'axe
@@ -37,8 +37,10 @@ def test_profil_exterieur_d_une_piece_percee():
               (0.0, 10.0)]
     p = profil_exterieur([anneau])
     assert p and p.points[0][0] == pytest.approx(0.0) and p.points[-1][0] == pytest.approx(-30.0)
-    # la paroi de l'alésage est écartée : plus aucun point au rayon 10
-    assert min(x for _, x in p.points) == pytest.approx(20.0)
+    # le profil part du coin de l'alésage sur la face avant — la finition dresse la face depuis là, comme
+    # elle le fait depuis l'axe sur une pièce pleine — puis la paroi du trou est écartée
+    assert p.points[0] == (0.0, 10.0) and p.points[1] == (0.0, 20.0)
+    assert all(x >= 20.0 - 1e-9 for z, x in p.points if z < -1e-9)
     assert p.rayon_maxi == 25.0
     # le coin bas de l'épaulement est gardé, bien qu'il ne porte pas le plus grand rayon de son abscisse
     assert (-10.0, 20.0) in p.points and (-10.0, 25.0) in p.points
@@ -46,9 +48,103 @@ def test_profil_exterieur_d_une_piece_percee():
     m = Montage(brut=Brut(diametre=56.0), prise=PriseDePiece(depassement=100.0, surepaisseur_face=2.0))
     s = Sequence(id=1, type=TypeSequence.FINITION, garde=2.0, degagement=1.0)
     t = trajectoire(s, p, m)
-    assert t and min(q.x for q in t.mouvements if q.travail) >= 20.0 - 1e-9
+    assert t and min(q.x for q in t.mouvements if q.travail and q.z < -1e-9) >= 20.0 - 1e-9
     # le sens est celui de toujours : du bout de la pièce vers le mandrin
     assert [z for z, _ in p.points] == sorted((z for z, _ in p.points), reverse=True)
+    # et la paroi du trou, elle, est le profil intérieur : sans les faces de bout
+    assert profil_interieur([anneau]).points == [(0.0, 10.0), (-30.0, 10.0)]
+    assert not profil_interieur([ARBRE])
+
+
+def test_profil_interieur_et_alesage_epaule():
+    """Un alésage épaulé se suit comme un arbre épaulé : même profil, vu du dedans."""
+    from ctgraph.usinage.matiere import etats
+    # bague : extérieur Ø 40 sur 10 puis Ø 50 ; alésage Ø 20 sur 10 puis Ø 14, de part en part
+    bague = [(0.0, 10.0), (0.0, 20.0), (-10.0, 20.0), (-10.0, 25.0), (-30.0, 25.0), (-30.0, 7.0),
+             (-10.0, 7.0), (-10.0, 10.0), (0.0, 10.0)]
+    ext, inte = profil_exterieur([bague]), profil_interieur([bague])
+    assert ext.points == [(0.0, 10.0), (0.0, 20.0), (-10.0, 20.0), (-10.0, 25.0), (-30.0, 25.0)]
+    assert inte.points == [(0.0, 10.0), (-10.0, 10.0), (-10.0, 7.0), (-30.0, 7.0)]
+    assert profil_interieur([bague[::-1]]).points == inte.points
+    # une pièce pleine à alésage borgne : la paroi s'arrête avant le fond plat, où une barre ne va pas
+    borgne = [(-40.0, 0.0), (-40.0, 25.0), (0.0, 25.0), (0.0, 10.0), (-10.0, 10.0), (-10.0, 7.0),
+              (-25.0, 7.0), (-25.0, 0.0), (-40.0, 0.0)]
+    assert profil_interieur([borgne]).points == [(0.0, 10.0), (-10.0, 10.0), (-10.0, 7.0), (-25.0, 7.0)]
+    assert profil_exterieur([borgne]).points == [(0.0, 10.0), (0.0, 25.0), (-40.0, 25.0), (-40.0, 0.0)]
+    # le profil reconnaît ses propres éléments : c'est ainsi qu'une poignée lâchée sur la paroi dessinée
+    # ramène l'alésage au plan
+    assert inte.porte([(-10.0, 7.0), (-30.0, 7.0)]) and inte.porte([(-10.0, 10.0), (-10.0, 7.0)])
+    assert not inte.porte([(0.0, 20.0), (-10.0, 20.0)]) and not inte.porte([(0.0, 10.0), (0.0, 20.0)])
+
+    m = Montage(brut=Brut(diametre=56.0), prise=PriseDePiece(depassement=40.0, surepaisseur_face=2.0))
+    g = Gamme()
+    g.ajouter(TypeSequence.DRESSAGE, profondeur_passe=1.0, surepaisseur_face=0.0)
+    g.ajouter(TypeSequence.PERCAGE, diametre_outil=10.0, foret="Foret Ø 10", z_fin=-36.0)
+    ebauche = g.ajouter(TypeSequence.ALESAGE, profondeur_passe=1.0, surepaisseur=0.3, garde=2.0,
+                        degagement=1.0)
+    finition = g.ajouter(TypeSequence.FINITION_INTERIEURE, garde=2.0, degagement=1.0)
+    # sans diamètre donné, l'alésage se fait au plan : il n'a rien d'autre à déclarer
+    assert ebauche.diametre_fond == 0.0 and ebauche.z_fin is None
+    assert ebauche.libelle() == "Alésage au plan" and finition.libelle() == "Finition int. au plan"
+    suite = etats(g, m, lambda s, e: trajectoire(s, ext, m, e, None, inte))
+
+    def passes(t):
+        coupes, passe = [], []
+        for a, b in zip(t.mouvements, t.mouvements[1:]):
+            if b.travail:
+                passe.append((round(b.z, 3), round(b.x, 3)))
+            elif passe:
+                coupes.append(passe)
+                passe = []
+        return coupes
+
+    # l'ébauche : du Ø 10 percé au Ø 20 moins la surépaisseur, en épousant la marche. Les deux premières
+    # passes courent sur toute la longueur ; les suivantes s'arrêtent **devant l'épaulement**, à la
+    # surépaisseur, sans brasser l'air dans le Ø 14 déjà ouvert
+    t = trajectoire(ebauche, ext, m, suite[2], None, inte)
+    assert not t.message and t.nb_passes() == 5
+    p = passes(t)
+    assert p[0] == [(0.0, 6.0), (-30.0, 6.0), (-30.0, 5.0)]
+    assert p[1] == [(0.0, 7.0), (-9.7, 7.0), (-9.7, 6.7), (-30.0, 6.7), (-30.0, 5.7)]
+    assert p[2][:2] == [(0.0, 8.0), (-9.7, 8.0)] and min(z for z, _ in p[2]) == pytest.approx(-9.7)
+    assert p[4][:2] == [(0.0, 9.7), (-9.7, 9.7)]
+    apres = suite[3]
+    assert apres.alesage_a(-5.0) == pytest.approx(9.7) and apres.alesage_a(-20.0) == pytest.approx(6.7)
+    assert apres.alesage_a(-9.9) == pytest.approx(6.7)          # la face de l'épaulement garde sa surépaisseur
+    # la finition : un seul passage le long de la paroi dessinée, qui dresse la face de l'épaulement
+    tf = trajectoire(finition, ext, m, suite[3], None, inte)
+    assert not tf.message and tf.nb_passes() == 1
+    assert passes(tf)[0] == [(0.0, 10.0), (-10.0, 10.0), (-10.0, 7.0), (-30.0, 7.0), (-30.0, 6.0)]
+    assert suite[4].alesage_a(-9.9) == pytest.approx(10.0) and suite[4].alesage_a(-20.0) == pytest.approx(7.0)
+    # la cote de profondeur se lit sur le fond que le dessin donne
+    assert ebauche.valeur_cote("profondeur", 0.0, -30.0) == pytest.approx(30.0)
+    assert ebauche.texte_cote("profondeur", 0.0, -30.0) == "P 30"
+
+    # un alésage borgne au plan : l'ébauche laisse sa surépaisseur sur le fond aussi
+    ext_b, int_b = profil_exterieur([borgne]), profil_interieur([borgne])
+    mb = Montage(brut=Brut(diametre=56.0), prise=PriseDePiece(depassement=50.0, surepaisseur_face=2.0))
+    gb = Gamme()
+    gb.ajouter(TypeSequence.DRESSAGE, profondeur_passe=1.0, surepaisseur_face=0.0)
+    gb.ajouter(TypeSequence.PERCAGE, diametre_outil=10.0, foret="Foret Ø 10", z_fin=-28.0)
+    ab = gb.ajouter(TypeSequence.ALESAGE, profondeur_passe=1.0, surepaisseur=0.3, garde=2.0, degagement=1.0)
+    sb = etats(gb, mb, lambda s, e: trajectoire(s, ext_b, mb, e, None, int_b))
+    tb = trajectoire(ab, ext_b, mb, sb[2], None, int_b)
+    assert tb and min(q.z for q in tb.mouvements if q.travail) == pytest.approx(-24.7)
+    # un dégagement intérieur — plus grand derrière plus petit — n'est pas pour la barre : plafonné
+    degage = [(0.0, 7.0), (-10.0, 7.0), (-10.0, 10.0), (-20.0, 10.0), (-20.0, 7.0), (-30.0, 7.0),
+              (-30.0, 25.0), (0.0, 25.0), (0.0, 7.0)]
+    from ctgraph.usinage.trajectoires import paroi_alesage
+    s = Sequence(id=1, type=TypeSequence.ALESAGE)
+    assert paroi_alesage(s, profil_interieur([degage]), None, 0.0, -30.0) == [(0.0, 7.0), (-30.0, 7.0)]
+    # sur une pièce dessinée pleine, l'alésage au plan dit ce qui lui manque
+    sans = trajectoire(ebauche, profil_exterieur([ARBRE]), m, None, None, profil_interieur([ARBRE]))
+    assert not sans and "n'a pas d'alésage" in sans.message
+    # un diamètre donné reprend l'ancien comportement : un cylindre, que l'on place à la main
+    cyl = Sequence(id=2, type=TypeSequence.ALESAGE, diametre_fond=16.0, z_fin=-20.0, profondeur_passe=1.0,
+                   surepaisseur=0.0, garde=2.0, degagement=1.0)
+    tc = trajectoire(cyl, ext, m, suite[2], None, inte)
+    assert tc and max(q.x for q in tc.mouvements if q.travail) == pytest.approx(8.0)
+    assert min(q.z for q in tc.mouvements if q.travail) == pytest.approx(-20.0)
 
 
 def test_rayon_du_profil_et_butee_des_passes():
@@ -295,8 +391,8 @@ def test_gamme_type_dans_l_ordre():
     # les opérations qui marchent sans autre renseignement sont cochées, les autres attendent leurs cotes
     assert [s.type for s in g.actives()] == [TypeSequence.DRESSAGE, TypeSequence.EBAUCHE,
                                              TypeSequence.FINITION, TypeSequence.TRONCONNAGE]
-    # l'intérieur a ses deux opérations, distinctes de la finition extérieure
-    assert [s.libelle() for s in g][4:7] == ["Alésage Ø 20", "Finition int. Ø 20", "Finition extérieure"]
+    # l'intérieur a ses deux opérations, distinctes de la finition extérieure ; elles se font au plan
+    assert [s.libelle() for s in g][4:7] == ["Alésage au plan", "Finition int. au plan", "Finition extérieure"]
     # chaque opération sait quelle famille d'outil la fait, sauf celles qui vont au foret
     assert FAMILLES_OUTIL[TypeSequence.FINITION] == "ext_pos" and FAMILLES_OUTIL[TypeSequence.PERCAGE] == ""
     assert set(FAMILLES_OUTIL) == set(TypeSequence)

@@ -128,6 +128,17 @@ LIBELLES_CHAMPS: Dict[TypeSequence, Dict[str, str]] = {
     TypeSequence.TRONCONNAGE: {"z_debut": "Z du tronçonnage"},
 }
 
+# les deux opérations à la barre d'alésage : celles qui suivent le profil intérieur de la pièce
+ALESAGES: Tuple[TypeSequence, ...] = (TypeSequence.ALESAGE, TypeSequence.FINITION_INTERIEURE)
+
+# le texte d'un Ø au fond nul, selon ce qu'il veut dire pour l'opération
+TEXTES_DIAMETRE_NUL: Dict[TypeSequence, str] = {
+    TypeSequence.ALESAGE: "suivre le dessin",
+    TypeSequence.FINITION_INTERIEURE: "suivre le dessin",
+    TypeSequence.GORGE: "jusqu'à l'axe",
+    TypeSequence.TRONCONNAGE: "jusqu'à l'axe",
+}
+
 # ce qui change des valeurs par défaut quand on ajoute une séquence de ce type
 DEFAUTS_SEQUENCE: Dict[TypeSequence, Dict[str, float]] = {
     TypeSequence.CENTRAGE: {"vitesse_coupe": 30.0, "avance": 0.08, "profondeur_passe": 10.0,
@@ -135,10 +146,12 @@ DEFAUTS_SEQUENCE: Dict[TypeSequence, Dict[str, float]] = {
                             "surepaisseur": 0.0},
     TypeSequence.PERCAGE: {"vitesse_coupe": 60.0, "avance": 0.12, "profondeur_passe": 5.0,
                            "foret": "Foret Ø 10", "z_fin": -20.0, "surepaisseur": 0.0},
+    # Ø 0 : l'alésage se fait **au plan**, il suit la paroi dessinée de la pièce, épaulements compris,
+    # jusqu'au fond du trou dessiné ; un diamètre donné en fait un cylindre que l'on place à la main
     TypeSequence.ALESAGE: {"vitesse_coupe": 180.0, "avance": 0.12, "profondeur_passe": 1.0,
-                           "diametre_fond": 20.0, "z_fin": -20.0},
+                           "diametre_fond": 0.0},
     TypeSequence.FINITION_INTERIEURE: {"vitesse_coupe": 220.0, "avance": 0.08, "surepaisseur": 0.0,
-                                       "diametre_fond": 20.0, "z_fin": -20.0},
+                                       "diametre_fond": 0.0},
     TypeSequence.FINITION: {"vitesse_coupe": 250.0, "avance": 0.1},
     TypeSequence.GORGE: {"vitesse_coupe": 120.0, "avance": 0.08, "profondeur_passe": 1.5,
                          "surepaisseur": 0.0, "largeur_outil": 3.0, "largeur": 4.0,
@@ -218,7 +231,8 @@ class Sequence:
     # outil et géométrie propres à certaines opérations
     largeur_outil: float = 3.0       # largeur de l'arête : gorge, tronçonnage
     largeur: float = 0.0             # largeur de la gorge à faire ; 0 = celle de l'outil
-    diametre_fond: float = 0.0       # Ø au fond d'une gorge, Ø où s'arrête un tronçonnage (0 = l'axe)
+    diametre_fond: float = 0.0       # Ø au fond d'une gorge, Ø où s'arrête un tronçonnage (0 = l'axe) ;
+                                     # Ø d'un alésage (0 = au plan : la paroi dessinée, épaulements compris)
     diametre_outil: float = 10.0     # Ø du foret
     foret: str = ""                  # désignation au catalogue `ctgraph.forets` ; vide = foret ordinaire
     paroi: int = 0                   # alésage : élément d'esquisse que la paroi suit ; 0 = un cylindre
@@ -241,9 +255,9 @@ class Sequence:
         court = NOMS_COURTS[self.type]
         if self.type in (TypeSequence.CENTRAGE, TypeSequence.PERCAGE):
             return f"{court} Ø {nombre(self.diametre_outil)}"
-        if self.type in (TypeSequence.ALESAGE, TypeSequence.FINITION_INTERIEURE) \
-                and self.diametre_fond > 0:
-            return f"{court} Ø {nombre(self.diametre_fond)}"
+        if self.type in ALESAGES:
+            # au plan : la paroi du dessin, épaulements compris, sans diamètre à déclarer
+            return f"{court} Ø {nombre(self.diametre_fond)}" if self.diametre_fond > 0 else f"{court} au plan"
         if self.type == TypeSequence.GORGE and self.diametre_fond > 0:
             return f"{court} Ø {nombre(self.diametre_fond)} × {nombre(max(self.largeur, self.largeur_outil))}"
         if self.type == TypeSequence.FILETAGE:
@@ -298,20 +312,25 @@ class Sequence:
             raise KeyError(cle)
         return LIBELLES_PROFONDEUR.get(self.type, ("Profondeur", "P"))[0]
 
-    def valeur_cote(self, cle: str, z_surface: float) -> float:
-        """La profondeur, comptée depuis la surface travaillée que l'appelant a relevée."""
+    def valeur_cote(self, cle: str, z_surface: float, z_fond: Optional[float] = None) -> float:
+        """La profondeur, comptée depuis la surface travaillée que l'appelant a relevée.
+
+        `z_fond` est le fond que l'opération prend d'elle-même quand aucun Z de fin n'est donné — celui
+        de l'alésage dessiné, pour un alésage au plan ; l'appelant le relève sur la zone usinée.
+        """
         if cle != "profondeur":
             raise KeyError(cle)
-        return z_surface - (self.z_fin if self.z_fin is not None else z_surface)
+        fin = self.z_fin if self.z_fin is not None else (z_fond if z_fond is not None else z_surface)
+        return z_surface - fin
 
     def definir_valeur_cote(self, cle: str, valeur: float, z_surface: float) -> None:
         if cle != "profondeur":
             raise KeyError(cle)
         self.z_fin = z_surface - max(valeur, 0.0)
 
-    def texte_cote(self, cle: str, z_surface: float) -> str:
+    def texte_cote(self, cle: str, z_surface: float, z_fond: Optional[float] = None) -> str:
         lettre = LIBELLES_PROFONDEUR.get(self.type, ("Profondeur", "P"))[1]
-        return f"{lettre} {self.valeur_cote(cle, z_surface):g}"
+        return f"{lettre} {self.valeur_cote(cle, z_surface, z_fond):g}"
 
     def profondeur_filet(self) -> float:
         """La profondeur du filet au rayon, celle qui est saisie ou celle du profil ISO métrique."""
@@ -336,8 +355,12 @@ class Sequence:
         elif self.type == TypeSequence.CENTRAGE:
             bouts.append(f"Foret à centrer Ø {self.diametre_outil:g}")
         elif self.type == TypeSequence.ALESAGE:
-            bouts.append(f"Jusqu'au Ø {self.diametre_fond:g}" + (", paroi suivie sur l'esquisse"
-                         if self.paroi else "") + f", passes de {self.profondeur_passe:g} mm, "
+            if self.diametre_fond > 0:
+                paroi = f"Jusqu'au Ø {self.diametre_fond:g}" + (", paroi suivie sur l'esquisse"
+                                                                 if self.paroi else "")
+            else:
+                paroi = "Au plan : suit la paroi dessinée, épaulements compris"
+            bouts.append(f"{paroi}, passes de {self.profondeur_passe:g} mm, "
                          f"surépaisseur {self.surepaisseur:g} mm")
         else:
             bouts.append(f"Passes de {self.profondeur_passe:g} mm, surépaisseur {self.surepaisseur:g} mm")

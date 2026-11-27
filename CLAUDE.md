@@ -37,13 +37,18 @@ vérification par relecture du G-code généré, réception des programmes depui
   souris**, par assez de poignées pour que l'utilisateur garde la main : une poignée centrale qui
   déplace la zone entière — d'un contour extérieur vers un alésage, par exemple — et des poignées de
   bord pour chaque limite. Ce que l'interface ne sait pas encore attraper doit le devenir.
-- **Le profil extérieur d'une pièce percée** (`usinage/profil.py`, corrigé le 26 novembre 2026) : un
-  contour fermé qui **ne touche jamais l'axe** est un anneau — la pièce est percée de part en part. Son
-  profil extérieur n'est pas l'anneau entier : `_bord_exterieur` le coupe au sommet le plus haut de
-  chacune de ses deux faces de bout et garde la chaîne de plus grand rayon moyen. Sans cela la finition
-  descendait dans l'alésage et rabotait toute la pièce. Couper plutôt sur « ce sommet porte-t-il le plus
-  grand rayon de son abscisse » casserait la chaîne à chaque épaulement : le coin bas d'une face
-  d'épaulement est sous l'enveloppe et appartient pourtant au bord extérieur.
+- **Profil extérieur et profil intérieur** (`usinage/profil.py`, `_profils`, 26 et 27 novembre 2026) :
+  le contour fermé de la pièce est coupé en deux. Le **profil extérieur** part du pied de la face avant —
+  l'axe pour une pièce pleine, le coin de l'alésage pour une pièce creuse — suit le dessus et s'arrête
+  au pied de la face arrière. Le **profil intérieur** est la paroi de l'alésage dessiné, épaulements
+  compris, **sans les faces de bout** (la face avant est au dressage, le fond plat d'un alésage borgne
+  n'est pas pour la barre) ; vide pour une pièce pleine. Pièce percée de part en part : le contour **ne
+  touche jamais l'axe**, c'est un anneau, `_bords_anneau` le coupe au sommet le plus haut de chacune de
+  ses deux faces de bout et la chaîne de plus grand rayon moyen est l'extérieur. Pièce pleine ou à
+  alésage borgne : on ouvre le contour sur l'axe, puis on le coupe au sommet de la face avant. Sans cela
+  la finition descendait dans l'alésage et rabotait toute la pièce. Couper plutôt sur « ce sommet
+  porte-t-il le plus grand rayon de son abscisse » casserait la chaîne à chaque épaulement : le coin bas
+  d'une face d'épaulement est sous l'enveloppe et appartient pourtant au bord extérieur.
 - **Pile technique (validée le 23 novembre 2026)** : Python 3.12 et PySide6, comme DXFgraph et PDFgraph.
   Solveur par le paquet PyPI `planegcs` (roue binaire Windows, LGPL 2.1+, liaison dynamique : la condition
   de la LGPL est remplie). Liaison série par `pyserial`. Distribution par PyInstaller (`build.ps1`) et
@@ -418,9 +423,26 @@ vérification par relecture du G-code généré, réception des programmes depui
 - **Une barre d'alésage bore ce qu'elle peut atteindre** (27 novembre 2026) : elle part du trou **par
   lequel elle entre** (`_entree_trou`, la première tranche de matière sous la face), et non du plus
   petit rayon de la tranche, qui serait le sommet du cône du foret — on la voyait faire neuf passes au
-  fond d'un cône où elle ne passe pas. Ses passes s'arrêtent là où le trou devient plus étroit que
-  l'entrée (`intervalles_sous_la_paroi(…, au_moins=)`) : au cône du foret, à un trou plus petit. Le
-  diamètre alésé n'a pas d'autre plancher que ce trou d'entrée : un alésage Ø 6 est permis.
+  fond d'un cône où elle ne passe pas. Une passe ne court que là où elle a **au plus sa profondeur à
+  prendre** (`intervalles_sous_la_paroi(…, prise_maxi=)`) : le cône du foret, un trou bien plus étroit,
+  l'arrêtent — mais une bande étroite trop profonde prise entre deux tranches abordables se dresse en
+  passant, c'est la surépaisseur laissée sur la face d'un épaulement. Le diamètre alésé n'a pas d'autre
+  plancher que ce trou d'entrée : un alésage Ø 6 est permis.
+- **L'alésage se fait au plan, épaulements compris** (demandé le 27 novembre 2026 : « gère aussi bien les
+  alésages avec épaulement que les chariotages extérieurs avec épaulement »). `diametre_fond` à 0 —
+  texte « suivre le dessin », le défaut — fait suivre à `ALESAGE` et `FINITION_INTERIEURE` le **profil
+  intérieur** de la pièce (`paroi_alesage`), ramené à ce qu'une barre atteint en entrant par la face :
+  un diamètre plus grand derrière un plus petit est plafonné au passage, c'est l'affaire d'une gorge
+  intérieure. Le fond est celui de l'alésage dessiné quand aucun Z de fin n'est donné (`fond_alesage`,
+  texte « fond de l'alésage dessiné »), et la cote « P » se lit sur lui (`Sequence.valeur_cote(…,
+  z_fond)`). Les passes d'ébauche sont **plafonnées à leur rayon et épousent les marches** au-delà, se
+  suivent sur une copie de la matière (`ouvrir_alesage`) pour ne pas brasser l'air dans ce qu'une passe
+  plus fine a déjà ouvert, et s'arrêtent d'une surépaisseur **devant chaque épaulement**
+  (`_avec_surepaisseur`) comme l'ébauche extérieure ; un alésage borgne garde aussi sa surépaisseur au
+  fond. La finition est un seul passage le long de la paroi, qui dresse les faces d'épaulement. Un
+  diamètre donné reprend l'ancien comportement : un cylindre, ou l'élément d'esquisse désigné, que l'on
+  place à la main ; sur une pièce dessinée pleine, l'alésage au plan dit qu'il manque le trou. Libellés
+  « Alésage au plan », « Finition int. au plan ».
 - **Un filetage enlève de la matière** (27 novembre 2026). En toute rigueur l'enveloppe de révolution
   garde le diamètre des crêtes, le filet étant une rainure hélicoïdale ; mais le creux est bien enlevé,
   et le montrer vaut mieux que de laisser croire que rien n'a été fait. On rabote donc jusqu'au fond de
@@ -443,10 +465,14 @@ vérification par relecture du G-code généré, réception des programmes depui
   **Une zone à aléser n'est pas forcément rectangulaire** : lâcher la poignée « paroi » sur une ligne ou
   un arc de l'esquisse enregistre cet élément dans `Sequence.paroi`, et l'alésage suit alors cette forme
   (`_paroi_visee`, polyligne résolue par `FenetrePrincipale.paroi_de` via `VueEsquisse.polyligne_element`).
-  Chaque passe est plafonnée au rayon de la passe et épouse la paroi au-delà : un cône, un congé.
-- **Le nom d'une opération porte sa cote maîtresse** : « Perçage Ø 10 », « Alésage Ø 20 », « Gorge Ø 20 × 4 »,
-  « Filetage pas 1,5 », « Tronçonnage ép. 3 » (`Sequence.libelle`). Deux lignes voisines se distinguent ainsi
-  d'un coup d'œil. Un nom donné à la main l'emporte toujours.
+  Chaque passe est plafonnée au rayon de la passe et épouse la paroi au-delà : un cône, un congé. Lâchée
+  sur **la paroi dessinée de l'alésage** (`ProfilTourne.porte`), la poignée ramène l'alésage au plan :
+  tout le profil intérieur, épaulements compris. Lâchée ailleurs, elle en fait un cylindre au diamètre
+  où on l'a posée.
+- **Le nom d'une opération porte sa cote maîtresse** : « Perçage Ø 10 », « Alésage Ø 20 » (« Alésage au
+  plan » sans diamètre donné), « Gorge Ø 20 × 4 », « Filetage pas 1,5 », « Tronçonnage ép. 3 »
+  (`Sequence.libelle`). Deux lignes voisines se distinguent ainsi d'un coup d'œil. Un nom donné à la main
+  l'emporte toujours.
 
 ## Points ouverts
 

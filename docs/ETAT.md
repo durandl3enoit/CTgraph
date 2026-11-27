@@ -139,15 +139,25 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
 - **Un outil enlève ce qui reste après l'opération d'avant** : chaque trajectoire reçoit l'état de la
   matière à son rang. Les approches rapides ne traversent plus le métal, les passes se limitent à ce
   qu'il y a à couper, et une ébauche laisse une surépaisseur avant et après un épaulement. Intérieur et
-  extérieur sont deux finitions distinctes. 160 tests.
+  extérieur sont deux finitions distinctes.
+- **Alésage au plan, épaulements compris** (27 novembre 2026) : le contour de la pièce donne désormais
+  aussi un **profil intérieur** (`profil_interieur`, la paroi de l'alésage dessiné sans ses faces de
+  bout), et l'ébauche comme la finition d'alésage le suivent par défaut (Ø « suivre le dessin », fond
+  « fond de l'alésage dessiné ») : passes plafonnées qui épousent les marches, surépaisseur devant
+  chaque épaulement et au fond d'un alésage borgne, pas de passe à vide dans ce qu'une passe plus fine a
+  ouvert, finition en un passage qui dresse les faces d'épaulement. Un dégagement intérieur est plafonné
+  au passage. Un diamètre donné garde l'ancien cylindre placé à la main ; la poignée de paroi lâchée sur la
+  paroi dessinée ramène au plan. Le profil extérieur d'une pièce creuse part du coin de l'alésage sur la
+  face avant. 164 tests.
 
 ## En cours
 
 - Les dimensions du mandrin et de la machine sont des ordres de grandeur : à relever et à saisir dans le dialogue
   (en particulier les étages des mors 474 : longueur et épaulement de chacun, épaisseur radiale au fond, largeur).
 - Non prévu encore : brut en barre passant dans le mandrin (pas d'appui, longueur de brut sans objet).
-- Usinage, manques connus : pas de profil intérieur dessiné — gorge et alésage se décrivent par leurs cotes,
-  ils ne sont pas lus dans l'esquisse ; pas de gorge ni de filetage intérieurs ; pas de deuxième prise ;
+- Usinage, manques connus : la gorge se décrit par ses cotes, elle n'est pas lue dans l'esquisse (l'alésage,
+  lui, suit le profil intérieur dessiné) ; pas de gorge intérieure — un dégagement intérieur dessiné est
+  plafonné au passage qui le précède ; pas de deuxième prise ;
   pas de temps estimé ; les conditions de coupe sont saisies à la main, sans table de matières ; l'ébauche
   descend tout droit, sans suivre le profil en fin de passe ; le filetage ne connaît que le pas constant.
   Rien ne vérifie qu'un outil monté sur le poste choisi peut vraiment usiner la trajectoire demandée.
@@ -166,7 +176,7 @@ Mis à jour le 26 novembre 2026 (cinquième séance, poste de la semaine).
    cycles en option par séquence. Squelette, changement d'outil, G96/G92/G95, G41/G42 relevés dans
    `docs/reference-go2cam-ct200.md` ; **chaque fonction se vérifie dans le manuel NUM 750 T, jamais de
    mémoire**. Relecture par l'utilisateur obligatoire avant tout envoi à la machine.
-5. **Usinage, suite** : profil intérieur dessiné (gorges et alésages lus de l'esquisse), deuxième prise,
+5. **Usinage, suite** : gorges lues de l'esquisse (extérieures et intérieures), deuxième prise,
    conditions de coupe par matière, temps estimé.
 6. Retrouver le post-processeur Go2CAM et le logiciel RS232 (remis à plus tard par l'utilisateur).
 7. Relever sur le tour : grille d'options, version du logiciel CN, taille mémoire, réglages série.

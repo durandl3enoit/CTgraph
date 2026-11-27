@@ -168,8 +168,12 @@ Dix opérations :
   surépaisseur de finition ; une passe plus profonde que l'épaulement qui la précède n'entre en matière
   qu'après lui ;
 * **ébauche d'alésage** : ouvre le trou percé jusqu'à la paroi voulue, à la barre, en passes parallèles à
-  l'axe, en laissant la surépaisseur de finition ;
-* **finition d'alésage** : un passage le long de la paroi ;
+  l'axe, en laissant la surépaisseur de finition. **Au plan** — sans diamètre donné, c'est le défaut —
+  elle suit la paroi dessinée de l'alésage, **épaulements compris**, jusqu'au fond du trou dessiné : les
+  passes épousent les marches, s'arrêtent d'une surépaisseur devant chaque épaulement et ne repassent pas
+  dans ce qu'une passe plus fine a déjà ouvert, exactement comme l'ébauche extérieure d'un arbre épaulé.
+  Un diamètre donné en fait un cylindre que l'on place à la main ;
+* **finition d'alésage** : un passage le long de la paroi, au plan ou au diamètre donné ;
 * **finition extérieure** : un passage qui suit le profil fini ;
 * **gorge** : des plongées côte à côte, à la largeur de l'outil, jusqu'au diamètre de fond ; une gorge plus
   large que l'outil se fait en autant de plongées qu'il faut, qui se recouvrent ;
@@ -229,13 +233,17 @@ d'une ébauche est la surépaisseur laissée au rayon, celle d'un perçage le di
 alésage le diamètre alésé. L'aimantation de l'esquisse joue : la zone s'aligne sur les points, les faces
 et les plans de référence de la pièce finie.
 
-Une barre d'alésage bore ce qu'elle peut atteindre : elle part du trou par lequel elle entre, et s'arrête
-là où le trou devient plus étroit — au cône du foret, par exemple. Seul ce trou d'entrée borne le
-diamètre alésé : un alésage Ø 6 est permis.
+Une barre d'alésage bore ce qu'elle peut atteindre : elle part du trou par lequel elle entre, et une
+passe ne court que là où elle a au plus sa profondeur à prendre — elle s'arrête au cône du foret, mais
+dresse en passant la surépaisseur laissée sur la face d'un épaulement. Un diamètre plus grand derrière un
+plus petit — un dégagement intérieur — n'est pas pour la barre : il attend une gorge intérieure. Seul le
+trou d'entrée borne le diamètre alésé : un alésage Ø 6 est permis. Lâcher la poignée de paroi sur la
+paroi dessinée de l'alésage ramène l'opération **au plan** ; la lâcher ailleurs en fait un cylindre. Sur
+une pièce dessinée pleine, un alésage au plan dit qu'il lui manque le trou.
 
-Chaque opération porte sa cote maîtresse dans son nom — « Perçage Ø 10 », « Alésage Ø 20 »,
-« Gorge Ø 20 × 4 », « Filetage pas 1,5 » — pour que deux lignes voisines se distinguent d'un coup d'œil.
-Un nom donné à la main l'emporte.
+Chaque opération porte sa cote maîtresse dans son nom — « Perçage Ø 10 », « Alésage Ø 20 » ou
+« Alésage au plan », « Gorge Ø 20 × 4 », « Filetage pas 1,5 » — pour que deux lignes voisines se
+distinguent d'un coup d'œil. Un nom donné à la main l'emporte.
 
 La **trajectoire de la séquence choisie se dessine sur l'esquisse** : trait plein pour la coupe, pointillé pour
 les déplacements rapides, un cercle au point de départ. Elle est **recalculée depuis le profil résolu**, jamais

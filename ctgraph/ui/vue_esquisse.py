@@ -258,6 +258,7 @@ class VueEsquisse(QGraphicsView):
         self.sequence = None
         self.z_surface = 0.0              # la surface que la séquence attaque : origine de ses profondeurs
         self.rayon_trou = 0.0             # le trou que la séquence trouve : départ de la zone à aléser
+        self.z_fond = None                # le fond qu'un alésage au plan prend de lui-même : celui du dessin
         self.zone_usinee = None           # (z droite, z gauche, rayon bas, rayon haut) de l'opération
         self.poignees_zone: Tuple[str, ...] = ()   # les prises que cette zone porte
         # matière restante à l'étape choisie, et ce que cette étape vient d'enlever : des polygones (z, x)
@@ -659,16 +660,14 @@ class VueEsquisse(QGraphicsView):
     def alesage_montre(self) -> Optional[Tuple[float, float, float, float]]:
         """La zone à aléser de la séquence montrée : (z face, z fond, rayon de départ, rayon visé).
 
-        Le rayon de départ est celui du trou que la séquence trouve, poussé par la fenêtre dans
-        `rayon_trou` : un outil ouvre ce qui reste, il ne part pas d'un diamètre déclaré.
+        C'est la zone usinée que la fenêtre a poussée, quand la séquence est un alésage : le rayon de
+        départ est celui du trou que la séquence trouve — un outil ouvre ce qui reste, il ne part pas
+        d'un diamètre déclaré — et le rayon visé celui du dessin ou du diamètre donné.
         """
         s = self.sequence
         if s is None or str(getattr(s.type, "value", s.type)) not in ("alesage", "finition_interieure"):
             return None
-        z_face = s.z_debut if s.z_debut is not None else self.z_surface
-        if s.z_fin is None or s.diametre_fond <= 0.0 or z_face - s.z_fin <= 1e-9:
-            return None
-        return z_face, s.z_fin, self.rayon_trou, s.diametre_fond / 2.0
+        return self.zone_usinee
 
     def _dessiner_poignee_centrale(self, c: Dict[str, QColor]) -> None:
         """La prise centrale de la zone usinée : elle déplace l'opération d'un endroit de la pièce à un autre.
@@ -750,10 +749,14 @@ class VueEsquisse(QGraphicsView):
         pour régler. Le genre « cote_sequence » les rend inertes à la sélection.
         """
         s = self.sequence
-        if s is None or "profondeur" not in s.cotes_dessinees() or s.z_fin is None:
+        if s is None or "profondeur" not in s.cotes_dessinees():
+            return
+        # sans Z de fin donné, un alésage au plan va au fond du trou dessiné : la cote le dit aussi
+        z_fond = s.z_fin if s.z_fin is not None else self.z_fond
+        if z_fond is None:
             return
         couleur = QColor(225, 90, 60)
-        z1, z2 = self.z_surface, s.z_fin
+        z1, z2 = self.z_surface, z_fond
         if abs(z1 - z2) <= 1e-9:
             return
         # sous l'axe, plus bas que les cotes du brut : un centrage est petit, l'étiquette le cacherait
@@ -775,7 +778,7 @@ class VueEsquisse(QGraphicsView):
         it.setData(ROLE_ID, "profondeur")
         self._scene.addItem(it)
         self._items.append(it)
-        et = Etiquette(s.texte_cote("profondeur", self.z_surface), couleur, c["fond"], gras=False)
+        et = Etiquette(s.texte_cote("profondeur", self.z_surface, z_fond), couleur, c["fond"], gras=False)
         et.setPos((z1 + z2) / 2.0, x)
         et.setData(ROLE_GENRE, "cote_sequence")
         et.setData(ROLE_ID, "profondeur")

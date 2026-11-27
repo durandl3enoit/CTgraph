@@ -26,7 +26,8 @@ from ..icons import icone_action, icone_outil, icone_relation
 from ..log import get as get_log
 from ..montage import Montage, Piece
 from ..settings import Settings
-from ..usinage import Gamme, Sequence, Trajectoire, TypeSequence, etats, profil_exterieur, trajectoire
+from ..usinage import (ALESAGES, Gamme, Sequence, Trajectoire, TypeSequence, etats, fond_alesage,
+                       paroi_alesage, profil_exterieur, profil_interieur, trajectoire)
 from .dialogue_montage import DialogueMontage
 from .vue_esquisse import AIMANTS_DEFAUT, LIBELLES_AIMANTS, Accroche, VueEsquisse
 from ..tourelle import Tourelle
@@ -43,8 +44,6 @@ OUTILS = (("selection", "Sélection", "S"), ("ligne", "Ligne", "L"), ("arc", "Ar
           ("cote", "Cote", "C"), ("arrondi", "Arrondi", "R"), ("chanfrein", "Chanfrein", "H"),
           ("elaguer", "Élaguer", "E"))
 PAS_MOLETTE = 1.0          # réglage d'une cote à la molette : 1 mm ou 1° par cran, 0,1 avec Maj
-# les opérations qui creusent un alésage : même zone à l'écran, mêmes poignées, même paroi suivie
-ALESAGES = (TypeSequence.ALESAGE, TypeSequence.FINITION_INTERIEURE)
 
 
 class FenetrePrincipale(QMainWindow):
@@ -58,6 +57,7 @@ class FenetrePrincipale(QMainWindow):
         self.montage = self._montage_par_defaut()
         self.gamme = Gamme()
         self._profil_usinage = None          # profil tourné, recalculé après chaque résolution
+        self._profil_interieur = None        # paroi de l'alésage dessiné, recalculée de même
         self._etats_matiere = None           # matière restante après chaque étape de la gamme
         self._synchroniser_references()
         self.solveur = AdaptateurSolveur(self.esquisse)
@@ -698,6 +698,13 @@ class FenetrePrincipale(QMainWindow):
             self._profil_usinage = profil_exterieur(self.vue.polylignes_contours())
         return self._profil_usinage
 
+    def profil_interieur_usinage(self):
+        """La paroi de l'alésage dessiné, épaulements compris : ce qu'un alésage au plan suit. Vide si la
+        pièce est pleine. Recalculée comme le profil extérieur, jamais recopiée."""
+        if self._profil_interieur is None:
+            self._profil_interieur = profil_interieur(self.vue.polylignes_contours())
+        return self._profil_interieur
+
     def trajectoire_de(self, sequence: Sequence) -> Trajectoire:
         """La trajectoire d'une séquence, sur la matière qu'elle trouve en arrivant.
 
@@ -711,13 +718,20 @@ class FenetrePrincipale(QMainWindow):
 
     def _trajectoire_sur(self, sequence: Sequence, etat) -> Trajectoire:
         return trajectoire(sequence, self.profil_usinage(), self.montage, etat,
-                           self.paroi_de(sequence))
+                           self.paroi_de(sequence), self.profil_interieur_usinage())
 
     def paroi_de(self, sequence: Sequence):
         """La forme que doit prendre la paroi d'un alésage : l'élément d'esquisse qu'on lui a désigné."""
         if sequence.type not in ALESAGES or not sequence.paroi:
             return None
         return self.vue.polyligne_element(sequence.paroi)
+
+    def fond_de(self, sequence: Optional[Sequence]) -> Optional[float]:
+        """Le Z où la séquence s'arrête d'elle-même quand aucun Z de fin n'est donné : le fond de l'alésage
+        dessiné pour un alésage au plan. C'est la référence de la cote de profondeur dans ce cas."""
+        if sequence is None or sequence.type not in ALESAGES:
+            return None
+        return fond_alesage(sequence, self.profil_interieur_usinage(), self.montage)
 
     def trou_trouve(self, sequence: Optional[Sequence]) -> float:
         """Le rayon du trou que la séquence trouve en arrivant : le départ de sa zone à aléser."""
@@ -728,7 +742,8 @@ class FenetrePrincipale(QMainWindow):
         if not (0 <= rang < len(suite) - 1):
             return 0.0
         avant, z_face = suite[rang], self.surface_travaillee(sequence)
-        z_fin = sequence.z_fin if sequence.z_fin is not None else z_face
+        fond = self.fond_de(sequence)                    # un alésage au plan va au fond du trou dessiné
+        z_fin = sequence.z_fin if sequence.z_fin is not None else (fond if fond is not None else z_face)
         # le trou par lequel l'outil entre : sa première tranche de matière sous la face, pas le plus
         # petit rayon rencontré, qui serait le sommet du cône d'un foret
         for i in reversed(avant.tranches(z_fin, z_face)):
@@ -744,7 +759,7 @@ class FenetrePrincipale(QMainWindow):
 
     def _rafraichir_usinage(self, redessiner: bool = True) -> None:
         """Après une résolution ou un changement de montage : profil, passes et trajectoire montrée."""
-        self._profil_usinage = None
+        self._profil_usinage = self._profil_interieur = None
         self._etats_matiere = None
         self.zone_usinage.rafraichir()
         self._pousser_trajectoire(redessiner)
@@ -756,6 +771,7 @@ class FenetrePrincipale(QMainWindow):
         self.vue.trajectoire = self.trajectoire_de(sequence) if sequence is not None else None
         self._pousser_matiere()          # remplit la suite des états, où se lit la surface travaillée
         self.vue.z_surface = self.surface_travaillee(sequence)
+        self.vue.z_fond = self.fond_de(sequence)
         self.vue.rayon_trou = self.trou_trouve(sequence)
         self.vue.zone_usinee = self.zone_usinee(sequence)
         self.vue.poignees_zone = self.poignees_actives(sequence)
@@ -784,7 +800,8 @@ class FenetrePrincipale(QMainWindow):
         if s is None or cle not in s.cotes_dessinees():
             return
         surface = self.surface_travaillee(s)
-        valeur, ok = self._demander_valeur(s.libelle_cote(cle), "mm", s.valeur_cote(cle, surface), 0.0)
+        valeur, ok = self._demander_valeur(s.libelle_cote(cle), "mm",
+                                           s.valeur_cote(cle, surface, self.fond_de(s)), 0.0)
         if ok:
             s.definir_valeur_cote(cle, valeur, surface)
             self._apres_reglage_sequence()
@@ -796,9 +813,10 @@ class FenetrePrincipale(QMainWindow):
             return None
         pas = PAS_MOLETTE / 10.0 if fin else PAS_MOLETTE
         surface = self.surface_travaillee(s)
-        s.definir_valeur_cote(cle, max(0.0, s.valeur_cote(cle, surface) + sens * pas), surface)
+        s.definir_valeur_cote(cle, max(0.0, s.valeur_cote(cle, surface, self.fond_de(s)) + sens * pas),
+                              surface)
         self._apres_reglage_sequence()
-        return s.texte_cote(cle, self.surface_travaillee(s))
+        return s.texte_cote(cle, self.surface_travaillee(s), self.fond_de(s))
 
     def zone_usinee(self, sequence: Optional[Sequence]) -> Optional[Tuple[float, float, float, float]]:
         """La zone qu'une opération attaque : (z droite, z gauche, rayon bas, rayon haut).
@@ -813,9 +831,15 @@ class FenetrePrincipale(QMainWindow):
         trou = self.trou_trouve(sequence)
         profil = self.profil_usinage()
         if s.type in ALESAGES:
-            if s.z_fin is None or s.diametre_fond <= 0.0:
+            # au plan, la zone va jusqu'au fond de l'alésage dessiné et monte à son plus grand diamètre
+            # atteignable ; avec un diamètre donné, c'est le cylindre demandé
+            fond = self.fond_de(s)
+            if fond is None or surface - fond <= 1e-9:
                 return None
-            return surface, s.z_fin, trou, s.diametre_fond / 2.0
+            cible = paroi_alesage(s, self.profil_interieur_usinage(), self.paroi_de(s), surface, fond)
+            if len(cible) < 2:
+                return None
+            return surface, fond, trou, max(x for _, x in cible)
         if s.type in (TypeSequence.PERCAGE, TypeSequence.CENTRAGE):
             return (surface, s.z_fin, 0.0, s.diametre_outil / 2.0) if s.z_fin is not None else None
         if s.type in (TypeSequence.GORGE, TypeSequence.TRONCONNAGE):
@@ -945,11 +969,17 @@ class FenetrePrincipale(QMainWindow):
                 s.z_fin = min(z, z_droite - 0.1)
         if poignee in ("paroi", "coin_face", "coin_fond"):
             if t in ALESAGES:
-                # jamais plus petit que le trou par lequel la barre entre, mais rien d'autre ne borne
-                s.diametre_fond = max(2.0 * x, 2.0 * self.trou_trouve(s) + 0.02)
-                # lâchée sur une ligne ou un arc du dessin, la paroi suit cette forme : la zone à aléser
-                # n'est alors plus un rectangle, elle épouse le cône ou le congé de la pièce finie
-                s.paroi = element if element and self.vue.polyligne_element(element) else 0
+                forme = self.vue.polyligne_element(element) if element else []
+                if forme and self.profil_interieur_usinage().porte(forme):
+                    # lâchée sur la paroi dessinée de l'alésage : on revient au plan, et l'alésage suit
+                    # tout le profil intérieur, épaulements compris
+                    s.diametre_fond, s.paroi = 0.0, 0
+                else:
+                    # jamais plus petit que le trou par lequel la barre entre, mais rien d'autre ne borne
+                    s.diametre_fond = max(2.0 * x, 2.0 * self.trou_trouve(s) + 0.02)
+                    # lâchée sur une autre ligne ou un arc du dessin, la paroi suit cette forme : la zone
+                    # à aléser n'est alors plus un rectangle, elle épouse le cône ou le congé désigné
+                    s.paroi = element if forme else 0
             elif t in (TypeSequence.GORGE, TypeSequence.TRONCONNAGE):
                 s.diametre_fond = max(2.0 * x, 0.0)
             elif t in (TypeSequence.PERCAGE, TypeSequence.CENTRAGE):
@@ -1490,7 +1520,7 @@ class FenetrePrincipale(QMainWindow):
         self.vue.trajectoire = self.vue.sequence = None
         self.vue.matiere = self.vue.matiere_enlevee = []
         self.vue.filets = self.vue.filets_neufs = []
-        self._profil_usinage = self._etats_matiere = None
+        self._profil_usinage = self._profil_interieur = self._etats_matiere = None
         self.zone_usinage.definir_gamme(self.gamme, self.trajectoire_de)
         self._pousser_montage_3d()
 

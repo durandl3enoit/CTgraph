@@ -1,9 +1,12 @@
 """Le profil tourné : ce que l'outil doit laisser, tiré des contours fermés de l'esquisse.
 
 Un contour fermé de l'esquisse fait le tour de la matière : il monte la face avant, suit le profil
-extérieur, redescend la face arrière, puis revient par l'axe. Pour l'usinage, seule compte la partie
-qui n'est pas sur l'axe : c'est le **profil extérieur**, parcouru du bout de la pièce (le z le plus
-grand, côté opérateur) vers le mandrin.
+extérieur, redescend la face arrière, puis revient par l'axe — ou, si la pièce est creuse, par la paroi
+de l'alésage. Pour l'usinage, on le coupe en deux (`_profils`) : le **profil extérieur**, ce que les
+outils de tournage extérieur suivent, et le **profil intérieur**, la paroi de l'alésage que suit la
+barre, épaulements compris. Chacun est parcouru du bout de la pièce (le z le plus grand, côté
+opérateur) vers le mandrin. Un alésage épaulé se traite ainsi exactement comme un arbre épaulé : même
+objet, même méthodes, l'un vu du dessus, l'autre du dedans.
 
 Repère : `z` le long de l'axe, `x` le rayon. Z = 0 est la face avant finie, Z négatif vers le mandrin.
 """
@@ -20,25 +23,36 @@ def _sur_axe(p: Point) -> bool:
     return abs(p[1]) <= TOLERANCE_AXE
 
 
-def _ouvrir_sur_l_axe(contour: List[Point]) -> List[Point]:
-    """Coupe le contour fermé au niveau de l'axe et rend la chaîne qui n'y est pas.
-
-    Le contour est donné fermé (premier point répété à la fin). **S'il ne touche jamais l'axe**, c'est que
-    la pièce est percée de part en part : le contour est un anneau, et c'est `_bord_exterieur` qui en tire
-    le dessus. Rendre l'anneau entier ferait descendre la finition dans l'alésage et raboter toute la
-    pièce — c'est ce qui se produisait jusqu'au 26 novembre 2026.
-    """
-    pts = list(contour)
+def _sans_fermeture(contour: Sequence[Point]) -> List[Point]:
+    pts = [(float(z), float(x)) for z, x in contour]
     if len(pts) > 1 and pts[0] == pts[-1]:
         pts = pts[:-1]
+    return pts
+
+
+def _du_bout_vers_le_mandrin(chaine: List[Point]) -> List[Point]:
+    """La chaîne orientée du bout de la pièce vers le mandrin : son premier point est le plus en avant."""
+    if len(chaine) >= 2 and chaine[0][0] < chaine[-1][0] - TOLERANCE_AXE:
+        return list(reversed(chaine))
+    return list(chaine)
+
+
+def _sommet_haut(pts: List[Point], z_cible: float) -> int:
+    """L'indice du point le plus haut parmi ceux posés à cette abscisse : le coin d'une face de bout."""
+    candidats = [i for i, (z, _) in enumerate(pts) if abs(z - z_cible) <= 1e-6]
+    return max(candidats, key=lambda i: pts[i][1])
+
+
+def _ouvrir_sur_l_axe(pts: List[Point]) -> List[Point]:
+    """Coupe un contour qui touche l'axe au niveau de celui-ci, et rend la chaîne qui n'y est pas.
+
+    Elle va d'un point posé sur l'axe à un autre : le pied de la face arrière d'un côté, de l'autre le
+    pied de la face avant — ou le fond d'un alésage borgne, si la pièce en a un.
+    """
     n = len(pts)
-    if n < 3:
-        return pts
     sur = [_sur_axe(p) for p in pts]
-    if all(sur):
-        return pts
-    if not any(sur):
-        return _bord_exterieur(contour)
+    if n < 3 or all(sur) or not any(sur):
+        return list(pts)
     # on repart juste après le dernier point d'une suite posée sur l'axe
     depart = next(i for i in range(n) if sur[i] and not sur[(i + 1) % n])
     chaine = [pts[depart % n]]
@@ -50,36 +64,89 @@ def _ouvrir_sur_l_axe(contour: List[Point]) -> List[Point]:
     return chaine
 
 
-def _bord_exterieur(contour: List[Point]) -> List[Point]:
-    """Le dessus d'un contour qui ne touche pas l'axe : le profil extérieur d'une pièce percée.
+def _bords_anneau(pts: List[Point]) -> Tuple[List[Point], List[Point]]:
+    """Les deux bords d'un contour qui ne touche pas l'axe : (extérieur, intérieur avec ses faces de bout).
 
-    Un tel contour est un anneau : la paroi de l'alésage, les deux faces de bout, et le bord extérieur.
-    On le coupe au **sommet le plus haut de chaque face de bout** — les deux seuls endroits où le bord
-    extérieur rejoint l'alésage — et des deux chaînes obtenues on garde celle de plus grand rayon moyen.
+    Un tel contour est un anneau — la pièce est percée de part en part : la paroi de l'alésage, les deux
+    faces de bout, et le bord extérieur. On le coupe au **sommet le plus haut de chaque face de bout** —
+    les deux seuls endroits où le bord extérieur rejoint le reste. Des deux chaînes obtenues, celle de
+    plus grand rayon moyen est le bord extérieur, l'autre la paroi de l'alésage, faces de bout comprises.
+    Les deux sont rendues du bout de la pièce vers le mandrin.
 
     Couper ailleurs, par exemple sur le critère « ce sommet porte-t-il le plus grand rayon de son
     abscisse », casserait la chaîne à chaque épaulement : le coin bas d'une face d'épaulement est sous
     l'enveloppe, et pourtant il appartient bien au bord extérieur.
     """
-    pts = list(contour)
-    if len(pts) > 1 and pts[0] == pts[-1]:
-        pts = pts[:-1]
     n = len(pts)
     if n < 3:
-        return pts
-    z_min = min(z for z, _ in pts)
-    z_max = max(z for z, _ in pts)
-
-    def sommet_haut(z_cible: float) -> int:
-        candidats = [i for i, (z, _) in enumerate(pts) if abs(z - z_cible) <= 1e-6]
-        return max(candidats, key=lambda i: pts[i][1])
-
-    a, b = sommet_haut(z_min), sommet_haut(z_max)
+        return list(pts), []
+    a = _sommet_haut(pts, min(z for z, _ in pts))
+    b = _sommet_haut(pts, max(z for z, _ in pts))
     if a == b:
-        return pts
-    chaines = ([pts[(a + k) % n] for k in range((b - a) % n + 1)],
-               [pts[(b + k) % n] for k in range((a - b) % n + 1)])
-    return max(chaines, key=lambda ch: sum(x for _, x in ch) / len(ch))
+        return list(pts), []
+    chaines = sorted(([pts[(a + k) % n] for k in range((b - a) % n + 1)],
+                      [pts[(b + k) % n] for k in range((a - b) % n + 1)]),
+                     key=lambda ch: sum(x for _, x in ch) / len(ch), reverse=True)
+    return _du_bout_vers_le_mandrin(chaines[0]), _du_bout_vers_le_mandrin(chaines[1])
+
+
+def _face_avant(chaine: List[Point]) -> List[Point]:
+    """Ce qui longe la face avant au début d'une chaîne orientée du bout vers le mandrin."""
+    z_avant = chaine[0][0]
+    fin = next((i for i, (z, _) in enumerate(chaine) if abs(z - z_avant) > 1e-6), len(chaine))
+    return chaine[:fin]
+
+
+def _sans_les_faces(chaine: List[Point]) -> List[Point]:
+    """Une chaîne orientée du bout vers le mandrin, **sans ce qui longe ses faces de bout**.
+
+    C'est ce qu'une barre d'alésage doit suivre : la paroi, du coin d'entrée au fond, épaulements
+    compris, mais ni la face avant (c'est le dressage qui la fait) ni le fond plat d'un alésage borgne,
+    où une barre ne descend pas jusqu'à l'axe.
+    """
+    if len(chaine) < 2:
+        return []
+    z_min = min(z for z, _ in chaine)
+    debut = len(_face_avant(chaine))
+    fin = next((i for i in range(len(chaine) - 1, -1, -1) if abs(chaine[i][0] - z_min) > 1e-6), -1)
+    noyau = chaine[max(debut - 1, 0):fin + 2]
+    return noyau if len(noyau) >= 2 else []
+
+
+def _profils(contour: Sequence[Point]) -> Tuple[List[Point], List[Point]]:
+    """Un contour fermé coupé en deux : (profil extérieur, profil intérieur), chacun du bout vers le mandrin.
+
+    Le profil extérieur part du pied de la face avant — l'axe pour une pièce pleine, le coin de l'alésage
+    pour une pièce creuse — et va jusqu'au pied de la face arrière : la finition finit ainsi la face avant
+    puis suit le profil, et s'arrête avant de redescendre la face arrière. Le profil intérieur est la paroi
+    de l'alésage, sans les faces de bout ; vide si la pièce est pleine.
+
+    Pièce percée de part en part : le contour est un anneau, `_bords_anneau` le coupe. Pièce pleine ou à
+    alésage borgne : le contour touche l'axe, on l'ouvre là, puis on le coupe au sommet de la face avant,
+    le seul point où l'extérieur et l'alésage se touchent. Jusqu'au 26 novembre 2026 l'anneau entier
+    passait pour le profil extérieur : la finition descendait dans l'alésage et rabotait toute la pièce.
+    """
+    pts = _sans_fermeture(contour)
+    if len(pts) < 3:
+        return pts, []
+    sur = [_sur_axe(p) for p in pts]
+    if not any(sur):
+        exterieur, dedans = _bords_anneau(pts)
+        if not dedans:
+            return exterieur, []
+        face = _face_avant(dedans)                 # du sommet de la face avant au coin de l'alésage
+        return list(reversed(face))[:-1] + exterieur, _sans_les_faces(dedans)
+    if all(sur):
+        return pts, []
+    chaine = _ouvrir_sur_l_axe(pts)
+    # orientée pour finir au pied de la face arrière : l'autre bout est le pied de la face avant, ou le
+    # fond de l'alésage borgne
+    if chaine[0][0] < chaine[-1][0] - TOLERANCE_AXE:
+        chaine = list(reversed(chaine))
+    sommet = _sommet_haut(chaine, max(z for z, _ in chaine))
+    exterieur = chaine[max(sommet - 1, 0):]
+    interieur = _sans_les_faces(_du_bout_vers_le_mandrin(chaine[:sommet]))
+    return exterieur, interieur
 
 
 @dataclass
@@ -214,13 +281,29 @@ class ProfilTourne:
                 poser((z1 + t * (z2 - z1), x1 + t * (x2 - x1)))
         return morceau
 
+    def porte(self, points: Sequence[Point], tolerance: float = 1e-6) -> bool:
+        """Vrai si les deux bouts de cette polyligne sont sur le profil : l'élément d'esquisse qu'elle
+        représente en fait partie. Sert à reconnaître qu'une poignée a été lâchée sur la paroi dessinée."""
+        pts = list(points)
+        if len(pts) < 2 or not self:
+            return False
+        return all(self._distance(p) <= tolerance for p in (pts[0], pts[-1]))
 
-def profil_exterieur(contours: Sequence[Sequence[Point]]) -> ProfilTourne:
-    """Le profil extérieur de la pièce, tiré des contours fermés de l'esquisse.
+    def _distance(self, p: Point) -> float:
+        """La distance d'un point au profil : au plus près de l'un de ses segments."""
+        z, x = p
+        plus_courte = float("inf")
+        for (z1, x1), (z2, x2) in self.segments():
+            dz, dx = z2 - z1, x2 - x1
+            longueur2 = dz * dz + dx * dx
+            t = 0.0 if longueur2 <= 1e-18 else max(0.0, min(1.0, ((z - z1) * dz + (x - x1) * dx) / longueur2))
+            plus_courte = min(plus_courte, ((z - z1 - t * dz) ** 2 + (x - x1 - t * dx) ** 2) ** 0.5)
+        return plus_courte
 
-    Le plus grand contour l'emporte : c'est la pièce. Les autres (gorges dessinées à part, profils
-    intérieurs) viendront quand le module saura les distinguer.
-    """
+
+def _contour_principal(contours: Sequence[Sequence[Point]]) -> List[Point]:
+    """Le plus grand contour fermé : c'est la pièce. Les autres (gorges dessinées à part) viendront
+    quand le module saura les distinguer."""
     meilleur: List[Point] = []
     etendue = -1.0
     for contour in contours:
@@ -230,4 +313,18 @@ def profil_exterieur(contours: Sequence[Sequence[Point]]) -> ProfilTourne:
         large = (max(z for z, _ in pts) - min(z for z, _ in pts)) * max(x for _, x in pts)
         if large > etendue:
             meilleur, etendue = pts, large
-    return ProfilTourne(_ouvrir_sur_l_axe(meilleur) if meilleur else [])
+    return meilleur
+
+
+def profil_exterieur(contours: Sequence[Sequence[Point]]) -> ProfilTourne:
+    """Le profil extérieur de la pièce, tiré des contours fermés de l'esquisse : ce que suivent les
+    outils de tournage extérieur, de la face avant au fond."""
+    principal = _contour_principal(contours)
+    return ProfilTourne(_profils(principal)[0] if principal else [])
+
+
+def profil_interieur(contours: Sequence[Sequence[Point]]) -> ProfilTourne:
+    """Le profil intérieur de la pièce : la paroi de l'alésage dessiné, épaulements compris, du coin
+    d'entrée au fond. Vide (faux) si la pièce est pleine : il n'y a alors rien à aléser au plan."""
+    principal = _contour_principal(contours)
+    return ProfilTourne(_profils(principal)[1] if principal else [])
